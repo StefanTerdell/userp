@@ -42,25 +42,25 @@ use crate::{
 #[cfg(feature = "axum-askama")]
 use crate::{email::EmailResetCallbackError, EmailResetError};
 
-use axum::routing::MethodRouter;
+// use axum::routing::MethodRouter;
 
-// https://stackoverflow.com/questions/75355826/route-paths-with-or-without-of-trailing-slashes-in-rust-axum
-trait TrailingSlashRouter<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    fn slash_router(self, path: &str, method_router: MethodRouter<S>) -> Self;
-}
+// // https://stackoverflow.com/questions/75355826/route-paths-with-or-without-of-trailing-slashes-in-rust-axum
+// trait TrailingSlashRouter<S>
+// where
+//     S: Clone + Send + Sync + 'static,
+// {
+//     fn slash_router(self, path: &str, method_router: MethodRouter<S>) -> Self;
+// }
 
-impl<S> TrailingSlashRouter<S> for Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    fn slash_router(self, path: &str, method_router: MethodRouter<S>) -> Self {
-        self.route(path, method_router.clone())
-            .route(&format!("{path}/"), method_router)
-    }
-}
+// impl<S> TrailingSlashRouter<S> for Router<S>
+// where
+//     S: Clone + Send + Sync + 'static,
+// {
+//     fn slash_router(self, path: &str, method_router: MethodRouter<S>) -> Self {
+//         self.route(path, method_router.clone())
+//             .route(&format!("{path}/"), method_router)
+//     }
+// }
 
 impl UserpConfig {
     pub fn handlers<St, S>(&self) -> Router<S>
@@ -75,9 +75,9 @@ impl UserpConfig {
         #[cfg(feature = "axum-askama")]
         {
             router = router
-                .slash_router(self.routes.login.as_str(), get(get_login::<St>))
-                .slash_router(self.routes.signup.as_str(), get(get_signup::<St>))
-                .slash_router(
+                .route(self.routes.login.as_str(), get(get_login::<St>))
+                .route(self.routes.signup.as_str(), get(get_signup::<St>))
+                .route(
                     self.routes.password_send_reset.as_str(),
                     get(get_password_send_reset::<St>).post(post_password_send_reset::<St>),
                 );
@@ -85,8 +85,8 @@ impl UserpConfig {
             #[cfg(feature = "extended-store")]
             {
                 router = router
-                    .slash_router(self.routes.user.as_str(), get(get_user::<St>))
-                    .slash_router(
+                    .route(self.routes.user.as_str(), get(get_user::<St>))
+                    .route(
                         self.routes.password_reset.as_str(),
                         get(get_password_reset::<St>).post(post_password_reset::<St>),
                     );
@@ -95,14 +95,14 @@ impl UserpConfig {
 
         #[cfg(not(feature = "axum-askama"))]
         {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.password_send_reset.as_str(),
                 post(post_password_send_reset::<St>),
             );
 
             #[cfg(feature = "extended-store")]
             {
-                router = router.slash_router(
+                router = router.route(
                     self.routes.password_reset.as_str(),
                     post(post_password_reset::<St>),
                 );
@@ -110,48 +110,48 @@ impl UserpConfig {
         }
 
         router = router
-            .slash_router(
+            .route(
                 self.routes.login_password.as_str(),
                 post(post_login_password::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.login_email.as_str(),
                 post(post_login_email::<St>).get(get_login_email::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.login_oauth.as_str(),
                 post(post_login_oauth::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.signup_password.as_str(),
                 post(post_signup_password::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.signup_email.as_str(),
                 post(post_signup_email::<St>).get(get_signup_email::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.signup_oauth.as_str(),
                 post(post_signup_oauth::<St>),
             )
-            .slash_router(self.routes.logout.as_str(), get(get_user_logout::<St>))
-            .slash_router(
+            .route(self.routes.logout.as_str(), get(get_user_logout::<St>))
+            .route(
                 self.routes.user_verify_session.as_str(),
                 get(get_user_verify_session::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.user_oauth_link.as_str(),
                 post(post_user_oauth_link::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.user_session_delete.as_str(),
                 post(post_user_session_delete::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.user_oauth_refresh.as_str(),
                 post(post_user_oauth_refresh::<St>),
             )
-            .slash_router(
+            .route(
                 self.routes.user_email_verify.as_str(),
                 get(get_user_email_verify::<St>).post(post_user_email_verify::<St>),
             );
@@ -159,35 +159,35 @@ impl UserpConfig {
         #[cfg(feature = "extended-store")]
         {
             router = router
-                .slash_router(
+                .route(
                     self.routes.user_delete.as_str(),
                     post(post_user_delete::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_password_set.as_str(),
                     post(post_user_password_set::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_password_delete.as_str(),
                     post(post_user_password_delete::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_oauth_delete.as_str(),
                     post(post_user_oauth_delete::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_email_add.as_str(),
                     post(post_user_email_add::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_email_delete.as_str(),
                     post(post_user_email_delete::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_email_enable_login.as_str(),
                     post(post_user_email_enable_login::<St>),
                 )
-                .slash_router(
+                .route(
                     self.routes.user_email_disable_login.as_str(),
                     post(post_user_email_disable_login::<St>),
                 );
@@ -197,12 +197,12 @@ impl UserpConfig {
             || self.routes.login_oauth_provider == self.routes.user_oauth_link_provider
             || self.routes.login_oauth_provider == self.routes.user_oauth_refresh_provider
         {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.login_oauth_provider.as_str(),
                 get(get_generic_oauth::<St>),
             );
         } else {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.login_oauth_provider.as_str(),
                 get(get_login_oauth::<St>),
             );
@@ -212,12 +212,12 @@ impl UserpConfig {
             || self.routes.signup_oauth_provider == self.routes.user_oauth_link_provider
             || self.routes.signup_oauth_provider == self.routes.user_oauth_refresh_provider
         {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.signup_oauth_provider.as_str(),
                 get(get_generic_oauth::<St>),
             );
         } else {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.signup_oauth_provider.as_str(),
                 get(get_signup_oauth::<St>),
             );
@@ -227,12 +227,12 @@ impl UserpConfig {
             || self.routes.user_oauth_link_provider == self.routes.login_oauth_provider
             || self.routes.user_oauth_link_provider == self.routes.user_oauth_refresh_provider
         {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.user_oauth_link_provider.as_str(),
                 get(get_generic_oauth::<St>),
             );
         } else {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.user_oauth_link_provider.as_str(),
                 get(get_user_oauth_link::<St>),
             );
@@ -242,12 +242,12 @@ impl UserpConfig {
             || self.routes.user_oauth_refresh_provider == self.routes.user_oauth_link_provider
             || self.routes.user_oauth_refresh_provider == self.routes.login_oauth_provider
         {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.user_oauth_refresh_provider.as_str(),
                 get(get_generic_oauth::<St>),
             );
         } else {
-            router = router.slash_router(
+            router = router.route(
                 self.routes.user_oauth_refresh_provider.as_str(),
                 get(get_user_oauth_refresh::<St>),
             );
