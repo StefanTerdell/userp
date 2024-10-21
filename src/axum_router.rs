@@ -42,6 +42,26 @@ use crate::{
 #[cfg(feature = "axum-askama")]
 use crate::{email::EmailResetCallbackError, EmailResetError};
 
+// use axum::routing::MethodRouter;
+
+// // https://stackoverflow.com/questions/75355826/route-paths-with-or-without-of-trailing-slashes-in-rust-axum
+// trait TrailingSlashRouter<S>
+// where
+//     S: Clone + Send + Sync + 'static,
+// {
+//     fn slash_router(self, path: &str, method_router: MethodRouter<S>) -> Self;
+// }
+
+// impl<S> TrailingSlashRouter<S> for Router<S>
+// where
+//     S: Clone + Send + Sync + 'static,
+// {
+//     fn slash_router(self, path: &str, method_router: MethodRouter<S>) -> Self {
+//         self.route(path, method_router.clone())
+//             .route(&format!("{path}/"), method_router)
+//     }
+// }
+
 impl UserpConfig {
     pub fn handlers<St, S>(&self) -> Router<S>
     where

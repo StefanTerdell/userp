@@ -7,10 +7,13 @@ use self::store::MemoryStore;
 use self::templates::{IndexTemplate, ProtectedTemplate};
 
 use askama_axum::IntoResponse;
+use axum::extract::Request;
+use axum::ServiceExt;
 use axum::{extract::State, response::Redirect, routing::get, serve, Router};
 use axum_macros::FromRef;
 use dotenv::var;
 use tokio::net::TcpListener;
+use tower_layer::Layer;
 use tower_http::trace::TraceLayer;
 
 use userp::{
@@ -80,10 +83,14 @@ async fn main() {
         .route("/protected", get(get_protected))
         .with_state(state)
         .layer(TraceLayer::new_for_http());
-
+    let app =
+        tower_http::normalize_path::NormalizePathLayer::trim_trailing_slash()
+        .layer(app);
+    let app = ServiceExt::<Request>::into_make_service(app);
+    // let app = app.into_make_service();
     println!("User example axum/memstore running at http://localhost:3000 :)");
     let tcp = TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    serve(tcp, app.into_make_service()).await.unwrap();
+    serve(tcp, app).await.unwrap();
 }
 
 async fn get_index(auth: Userp<MemoryStore>) -> impl IntoResponse {
