@@ -80,7 +80,7 @@ pub trait AxumRouter {
         let mut router = Router::new();
 
         router = router
-            .route(self.routes().logout.as_str(), get(get_user_logout::<St>))
+            .route(self.routes().logout.as_str(), post(post_user_logout::<St>))
             .route(
                 self.routes().user_verify_session.as_str(),
                 get(get_user_verify_session::<St>),
@@ -437,7 +437,7 @@ impl AxumRouter for AutheryConfig {
     }
 }
 
-async fn get_user_logout<St>(auth: AxumAuthery<St>) -> Result<impl IntoResponse, St::Error>
+async fn post_user_logout<St>(auth: AxumAuthery<St>) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
     St::Error: IntoResponse,

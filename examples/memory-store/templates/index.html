@@ -3,7 +3,7 @@
 {% block content %}
 {% if logged_in %}
 <p>You are logged in</p>
-<a href="/logout">Log out</a>
+<form method="post" action="/logout"><button type="submit">Log out</button></form>
 <a href="/user">Account</a>
 {% else %}
 <p>You are not logged in</p>

@@ -40,7 +40,7 @@ pub struct Routes<T = String> {
     #[cfg(feature = "user")]
     /// Contains routes used to control the user account and associated entities
     pub user: UserActionRoutes<T>,
-    /// Get - deletes the current UserLogin session and redirects the user to pages.post_logout
+    /// Post - deletes the current UserLogin session and redirects the user to pages.post_logout
     pub logout: T,
     /// Get - returns 200 if the current session is still present on the server. Returns 401 if not.
     pub user_verify_session: T,
