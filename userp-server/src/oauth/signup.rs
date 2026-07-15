@@ -75,7 +75,7 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
 
     #[must_use = "Don't forget to return the auth session as part of the response!"]
     pub async fn oauth_signup_callback(
-        self,
+        mut self,
         provider_name: String,
         code: AuthorizationCode,
         state: CsrfToken,

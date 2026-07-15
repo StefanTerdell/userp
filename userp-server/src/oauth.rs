@@ -24,7 +24,7 @@ use self::signup::OAuthSignupCallbackError;
 use chrono::Utc;
 use oauth2::ExtraTokenFields;
 use oauth2::{basic::BasicTokenType, StandardTokenResponse};
-use oauth2::{AuthorizationCode, CsrfToken, RedirectUrl, TokenResponse};
+use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, TokenResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{fmt::Display, sync::Arc};
@@ -186,19 +186,21 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
         provider: Arc<dyn OAuthProvider>,
         oauth_flow: OAuthFlow,
     ) -> (Self, Url) {
-        let (auth_url, csrf_state) = provider.get_authorization_url_and_state(
+        let (auth_url, csrf_state, pkce_verifier) = provider.get_authorization_url_and_state(
             &self.redirect_uri(path, provider.name()),
             provider.scopes(),
         );
 
-        self.cookies
-            .add(OAUTH_DATA_KEY, &json!((csrf_state, oauth_flow)).to_string());
+        self.cookies.add(
+            OAUTH_DATA_KEY,
+            &json!((csrf_state, pkce_verifier.secret(), oauth_flow)).to_string(),
+        );
 
         (self, auth_url)
     }
 
     async fn oauth_callback_inner(
-        &self,
+        &mut self,
         provider_name: String,
         code: AuthorizationCode,
         csrf_token: CsrfToken,
@@ -208,15 +210,19 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
             .oauth
             .providers
             .get(&provider_name)
-            .ok_or(OAuthCallbackError::NoProvider(provider_name.clone()))?;
+            .ok_or(OAuthCallbackError::NoProvider(provider_name.clone()))?
+            .clone();
 
         let oauth_data = self
             .cookies
             .get(OAUTH_DATA_KEY)
             .ok_or(OAuthCallbackError::NoOAuthDataCookie)?;
 
-        let (prev_csrf_token, oauth_flow) =
-            serde_json::from_str::<(CsrfToken, OAuthFlow)>(&oauth_data)?;
+        // The state cookie is single-use.
+        self.cookies.remove(OAUTH_DATA_KEY);
+
+        let (prev_csrf_token, pkce_verifier, oauth_flow) =
+            serde_json::from_str::<(CsrfToken, String, OAuthFlow)>(&oauth_data)?;
 
         if csrf_token.secret() != prev_csrf_token.secret() {
             return Err(OAuthCallbackError::CsrfMismatch);
@@ -227,15 +233,16 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
                 provider.name(),
                 &self.redirect_uri(path, &provider_name),
                 &code,
+                Some(PkceCodeVerifier::new(pkce_verifier)),
             )
             .await?;
 
-        Ok((unmatched_token, oauth_flow, provider.clone()))
+        Ok((unmatched_token, oauth_flow, provider))
     }
 
     #[must_use = "Don't forget to return the auth session as part of the response!"]
     pub async fn oauth_generic_callback(
-        self,
+        mut self,
         provider_name: String,
         code: AuthorizationCode,
         state: CsrfToken,

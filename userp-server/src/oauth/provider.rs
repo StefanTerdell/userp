@@ -7,7 +7,7 @@ pub mod spotify;
 
 use crate::models::oauth::UnmatchedOAuthToken;
 use async_trait::async_trait;
-use oauth2::{AuthorizationCode, CsrfToken, RedirectUrl, RefreshToken, Scope};
+use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope};
 use url::Url;
 use userp_client::models::Allow;
 
@@ -31,13 +31,14 @@ pub trait OAuthProvider: std::fmt::Debug + Send + Sync {
         &self,
         base_redirect_url: &RedirectUrl,
         scopes: &[Scope],
-    ) -> (Url, CsrfToken);
+    ) -> (Url, CsrfToken, PkceCodeVerifier);
 
     async fn exchange_authorization_code(
         &self,
         provider_name: &str,
         redirect_url: &RedirectUrl,
         code: &AuthorizationCode,
+        pkce_verifier: Option<PkceCodeVerifier>,
     ) -> ExchangeResult;
 
     async fn exchange_refresh_token(

@@ -4,7 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use oauth2::{
     reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    RedirectUrl, RefreshToken, Scope, TokenUrl,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenUrl,
 };
 use std::fmt::Display;
 use url::Url;
@@ -118,13 +118,18 @@ impl OAuthProvider for OAuthOidcProvider {
         &self,
         base_redirect_url: &RedirectUrl,
         scopes: &[Scope],
-    ) -> (Url, CsrfToken) {
-        self.client
-            .clone()
-            .set_redirect_uri(base_redirect_url.clone())
+    ) -> (Url, CsrfToken, PkceCodeVerifier) {
+        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+
+        let client = self.client.clone().set_redirect_uri(base_redirect_url.clone());
+
+        let (url, csrf_state) = client
             .authorize_url(CsrfToken::new_random)
             .add_scopes(scopes.to_vec())
-            .url()
+            .set_pkce_challenge(pkce_challenge)
+            .url();
+
+        (url, csrf_state, pkce_verifier)
     }
 
     async fn exchange_authorization_code(
@@ -132,12 +137,17 @@ impl OAuthProvider for OAuthOidcProvider {
         provider_name: &str,
         redirect_url: &RedirectUrl,
         code: &AuthorizationCode,
+        pkce_verifier: Option<PkceCodeVerifier>,
     ) -> ExchangeResult {
-        let res = self
-            .client
-            .clone()
-            .set_redirect_uri(redirect_url.clone())
-            .exchange_code(code.clone())
+        let client = self.client.clone().set_redirect_uri(redirect_url.clone());
+
+        let mut req = client.exchange_code(code.clone());
+
+        if let Some(pkce_verifier) = pkce_verifier {
+            req = req.set_pkce_verifier(pkce_verifier);
+        }
+
+        let res = req
             .request_async(async_http_client)
             .await
             .context("Requesting authorization code exchange")?;

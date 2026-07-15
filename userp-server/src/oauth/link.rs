@@ -117,7 +117,7 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
     }
 
     pub async fn oauth_link_callback(
-        &self,
+        &mut self,
         provider_name: String,
         code: AuthorizationCode,
         state: CsrfToken,

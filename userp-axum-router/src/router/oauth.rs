@@ -71,7 +71,7 @@ where
 }
 
 pub async fn get_user_oauth_refresh<St>(
-    auth: AxumUserp<St>,
+    mut auth: AxumUserp<St>,
     Path(ProviderPath { provider }): Path<ProviderPath>,
     Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
 ) -> Result<impl IntoResponse, St::Error>
@@ -91,7 +91,7 @@ where
         Ok(next) => {
             let fallback = format!("{user_route}?message={} token refreshed!", provider);
             let next = crate::router::safe_next(next, &fallback);
-            Ok(Redirect::to(&next).into_response())
+            Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
             OAuthRefreshCallbackError::Store(err) => Err(err),
@@ -100,7 +100,7 @@ where
                     "{user_route}?error={}",
                     urlencoding::encode(&err.to_string())
                 );
-                Ok(Redirect::to(&next).into_response())
+                Ok((auth, Redirect::to(&next)).into_response())
             }
         },
     }
@@ -257,7 +257,7 @@ where
 }
 
 pub async fn get_user_oauth_link<St>(
-    auth: AxumUserp<St>,
+    mut auth: AxumUserp<St>,
     Path(ProviderPath { provider }): Path<ProviderPath>,
     Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
 ) -> Result<impl IntoResponse, St::Error>
