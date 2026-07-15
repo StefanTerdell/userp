@@ -73,6 +73,7 @@ async fn main() {
                 req_var("GOOGLE_CLIENT_SECRET"),
             )),
     )
+    .expect("valid auth config")
     .with_https_only(false);
 
     let auth_router = auth.router::<MemoryStore, AppState>();

@@ -10,6 +10,16 @@ use crate::{models::Allow, routes::Routes};
 #[cfg(feature = "pages")]
 use std::sync::Arc;
 
+/// The minimum length, in bytes, of the cookie-encryption key. `axum-extra`'s
+/// `Key` panics below this, so we reject short keys up front instead.
+pub const MIN_KEY_LEN: usize = 64;
+
+#[derive(Debug, thiserror::Error)]
+pub enum AutheryConfigError {
+    #[error("The cookie key must be at least {MIN_KEY_LEN} bytes, got {0}")]
+    KeyTooShort(usize),
+}
+
 #[derive(Clone)]
 pub struct AutheryConfig {
     pub key: String,
@@ -36,8 +46,12 @@ impl AutheryConfig {
         #[cfg(feature = "password")] pass: PasswordConfig,
         #[cfg(feature = "email")] email: EmailConfig,
         #[cfg(feature = "oauth")] oauth: OAuthConfig,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AutheryConfigError> {
+        if key.as_bytes().len() < MIN_KEY_LEN {
+            return Err(AutheryConfigError::KeyTooShort(key.as_bytes().len()));
+        }
+
+        Ok(Self {
             key,
             https_only: true,
             allow_signup: Allow::OnSelf,
@@ -51,7 +65,7 @@ impl AutheryConfig {
             oauth,
             #[cfg(feature = "pages")]
             pages: Arc::new(AskamaPages),
-        }
+        })
     }
 
     /// Replace the built-in page renderer with your own [`Pages`]

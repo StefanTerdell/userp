@@ -32,6 +32,7 @@ async fn main() {
     let key = String::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let auth = AutheryConfig::new(key, Routes::default(), PasswordConfig::new())
+        .expect("valid auth config")
         .with_https_only(false)
         .with_allow_signup(Allow::OnEither)
         .with_allow_login(Allow::OnEither);
