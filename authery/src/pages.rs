@@ -1,22 +1,6 @@
 #![cfg_attr(not(feature = "default"), allow(unused))]
 
 use askama::Template;
-#[cfg(feature = "axum")]
-use axum::response::{Html, IntoResponse};
-
-/// Render a template to an axum response, or a 500 with the error if rendering
-/// fails. Askama dropped its built-in axum integration, so we do it here.
-#[cfg(feature = "axum")]
-pub fn render_response<T: Template>(template: T) -> axum::response::Response {
-    match template.render() {
-        Ok(html) => Html(html).into_response(),
-        Err(err) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            err.to_string(),
-        )
-            .into_response(),
-    }
-}
 use std::sync::Arc;
 use crate::models::LoginMethod;
 #[cfg(feature = "email")]
@@ -156,8 +140,10 @@ pub struct UserTemplate<'a> {
 
 #[cfg(feature = "user")]
 impl UserTemplate<'_> {
+    /// Assemble the account page's view-model from the auth context. See
+    /// [`LoginTemplate::with`].
     #[allow(clippy::too_many_arguments)]
-    fn with<'a, S: AutheryStore, C: AutheryCookies>(
+    pub fn with<'a, S: AutheryStore, C: AutheryCookies>(
         auth: &'a CoreAuthery<S, C>,
         user: &'a S::User,
         session: &'a S::LoginSession,
@@ -251,32 +237,6 @@ impl UserTemplate<'_> {
         )
         .render()
     }
-
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "axum")]
-    pub fn into_response_with<S: AutheryStore, C: AutheryCookies>(
-        auth: &CoreAuthery<S, C>,
-        user: &S::User,
-        session: &S::LoginSession,
-        sessions: &[S::LoginSession],
-        message: Option<&str>,
-        error: Option<&str>,
-        #[cfg(feature = "email")] emails: &[S::UserEmail],
-        #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
-    ) -> impl IntoResponse {
-        render_response(Self::with(
-            auth,
-            user,
-            session,
-            sessions,
-            message,
-            error,
-            #[cfg(feature = "email")]
-            emails,
-            #[cfg(feature = "oauth")]
-            oauth_tokens,
-        ))
-    }
 }
 
 pub struct TemplateOAuthInfo<'a> {
@@ -306,7 +266,10 @@ pub struct LoginTemplate<'a> {
 }
 
 impl LoginTemplate<'_> {
-    fn with<'a, S: AutheryStore, C: AutheryCookies>(
+    /// Assemble the login page's view-model from the auth context. Public so
+    /// apps writing their own handlers - or a custom [`Pages`] renderer - can
+    /// reuse the exact data the built-in template sees.
+    pub fn with<'a, S: AutheryStore, C: AutheryCookies>(
         auth: &'a CoreAuthery<S, C>,
         next: Option<&'a str>,
         message: Option<&'a str>,
@@ -363,16 +326,6 @@ impl LoginTemplate<'_> {
     ) -> Result<String, askama::Error> {
         Self::with(auth, next, message, error).render()
     }
-
-    #[cfg(feature = "axum")]
-    pub fn into_response_with<S: AutheryStore, C: AutheryCookies>(
-        auth: &CoreAuthery<S, C>,
-        next: Option<&str>,
-        message: Option<&str>,
-        error: Option<&str>,
-    ) -> impl IntoResponse {
-        render_response(Self::with(auth, next, message, error))
-    }
 }
 
 #[derive(Template)]
@@ -388,7 +341,9 @@ pub struct SignupTemplate<'a> {
 }
 
 impl SignupTemplate<'_> {
-    fn with<'a, S: AutheryStore, C: AutheryCookies>(
+    /// Assemble the signup page's view-model from the auth context. See
+    /// [`LoginTemplate::with`].
+    pub fn with<'a, S: AutheryStore, C: AutheryCookies>(
         auth: &'a CoreAuthery<S, C>,
         next: Option<&'a str>,
         message: Option<&'a str>,
@@ -445,14 +400,57 @@ impl SignupTemplate<'_> {
     ) -> Result<String, askama::Error> {
         Self::with(auth, next, message, error).render()
     }
+}
 
-    #[cfg(feature = "axum")]
-    pub fn response_from<S: AutheryStore, C: AutheryCookies>(
-        auth: &CoreAuthery<S, C>,
-        next: Option<&str>,
-        message: Option<&str>,
-        error: Option<&str>,
-    ) -> impl IntoResponse {
-        render_response(Self::with(auth, next, message, error))
+/// Renders the built-in pages to HTML. Implement this and register it with
+/// [`crate::config::AutheryConfig::with_pages`] to replace the bundled Askama
+/// templates with your own markup while keeping the built-in router and flows.
+///
+/// Each method receives the same view-model the bundled template sees - the
+/// public `*Template` structs, whose fields carry every route and flag the page
+/// needs. Return the rendered HTML as a string.
+pub trait Pages: std::fmt::Debug + Send + Sync {
+    fn render_login(&self, view: &LoginTemplate<'_>) -> String;
+    fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
+    #[cfg(feature = "user")]
+    fn render_user(&self, view: &UserTemplate<'_>) -> String;
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_send_reset_password(&self, view: &SendResetPasswordTemplate<'_>) -> String;
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_reset_password(&self, view: &ResetPasswordTemplate<'_>) -> String;
+}
+
+/// The default [`Pages`] renderer, backed by the bundled Askama templates.
+#[derive(Debug, Clone, Default)]
+pub struct AskamaPages;
+
+/// Render a template to a string, falling back to the error text so a broken
+/// template surfaces the problem rather than an empty page.
+fn render_or_err<T: Template>(template: &T) -> String {
+    template.render().unwrap_or_else(|err| err.to_string())
+}
+
+impl Pages for AskamaPages {
+    fn render_login(&self, view: &LoginTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    fn render_signup(&self, view: &SignupTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "user")]
+    fn render_user(&self, view: &UserTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_send_reset_password(&self, view: &SendResetPasswordTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_reset_password(&self, view: &ResetPasswordTemplate<'_>) -> String {
+        render_or_err(view)
     }
 }

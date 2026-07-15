@@ -1,7 +1,5 @@
 use axum::extract::Query;
-use axum::{
-    response::{IntoResponse, Redirect},
-};
+use axum::response::{Html, IntoResponse, Redirect};
 use serde::Deserialize;
 use crate::pages::{LoginTemplate, SignupTemplate};
 use crate::{axum::AxumAuthery, store::AutheryStore};
@@ -37,13 +35,8 @@ where
     Ok(if auth.logged_in().await? {
         Redirect::to(&auth.routes.pages.post_login).into_response()
     } else {
-        LoginTemplate::into_response_with(
-            &auth,
-            next.as_deref(),
-            message.as_deref(),
-            error.as_deref(),
-        )
-        .into_response()
+        let view = LoginTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
+        Html(auth.pages.render_login(&view)).into_response()
     })
 }
 
@@ -60,10 +53,8 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    Ok(
-        SignupTemplate::response_from(&auth, next.as_deref(), message.as_deref(), error.as_deref())
-            .into_response(),
-    )
+    let view = SignupTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
+    Ok(Html(auth.pages.render_signup(&view)).into_response())
 }
 
 #[cfg(feature = "user")]
@@ -87,7 +78,7 @@ where
         #[cfg(feature = "oauth")]
         let oauth_tokens = auth.store.get_user_oauth_tokens(&user.get_id()).await?;
 
-        UserTemplate::into_response_with(
+        let view = UserTemplate::with(
             &auth,
             &user,
             &session,
@@ -98,8 +89,8 @@ where
             &emails,
             #[cfg(feature = "oauth")]
             &oauth_tokens,
-        )
-        .into_response()
+        );
+        Html(auth.pages.render_user(&view)).into_response()
     } else {
         Redirect::to(&format!("{login_route}?next=%2Fuser")).into_response()
     })
@@ -114,15 +105,16 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::{render_response, SendResetPasswordTemplate};
+    use crate::pages::SendResetPasswordTemplate;
 
-    Ok(render_response(SendResetPasswordTemplate {
+    let view = SendResetPasswordTemplate {
         sent: query.sent.is_some_and(|sent| sent),
         address: query.address.as_deref(),
         error: query.error.as_deref(),
         message: query.message.as_deref(),
         send_reset_password_action_route: &auth.routes.email.password_send_reset,
-    }))
+    };
+    Ok(Html(auth.pages.render_send_reset_password(&view)))
 }
 
 #[cfg(all(feature = "email", feature = "password"))]
@@ -132,12 +124,13 @@ where
     St::Error: IntoResponse,
 {
     use axum::http::StatusCode;
-    use crate::pages::{render_response, ResetPasswordTemplate};
+    use crate::pages::ResetPasswordTemplate;
 
     if auth.is_reset_session().await? {
-        Ok(render_response(ResetPasswordTemplate {
+        let view = ResetPasswordTemplate {
             reset_password_action_route: &auth.routes.email.password_reset,
-        }))
+        };
+        Ok(Html(auth.pages.render_reset_password(&view)).into_response())
     } else {
         Ok(StatusCode::UNAUTHORIZED.into_response())
     }

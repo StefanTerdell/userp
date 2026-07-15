@@ -2,9 +2,13 @@
 use crate::email::EmailConfig;
 #[cfg(feature = "oauth")]
 use crate::oauth::OAuthConfig;
+#[cfg(feature = "pages")]
+use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
 use crate::{models::Allow, routes::Routes};
+#[cfg(feature = "pages")]
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AutheryConfig {
@@ -19,6 +23,10 @@ pub struct AutheryConfig {
     pub email: EmailConfig,
     #[cfg(feature = "oauth")]
     pub oauth: OAuthConfig,
+    /// The renderer for the built-in pages. Defaults to the bundled Askama
+    /// templates; override with [`AutheryConfig::with_pages`].
+    #[cfg(feature = "pages")]
+    pub pages: Arc<dyn Pages>,
 }
 
 impl AutheryConfig {
@@ -41,7 +49,17 @@ impl AutheryConfig {
             email,
             #[cfg(feature = "oauth")]
             oauth,
+            #[cfg(feature = "pages")]
+            pages: Arc::new(AskamaPages),
         }
+    }
+
+    /// Replace the built-in page renderer with your own [`Pages`]
+    /// implementation.
+    #[cfg(feature = "pages")]
+    pub fn with_pages(mut self, pages: impl Pages + 'static) -> Self {
+        self.pages = Arc::new(pages);
+        self
     }
 
     pub fn with_https_only(mut self, https_only: bool) -> Self {

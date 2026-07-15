@@ -48,6 +48,8 @@ where
             pass: config.pass,
             #[cfg(feature = "oauth")]
             oauth: config.oauth,
+            #[cfg(feature = "pages")]
+            pages: config.pages,
         })
     }
 }
