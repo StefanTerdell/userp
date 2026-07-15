@@ -124,10 +124,18 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Ok(None);
         };
 
-        Ok(self
-            .store
-            .get_session(&session_id)
-            .await?
+        let Some(session) = self.store.get_session(&session_id).await? else {
+            return Ok(None);
+        };
+
+        if session.is_expired() {
+            self.store
+                .delete_session(&session.get_user_id(), &session.get_id())
+                .await?;
+            return Ok(None);
+        }
+
+        Ok(Some(session)
             .filter(|s| matches!(s.get_method(), LoginMethod::PasswordReset { address: _ })))
     }
 

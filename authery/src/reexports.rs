@@ -1,6 +1,7 @@
 //! Includes all external dependencies used in the crate.
 //! Something missing? This is a bug. Please file an issue in the project repo.
 
+pub use chrono;
 pub use serde;
 pub use thiserror;
 pub use uuid;
@@ -9,8 +10,6 @@ pub use uuid;
 pub use anyhow;
 #[cfg(feature = "oauth")]
 pub use base64;
-#[cfg(any(feature = "email", feature = "oauth"))]
-pub use chrono;
 #[cfg(feature = "email")]
 pub use lettre;
 #[cfg(feature = "oauth")]

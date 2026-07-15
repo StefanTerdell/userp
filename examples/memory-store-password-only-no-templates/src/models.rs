@@ -1,5 +1,11 @@
 use serde::Deserialize;
-use authery::{prelude::*, reexports::uuid::Uuid};
+use authery::{
+    prelude::*,
+    reexports::{
+        chrono::{DateTime, Utc},
+        uuid::Uuid,
+    },
+};
 
 #[derive(Deserialize)]
 pub struct SigninForm {
@@ -31,6 +37,7 @@ pub struct MyLoginSession {
     pub id: Uuid,
     pub user_id: Uuid,
     pub method: LoginMethod,
+    pub expires: DateTime<Utc>,
 }
 
 impl LoginSession for MyLoginSession {
@@ -47,5 +54,9 @@ impl LoginSession for MyLoginSession {
 
     fn get_method(&self) -> LoginMethod {
         self.method.clone()
+    }
+
+    fn is_expired(&self) -> bool {
+        self.expires < Utc::now()
     }
 }

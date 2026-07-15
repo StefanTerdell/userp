@@ -74,11 +74,13 @@ impl AutheryStore for MemoryStore {
         &self,
         user_id: &Uuid,
         method: LoginMethod,
+        expires: DateTime<Utc>,
     ) -> Result<Self::LoginSession, Self::Error> {
         let session = MyLoginSession {
             id: Uuid::new_v4(),
             user_id: *user_id,
             method,
+            expires,
         };
 
         let mut sessions = self.sessions.write().await;

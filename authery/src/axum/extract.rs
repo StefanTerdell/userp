@@ -52,6 +52,7 @@ where
         Ok(CoreAuthery {
             allow_signup: config.allow_signup,
             allow_login: config.allow_login,
+            session_lifetime: config.session_lifetime,
             routes: config.routes,
             cookies,
             store,

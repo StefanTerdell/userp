@@ -3,7 +3,6 @@ use crate::models::email::{EmailChallenge, UserEmail};
 #[cfg(feature = "oauth")]
 use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
 use crate::models::{Id, LoginMethod, LoginSession, User};
-#[cfg(feature = "email")]
 use chrono::{DateTime, Utc};
 use std::future::Future;
 
@@ -34,6 +33,7 @@ pub trait AutheryStore: Send + Sync {
         &self,
         user_id: &Self::UserId,
         method: LoginMethod,
+        expires: DateTime<Utc>,
     ) -> impl Future<Output = Result<Self::LoginSession, Self::Error>> + Send;
     fn get_session(
         &self,

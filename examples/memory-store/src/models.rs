@@ -58,6 +58,7 @@ pub struct MyLoginSession {
     pub id: Uuid,
     pub user_id: Uuid,
     pub method: LoginMethod,
+    pub expires: DateTime<Utc>,
 }
 
 impl LoginSession for MyLoginSession {
@@ -74,6 +75,10 @@ impl LoginSession for MyLoginSession {
 
     fn get_method(&self) -> LoginMethod {
         self.method.clone()
+    }
+
+    fn is_expired(&self) -> bool {
+        self.expires < Utc::now()
     }
 }
 

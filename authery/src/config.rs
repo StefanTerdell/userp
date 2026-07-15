@@ -7,6 +7,7 @@ use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
 use crate::{models::Allow, routes::Routes};
+use chrono::Duration;
 #[cfg(feature = "pages")]
 use std::sync::Arc;
 
@@ -26,6 +27,9 @@ pub struct AutheryConfig {
     pub allow_signup: Allow,
     pub allow_login: Allow,
     pub https_only: bool,
+    /// Absolute lifetime of a login session. Sessions older than this are
+    /// treated as logged-out and evicted. Defaults to 30 days.
+    pub session_lifetime: Duration,
     pub routes: Routes<String>,
     #[cfg(feature = "password")]
     pub pass: PasswordConfig,
@@ -47,8 +51,8 @@ impl AutheryConfig {
         #[cfg(feature = "email")] email: EmailConfig,
         #[cfg(feature = "oauth")] oauth: OAuthConfig,
     ) -> Result<Self, AutheryConfigError> {
-        if key.as_bytes().len() < MIN_KEY_LEN {
-            return Err(AutheryConfigError::KeyTooShort(key.as_bytes().len()));
+        if key.len() < MIN_KEY_LEN {
+            return Err(AutheryConfigError::KeyTooShort(key.len()));
         }
 
         Ok(Self {
@@ -56,6 +60,7 @@ impl AutheryConfig {
             https_only: true,
             allow_signup: Allow::OnSelf,
             allow_login: Allow::OnSelf,
+            session_lifetime: Duration::days(30),
             routes: routes.into(),
             #[cfg(feature = "password")]
             pass,
@@ -78,6 +83,12 @@ impl AutheryConfig {
 
     pub fn with_https_only(mut self, https_only: bool) -> Self {
         self.https_only = https_only;
+        self
+    }
+
+    /// Set the absolute session lifetime.
+    pub fn with_session_lifetime(mut self, session_lifetime: Duration) -> Self {
+        self.session_lifetime = session_lifetime;
         self
     }
 

@@ -91,6 +91,10 @@ pub trait LoginSession: Send + Sync + Sized {
     fn get_id(&self) -> Self::Id;
     fn get_user_id(&self) -> Self::UserId;
     fn get_method(&self) -> LoginMethod;
+
+    /// Whether this session has passed its expiry. The core treats an expired
+    /// session as logged-out and evicts it from the store on next use.
+    fn is_expired(&self) -> bool;
 }
 
 pub trait User: Send + Sync + Sized {

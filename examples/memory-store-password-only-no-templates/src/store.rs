@@ -1,7 +1,13 @@
 use crate::models::{MyLoginSession, MyUser};
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 use tokio::sync::RwLock;
-use authery::{prelude::*, reexports::uuid::Uuid};
+use authery::{
+    prelude::*,
+    reexports::{
+        chrono::{DateTime, Utc},
+        uuid::Uuid,
+    },
+};
 
 #[derive(Clone, Default, Debug)]
 pub struct MemoryStore {
@@ -40,11 +46,13 @@ impl AutheryStore for MemoryStore {
         &self,
         user_id: &Uuid,
         method: LoginMethod,
+        expires: DateTime<Utc>,
     ) -> Result<Self::LoginSession, Self::Error> {
         let session = MyLoginSession {
             id: Uuid::new_v4(),
             user_id: *user_id,
             method,
+            expires,
         };
 
         let mut sessions = self.sessions.write().await;

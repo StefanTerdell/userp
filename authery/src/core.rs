@@ -13,12 +13,14 @@ use crate::{
     models::{Allow, LoginMethod},
     routes::Routes,
 };
+use chrono::{Duration, Utc};
 
 #[derive(Debug, Clone)]
 pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub routes: Routes<String>,
     pub allow_signup: Allow,
     pub allow_login: Allow,
+    pub session_lifetime: Duration,
     pub cookies: C,
     pub store: S,
     #[cfg(feature = "password")]
@@ -37,7 +39,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         method: LoginMethod,
         user_id: &S::UserId,
     ) -> Result<Self, S::Error> {
-        let session = self.store.create_session(user_id, method).await?;
+        let expires = Utc::now() + self.session_lifetime;
+        let session = self.store.create_session(user_id, method, expires).await?;
 
         self.cookies
             .add(SESSION_ID_KEY, &session.get_id().to_string());
@@ -94,11 +97,19 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Ok(None);
         };
 
-        Ok(self
-            .store
-            .get_session(&session_id)
-            .await?
-            .filter(Self::is_login_session))
+        let Some(session) = self.store.get_session(&session_id).await? else {
+            return Ok(None);
+        };
+
+        // An expired session counts as logged-out; evict it from the store.
+        if session.is_expired() {
+            self.store
+                .delete_session(&session.get_user_id(), &session.get_id())
+                .await?;
+            return Ok(None);
+        }
+
+        Ok(Some(session).filter(Self::is_login_session))
     }
 
     pub async fn user_session(&self) -> Result<Option<(S::User, S::LoginSession)>, S::Error> {
