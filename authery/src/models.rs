@@ -7,6 +7,29 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use uuid::Uuid;
 
+/// An entity ID. IDs must roundtrip through their string representation,
+/// which is used for cookies and other wire formats.
+pub trait Id:
+    Clone
+    + std::fmt::Debug
+    + Display
+    + std::str::FromStr
+    + PartialEq
+    + Send
+    + Sync
+    + 'static
+{
+    /// Generate a new, unique ID. Must be unguessable (i.e. backed by a CSPRNG),
+    /// since IDs generated for sessions act as bearer tokens.
+    fn new_random() -> Self;
+}
+
+impl Id for Uuid {
+    fn new_random() -> Self {
+        Uuid::new_v4()
+    }
+}
+
 /// Used to control if the method (like email, password, oauth) or specific oauth provider
 /// can be used for either logging in, signing up, both, or none
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
@@ -49,8 +72,9 @@ pub enum LoginMethod {
     #[cfg(feature = "oauth")]
     /// The login session was created using the Oauth method
     OAuth {
-        /// The specific OAuth token ID associated with the session
-        token_id: Uuid,
+        /// The specific OAuth token ID associated with the session,
+        /// in its string representation
+        token_id: String,
     },
 }
 
@@ -61,13 +85,18 @@ impl Display for LoginMethod {
 }
 
 pub trait LoginSession: Send + Sync + Sized {
-    fn get_id(&self) -> Uuid;
-    fn get_user_id(&self) -> Uuid;
+    type Id: Id;
+    type UserId: Id;
+
+    fn get_id(&self) -> Self::Id;
+    fn get_user_id(&self) -> Self::UserId;
     fn get_method(&self) -> LoginMethod;
 }
 
 pub trait User: Send + Sync + Sized {
-    fn get_id(&self) -> Uuid;
+    type Id: Id;
+
+    fn get_id(&self) -> Self::Id;
     #[cfg(feature = "password")]
     fn get_password_hash(&self) -> Option<String>;
 }

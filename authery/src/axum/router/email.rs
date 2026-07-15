@@ -283,9 +283,9 @@ where
     use crate::models::{LoginSession, User};
 
     if let Some((user, session)) = auth.reset_user_session().await? {
-        let new_password_hash = auth.pass.hasher.genereate_hash(new_password).await;
+        let new_password_hash = auth.pass.hasher.generate_hash(new_password).await;
         auth.store
-            .set_user_password_hash(user.get_id(), new_password_hash, session.get_id())
+            .set_user_password_hash(&user.get_id(), new_password_hash, &session.get_id())
             .await?;
 
         let login_route = auth.routes.pages.login.clone();

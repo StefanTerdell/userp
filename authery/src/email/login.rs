@@ -115,7 +115,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 LoginMethod::Email {
                     address: challenge.get_address().to_owned(),
                 },
-                user.get_id(),
+                &user.get_id(),
             )
             .await?,
             challenge.get_next().clone(),

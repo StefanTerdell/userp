@@ -28,6 +28,8 @@ pub enum OAuthLinkCallbackError<StoreError: std::error::Error> {
     NotAllowed,
     #[error("Expected a login flow, got {0}")]
     UnexpectedFlow(OAuthFlow),
+    #[error("Misformed user id in flow data")]
+    MisformedId,
     #[error("OAuth account already in use")]
     UserConflict,
     #[error(transparent)]
@@ -78,7 +80,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 provider,
                 OAuthFlow::Link {
                     next,
-                    user_id: user.get_id(),
+                    user_id: user.get_id().to_string(),
                 },
             )
             .await)
@@ -92,6 +94,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     ) -> Result<Option<String>, OAuthLinkCallbackError<S::Error>> {
         let OAuthFlow::Link { user_id, next } = flow else {
             return Err(OAuthLinkCallbackError::UnexpectedFlow(flow));
+        };
+
+        let Ok(user_id) = user_id.parse::<S::UserId>() else {
+            return Err(OAuthLinkCallbackError::MisformedId);
         };
 
         if provider.allow_linking().is_some_and(|l| !l) {
@@ -108,7 +114,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             Some(_) => Err(OAuthLinkCallbackError::UserConflict),
             None => Ok(self
                 .store
-                .create_user_token_from_unmatched_token(user_id, unmatched_token)
+                .create_user_token_from_unmatched_token(&user_id, unmatched_token)
                 .await
                 .map_err(OAuthLinkCallbackError::Store)?),
         }?;

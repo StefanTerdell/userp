@@ -14,6 +14,8 @@ pub struct MyUser {
 }
 
 impl User for MyUser {
+    type Id = Uuid;
+
     fn get_password_hash(&self) -> Option<String> {
         self.password_hash.clone()
     }
@@ -32,6 +34,8 @@ pub struct MyUserEmail {
 }
 
 impl UserEmail for MyUserEmail {
+    type UserId = Uuid;
+
     fn get_user_id(&self) -> Uuid {
         self.user_id
     }
@@ -57,6 +61,9 @@ pub struct MyLoginSession {
 }
 
 impl LoginSession for MyLoginSession {
+    type Id = Uuid;
+    type UserId = Uuid;
+
     fn get_id(&self) -> Uuid {
         self.id
     }
@@ -110,6 +117,9 @@ pub struct MyOAuthToken {
 }
 
 impl OAuthToken for MyOAuthToken {
+    type Id = Uuid;
+    type UserId = Uuid;
+
     fn get_id(&self) -> Uuid {
         self.id
     }

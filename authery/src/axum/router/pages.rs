@@ -81,11 +81,11 @@ where
     let login_route = auth.routes.pages.login.clone();
 
     Ok(if let Some((user, session)) = auth.user_session().await? {
-        let sessions = auth.store.get_user_sessions(user.get_id()).await?;
+        let sessions = auth.store.get_user_sessions(&user.get_id()).await?;
         #[cfg(feature = "email")]
-        let emails = auth.store.get_user_emails(user.get_id()).await?;
+        let emails = auth.store.get_user_emails(&user.get_id()).await?;
         #[cfg(feature = "oauth")]
-        let oauth_tokens = auth.store.get_user_oauth_tokens(user.get_id()).await?;
+        let oauth_tokens = auth.store.get_user_oauth_tokens(&user.get_id()).await?;
 
         UserTemplate::into_response_with(
             &auth,

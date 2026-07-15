@@ -135,7 +135,6 @@ name = "authery"
 version = "0.1.0"
 dependencies = [
  "askama_axum",
- "async-trait",
  "axum",
  "axum-extra",
  "password-auth",

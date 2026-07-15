@@ -1,6 +1,5 @@
 use crate::models::{MyEmailChallenge, MyLoginSession, MyOAuthToken, MyUser, MyUserEmail};
 use axum::{
-    async_trait,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -39,7 +38,6 @@ impl IntoResponse for MemoryStoreError {
     }
 }
 
-#[async_trait]
 impl AutheryStore for MemoryStore {
     type User = MyUser;
     type UserEmail = MyUserEmail;
@@ -47,21 +45,24 @@ impl AutheryStore for MemoryStore {
     type EmailChallenge = MyEmailChallenge;
     type OAuthToken = MyOAuthToken;
     type Error = MemoryStoreError;
+    type UserId = Uuid;
+    type SessionId = Uuid;
+    type OAuthTokenId = Uuid;
 
     async fn get_session(
         &self,
-        session_id: Uuid,
+        session_id: &Uuid,
     ) -> Result<Option<Self::LoginSession>, Self::Error> {
         let sessions = self.sessions.read().await;
 
-        Ok(sessions.get(&session_id).cloned())
+        Ok(sessions.get(session_id).cloned())
     }
 
-    async fn delete_session(&self, user_id: Uuid, session_id: Uuid) -> Result<(), Self::Error> {
+    async fn delete_session(&self, user_id: &Uuid, session_id: &Uuid) -> Result<(), Self::Error> {
         let mut sessions = self.sessions.write().await;
 
-        match sessions.remove(&session_id) {
-            Some(s) if s.user_id != user_id => {
+        match sessions.remove(session_id) {
+            Some(s) if s.user_id != *user_id => {
                 sessions.insert(s.id, s);
                 Err(MemoryStoreError::WrongUserId)
             }
@@ -71,12 +72,12 @@ impl AutheryStore for MemoryStore {
 
     async fn create_session(
         &self,
-        user_id: Uuid,
+        user_id: &Uuid,
         method: LoginMethod,
     ) -> Result<Self::LoginSession, Self::Error> {
         let session = MyLoginSession {
             id: Uuid::new_v4(),
-            user_id,
+            user_id: *user_id,
             method,
         };
 
@@ -87,10 +88,10 @@ impl AutheryStore for MemoryStore {
         Ok(session)
     }
 
-    async fn get_user(&self, user_id: Uuid) -> Result<Option<MyUser>, Self::Error> {
+    async fn get_user(&self, user_id: &Uuid) -> Result<Option<MyUser>, Self::Error> {
         let users = self.users.read().await;
 
-        Ok(users.get(&user_id).cloned())
+        Ok(users.get(user_id).cloned())
     }
 
     async fn email_set_verified(&self, address: &str) -> Result<(), Self::Error> {
@@ -140,40 +141,40 @@ impl AutheryStore for MemoryStore {
         Ok(challenge)
     }
 
-    async fn get_user_emails(&self, user_id: Uuid) -> Result<Vec<MyUserEmail>, Self::Error> {
+    async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<MyUserEmail>, Self::Error> {
         let users = self.users.read().await;
 
         Ok(users
-            .get(&user_id)
+            .get(user_id)
             .map(|u| u.emails.clone())
             .unwrap_or_default())
     }
 
-    async fn get_user_sessions(&self, user_id: Uuid) -> Result<Vec<MyLoginSession>, Self::Error> {
+    async fn get_user_sessions(&self, user_id: &Uuid) -> Result<Vec<MyLoginSession>, Self::Error> {
         let sessions = self.sessions.read().await;
 
         Ok(sessions
             .values()
-            .filter(|s| s.user_id == user_id)
+            .filter(|s| s.user_id == *user_id)
             .cloned()
             .collect())
     }
 
-    async fn get_user_oauth_tokens(&self, user_id: Uuid) -> Result<Vec<MyOAuthToken>, Self::Error> {
+    async fn get_user_oauth_tokens(&self, user_id: &Uuid) -> Result<Vec<MyOAuthToken>, Self::Error> {
         let tokens = self.oauth_tokens.read().await;
 
         Ok(tokens
             .values()
-            .filter(|s| s.user_id == user_id)
+            .filter(|s| s.user_id == *user_id)
             .cloned()
             .collect())
     }
 
-    async fn delete_oauth_token(&self, user_id: Uuid, token_id: Uuid) -> Result<(), Self::Error> {
+    async fn delete_oauth_token(&self, user_id: &Uuid, token_id: &Uuid) -> Result<(), Self::Error> {
         let mut tokens = self.oauth_tokens.write().await;
 
-        match tokens.remove(&token_id) {
-            Some(t) if t.user_id != user_id => {
+        match tokens.remove(token_id) {
+            Some(t) if t.user_id != *user_id => {
                 tokens.insert(t.id, t);
                 Err(MemoryStoreError::WrongUserId)
             }
@@ -181,28 +182,28 @@ impl AutheryStore for MemoryStore {
         }
     }
 
-    async fn delete_user(&self, id: Uuid) -> Result<(), Self::Error> {
+    async fn delete_user(&self, id: &Uuid) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
         let mut sessions = self.sessions.write().await;
 
-        users.remove(&id);
-        sessions.retain(|_, session| session.user_id != id);
+        users.remove(id);
+        sessions.retain(|_, session| session.user_id != *id);
         Ok(())
     }
 
     async fn clear_user_password_hash(
         &self,
-        user_id: Uuid,
-        session_id: Uuid,
+        user_id: &Uuid,
+        session_id: &Uuid,
     ) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
-        if let Some(user) = users.get_mut(&user_id) {
+        if let Some(user) = users.get_mut(user_id) {
             let mut sessions = self.sessions.write().await;
             sessions.retain(|_, session| {
-                session.user_id != user_id
+                session.user_id != *user_id
                     || session.method != LoginMethod::Password
-                    || session.id == session_id
+                    || session.id == *session_id
             });
 
             user.password_hash = None
@@ -212,18 +213,18 @@ impl AutheryStore for MemoryStore {
 
     async fn set_user_password_hash(
         &self,
-        user_id: Uuid,
+        user_id: &Uuid,
         password_hash: String,
-        session_id: Uuid,
+        session_id: &Uuid,
     ) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
-        if let Some(user) = users.get_mut(&user_id) {
+        if let Some(user) = users.get_mut(user_id) {
             let mut sessions = self.sessions.write().await;
             sessions.retain(|_, session| {
-                session.user_id != user_id
+                session.user_id != *user_id
                     || session.method != LoginMethod::Password
-                    || session.id == session_id
+                    || session.id == *session_id
             });
 
             user.password_hash = Some(password_hash)
@@ -233,13 +234,13 @@ impl AutheryStore for MemoryStore {
 
     async fn set_user_email_allow_link_login(
         &self,
-        user_id: Uuid,
+        user_id: &Uuid,
         address: String,
         allow_login: bool,
     ) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
-        users.get_mut(&user_id).map(|u| {
+        users.get_mut(user_id).map(|u| {
             u.emails
                 .iter_mut()
                 .find(|e| e.email == address)
@@ -248,21 +249,21 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    async fn add_user_email(&self, user_id: Uuid, address: String) -> Result<(), Self::Error> {
+    async fn add_user_email(&self, user_id: &Uuid, address: String) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
         if users
             .values()
-            .any(|u| u.id != user_id && u.emails.iter().any(|e| e.email == address))
+            .any(|u| u.id != *user_id && u.emails.iter().any(|e| e.email == address))
         {
             return Err(MemoryStoreError::AddressInUse(address));
         }
 
-        let emails = &mut users.get_mut(&user_id).expect("User not found").emails;
+        let emails = &mut users.get_mut(user_id).expect("User not found").emails;
 
         if !emails.iter().any(|e| e.email == address) {
             emails.push(MyUserEmail {
-                user_id,
+                user_id: *user_id,
                 email: address,
                 verified: false,
                 allow_link_login: false,
@@ -272,11 +273,11 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    async fn delete_user_email(&self, user_id: Uuid, address: String) -> Result<(), Self::Error> {
+    async fn delete_user_email(&self, user_id: &Uuid, address: String) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
         users
-            .get_mut(&user_id)
+            .get_mut(user_id)
             .expect("User not found")
             .emails
             .retain(|e| e.email != address);
@@ -377,13 +378,13 @@ impl AutheryStore for MemoryStore {
 
     async fn update_token_by_unmatched_token(
         &self,
-        token_id: Uuid,
+        token_id: &Uuid,
         unmatched_token: UnmatchedOAuthToken,
     ) -> Result<Self::OAuthToken, Self::Error> {
         let mut tokens = self.oauth_tokens.write().await;
 
         let prev = tokens
-            .get_mut(&token_id)
+            .get_mut(token_id)
             .ok_or(MemoryStoreError::TokenNotFound(token_id.to_string()))?;
 
         prev.provider_name = unmatched_token.provider_name;
@@ -398,11 +399,11 @@ impl AutheryStore for MemoryStore {
 
     async fn oauth_get_token_by_id(
         &self,
-        token_id: Uuid,
+        token_id: &Uuid,
     ) -> Result<Option<Self::OAuthToken>, Self::Error> {
         let tokens = self.oauth_tokens.read().await;
 
-        Ok(tokens.get(&token_id).cloned())
+        Ok(tokens.get(token_id).cloned())
     }
 
     async fn get_token_by_unmatched_token(
@@ -422,7 +423,7 @@ impl AutheryStore for MemoryStore {
 
     async fn create_user_token_from_unmatched_token(
         &self,
-        user_id: Uuid,
+        user_id: &Uuid,
         unmatched_token: UnmatchedOAuthToken,
     ) -> Result<Self::OAuthToken, Self::Error> {
         let mut tokens = self.oauth_tokens.write().await;
@@ -430,7 +431,7 @@ impl AutheryStore for MemoryStore {
         if let Some(address) = unmatched_token.provider_user_raw["email"].as_str() {
             let mut users = self.users.write().await;
 
-            if let Some(u) = users.get_mut(&user_id) {
+            if let Some(u) = users.get_mut(user_id) {
                 u.emails.push(Self::UserEmail {
                     user_id: u.id,
                     email: address.to_string(),
@@ -442,7 +443,7 @@ impl AutheryStore for MemoryStore {
 
         let token = Self::OAuthToken {
             id: Uuid::new_v4(),
-            user_id,
+            user_id: *user_id,
             provider_name: unmatched_token.provider_name,
             provider_user_id: unmatched_token.provider_user_id,
             access_token: unmatched_token.access_token,

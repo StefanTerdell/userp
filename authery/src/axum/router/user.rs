@@ -10,11 +10,11 @@ use crate::{
 
 #[cfg(feature = "email")]
 use crate::models::email::UserEmail;
-use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct IdAccountForm {
-    pub id: Uuid,
+    /// An entity ID in its string representation
+    pub id: String,
 }
 
 #[derive(Deserialize)]
@@ -35,7 +35,7 @@ where
     Ok(if let Some(user) = auth.user().await? {
         let signup_route = auth.routes.pages.signup.clone();
 
-        auth.store.delete_user(user.get_id()).await?;
+        auth.store.delete_user(&user.get_id()).await?;
 
         (auth.log_out().await?, Redirect::to(&signup_route)).into_response()
     } else {
@@ -65,10 +65,10 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    let new_password_hash = auth.pass.hasher.genereate_hash(new_password).await;
+    let new_password_hash = auth.pass.hasher.generate_hash(new_password).await;
 
     auth.store
-        .set_user_password_hash(user.get_id(), new_password_hash, session.get_id())
+        .set_user_password_hash(&user.get_id(), new_password_hash, &session.get_id())
         .await?;
 
     let user_route = auth.routes.pages.user.clone();
@@ -101,7 +101,7 @@ where
     };
 
     auth.store
-        .clear_user_password_hash(user.get_id(), session.get_id())
+        .clear_user_password_hash(&user.get_id(), &session.get_id())
         .await?;
 
     let user_route = auth.routes.pages.user.clone();
@@ -126,7 +126,11 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    auth.store.delete_oauth_token(user.get_id(), id).await?;
+    let Ok(id) = id.parse::<St::OAuthTokenId>() else {
+        return Ok(StatusCode::BAD_REQUEST.into_response());
+    };
+
+    auth.store.delete_oauth_token(&user.get_id(), &id).await?;
 
     let user_route = auth.routes.pages.user;
 
@@ -146,7 +150,7 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    auth.store.add_user_email(user.get_id(), email).await?;
+    auth.store.add_user_email(&user.get_id(), email).await?;
 
     let user_route = auth.routes.pages.user;
 
@@ -166,7 +170,7 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    auth.store.delete_user_email(user.get_id(), email).await?;
+    auth.store.delete_user_email(&user.get_id(), email).await?;
 
     let user_route = auth.routes.pages.user;
 
@@ -192,7 +196,7 @@ where
     // owner of an unverified address could be logged into this account.
     let verified = auth
         .store
-        .get_user_emails(user.get_id())
+        .get_user_emails(&user.get_id())
         .await?
         .iter()
         .any(|e| e.get_address() == email && e.get_verified());
@@ -206,7 +210,7 @@ where
     }
 
     auth.store
-        .set_user_email_allow_link_login(user.get_id(), email.clone(), true)
+        .set_user_email_allow_link_login(&user.get_id(), email.clone(), true)
         .await?;
 
     let user_route = auth.routes.pages.user;
@@ -232,7 +236,7 @@ where
     };
 
     auth.store
-        .set_user_email_allow_link_login(user.get_id(), email.clone(), false)
+        .set_user_email_allow_link_login(&user.get_id(), email.clone(), false)
         .await?;
 
     let user_route = auth.routes.pages.user;
@@ -256,7 +260,11 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    auth.store.delete_session(user.get_id(), id).await?;
+    let Ok(id) = id.parse::<St::SessionId>() else {
+        return Ok(StatusCode::BAD_REQUEST.into_response());
+    };
+
+    auth.store.delete_session(&user.get_id(), &id).await?;
 
     #[cfg(feature = "pages")]
     let user_route = auth.routes.pages.user;

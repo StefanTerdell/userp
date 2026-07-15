@@ -127,9 +127,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         Ok((
             self.log_in(
                 LoginMethod::OAuth {
-                    token_id: token.get_id(),
+                    token_id: token.get_id().to_string(),
                 },
-                user.get_id(),
+                &user.get_id(),
             )
             .await
             .map_err(OAuthSignupCallbackError::Store)?,

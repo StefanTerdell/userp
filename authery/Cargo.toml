@@ -12,7 +12,6 @@ homepage = "https://github.com/StefanTerdell/userp"
 serde = { version = "1.0.210", features = ["derive"] }
 thiserror = "1.0.64"
 uuid = { version = "1.10.0", features = ["serde", "v4"] }
-async-trait = { version = "0.1.83" }
 
 # email
 chrono = { version = "0.4.38", optional = true, features = ["serde"] }

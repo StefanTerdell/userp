@@ -11,6 +11,8 @@ pub enum OAuthRefreshCallbackError<StoreError: std::error::Error> {
     OAuthCallbackError(#[from] OAuthCallbackError),
     #[error("Expected a login flow, got {0}")]
     UnexpectedFlow(OAuthFlow),
+    #[error("Misformed token id in flow data")]
+    MisformedId,
     #[error("Previous token not found")]
     TokenNotFound,
     #[error(transparent)]
@@ -18,13 +20,15 @@ pub enum OAuthRefreshCallbackError<StoreError: std::error::Error> {
 }
 
 #[derive(Debug, Error)]
-pub enum OAuthRefreshInitError {
+pub enum OAuthRefreshInitError<StoreError: std::error::Error> {
     #[error("Refresh not allowed")]
     NotAllowed,
     #[error("No provider found with name: {0}")]
     ProviderNotFound(String),
     #[error(transparent)]
     ExchangeError(#[from] anyhow::Error),
+    #[error(transparent)]
+    Store(StoreError),
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
@@ -32,7 +36,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self,
         token: S::OAuthToken,
         next: Option<String>,
-    ) -> Result<(Self, RefreshInitResult), OAuthRefreshInitError> {
+    ) -> Result<(Self, RefreshInitResult), OAuthRefreshInitError<S::Error>> {
         let provider = self
             .oauth
             .providers
@@ -58,10 +62,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 )
                 .await?;
 
-            let _ = self
-                .store
-                .update_token_by_unmatched_token(token.get_id(), res)
-                .await;
+            self.store
+                .update_token_by_unmatched_token(&token.get_id(), res)
+                .await
+                .map_err(OAuthRefreshInitError::Store)?;
 
             Ok((self, RefreshInitResult::Ok))
         } else {
@@ -76,7 +80,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                     path,
                     provider,
                     OAuthFlow::Refresh {
-                        token_id: token.get_id(),
+                        token_id: token.get_id().to_string(),
                         next,
                     },
                 )
@@ -95,9 +99,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthRefreshCallbackError::UnexpectedFlow(flow));
         };
 
+        let Ok(token_id) = token_id.parse::<S::OAuthTokenId>() else {
+            return Err(OAuthRefreshCallbackError::MisformedId);
+        };
+
         let Some(old_token) = self
             .store
-            .oauth_get_token_by_id(token_id)
+            .oauth_get_token_by_id(&token_id)
             .await
             .map_err(OAuthRefreshCallbackError::Store)?
         else {
@@ -105,7 +113,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         self.store
-            .update_token_by_unmatched_token(old_token.get_id(), unmatched_token)
+            .update_token_by_unmatched_token(&old_token.get_id(), unmatched_token)
             .await
             .map_err(OAuthRefreshCallbackError::Store)?;
 

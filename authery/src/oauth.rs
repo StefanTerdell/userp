@@ -30,7 +30,6 @@ use serde_json::json;
 use std::{fmt::Display, sync::Arc};
 use thiserror::Error;
 use url::Url;
-use uuid::Uuid;
 
 const OAUTH_DATA_KEY: &str = "authery-oauth-state";
 
@@ -48,11 +47,13 @@ pub enum OAuthFlow {
         next: Option<String>,
     },
     Link {
-        user_id: Uuid,
+        /// The linking user's ID, in its string representation
+        user_id: String,
         next: Option<String>,
     },
     Refresh {
-        token_id: Uuid,
+        /// The refreshed token's ID, in its string representation
+        token_id: String,
         next: Option<String>,
     },
 }

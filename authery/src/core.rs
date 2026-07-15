@@ -6,15 +6,13 @@ use crate::oauth::OAuthConfig;
 use crate::password::PasswordConfig;
 use crate::{
     constants::SESSION_ID_KEY,
-    models::{LoginSession, AutheryCookies},
+    models::{AutheryCookies, LoginSession},
     store::AutheryStore,
 };
 use crate::{
     models::{Allow, LoginMethod},
     routes::Routes,
 };
-
-use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
@@ -35,7 +33,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     pub(crate) async fn log_in(
         mut self,
         method: LoginMethod,
-        user_id: Uuid,
+        user_id: &S::UserId,
     ) -> Result<Self, S::Error> {
         let session = self.store.create_session(user_id, method).await?;
 
@@ -56,9 +54,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
             // Delete whatever session the cookie points at - including
             // password reset sessions, which session() filters out.
-            if let Some(session) = self.store.get_session(session_id).await? {
+            if let Some(session) = self.store.get_session(&session_id).await? {
                 self.store
-                    .delete_session(session.get_user_id(), session.get_id())
+                    .delete_session(&session.get_user_id(), &session.get_id())
                     .await?;
             }
         } else if self.cookies.get(SESSION_ID_KEY).is_some() {
@@ -68,12 +66,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         Ok(self)
     }
 
-    pub(crate) fn session_id_cookie(&self) -> Option<Uuid> {
+    pub(crate) fn session_id_cookie(&self) -> Option<S::SessionId> {
         let session_id_cookie = self.cookies.get(SESSION_ID_KEY)?;
 
-        let session_id = Uuid::parse_str(&session_id_cookie).ok()?;
-
-        Some(session_id)
+        session_id_cookie.parse::<S::SessionId>().ok()
     }
 
     fn is_login_session(session: &S::LoginSession) -> bool {
@@ -98,7 +94,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         Ok(self
             .store
-            .get_session(session_id)
+            .get_session(&session_id)
             .await?
             .filter(Self::is_login_session))
     }
@@ -110,7 +106,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         Ok(self
             .store
-            .get_user(session.get_user_id())
+            .get_user(&session.get_user_id())
             .await?
             .map(|user| (user, session)))
     }

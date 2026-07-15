@@ -1,7 +1,6 @@
-use super::{ExchangeResult, OAuthProvider};
+use super::{ExchangeFuture, OAuthProvider};
 use crate::{models::oauth::UnmatchedOAuthToken, oauth::client::ClientWithGenericExtraTokenFields};
 use anyhow::Context;
-use async_trait::async_trait;
 use oauth2::{
     reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenUrl,
@@ -88,7 +87,6 @@ impl OAuthOidcProvider {
     }
 }
 
-#[async_trait]
 impl OAuthProvider for OAuthOidcProvider {
     fn name(&self) -> &str {
         self.name.as_str()
@@ -132,60 +130,64 @@ impl OAuthProvider for OAuthOidcProvider {
         (url, csrf_state, pkce_verifier)
     }
 
-    async fn exchange_authorization_code(
-        &self,
-        provider_name: &str,
-        redirect_url: &RedirectUrl,
-        code: &AuthorizationCode,
+    fn exchange_authorization_code<'a>(
+        &'a self,
+        provider_name: &'a str,
+        redirect_url: &'a RedirectUrl,
+        code: &'a AuthorizationCode,
         pkce_verifier: Option<PkceCodeVerifier>,
-    ) -> ExchangeResult {
-        let client = self.client.clone().set_redirect_uri(redirect_url.clone());
+    ) -> ExchangeFuture<'a> {
+        Box::pin(async move {
+            let client = self.client.clone().set_redirect_uri(redirect_url.clone());
 
-        let mut req = client.exchange_code(code.clone());
+            let mut req = client.exchange_code(code.clone());
 
-        if let Some(pkce_verifier) = pkce_verifier {
-            req = req.set_pkce_verifier(pkce_verifier);
-        }
+            if let Some(pkce_verifier) = pkce_verifier {
+                req = req.set_pkce_verifier(pkce_verifier);
+            }
 
-        let res = req
-            .request_async(async_http_client)
-            .await
-            .context("Requesting authorization code exchange")?;
+            let res = req
+                .request_async(async_http_client)
+                .await
+                .context("Requesting authorization code exchange")?;
 
-        let provider_user = res
-            .extra_fields()
-            .get_oauth_oidc_provider_user_unvalidated()?;
+            let provider_user = res
+                .extra_fields()
+                .get_oauth_oidc_provider_user_unvalidated()?;
 
-        Ok(UnmatchedOAuthToken::from_standard_token_response(
-            &res,
-            provider_name,
-            provider_user,
-        ))
+            Ok(UnmatchedOAuthToken::from_standard_token_response(
+                &res,
+                provider_name,
+                provider_user,
+            ))
+        })
     }
 
-    async fn exchange_refresh_token(
-        &self,
-        provider_name: &str,
-        redirect_url: &RedirectUrl,
-        refresh_token: &RefreshToken,
-    ) -> ExchangeResult {
-        let res = self
-            .client
-            .clone()
-            .set_redirect_uri(redirect_url.clone())
-            .exchange_refresh_token(refresh_token)
-            .request_async(async_http_client)
-            .await
-            .context("Requesting refresh token exchange")?;
+    fn exchange_refresh_token<'a>(
+        &'a self,
+        provider_name: &'a str,
+        redirect_url: &'a RedirectUrl,
+        refresh_token: &'a RefreshToken,
+    ) -> ExchangeFuture<'a> {
+        Box::pin(async move {
+            let res = self
+                .client
+                .clone()
+                .set_redirect_uri(redirect_url.clone())
+                .exchange_refresh_token(refresh_token)
+                .request_async(async_http_client)
+                .await
+                .context("Requesting refresh token exchange")?;
 
-        let provider_user = res
-            .extra_fields()
-            .get_oauth_oidc_provider_user_unvalidated()?;
+            let provider_user = res
+                .extra_fields()
+                .get_oauth_oidc_provider_user_unvalidated()?;
 
-        Ok(UnmatchedOAuthToken::from_standard_token_response(
-            &res,
-            provider_name,
-            provider_user,
-        ))
+            Ok(UnmatchedOAuthToken::from_standard_token_response(
+                &res,
+                provider_name,
+                provider_user,
+            ))
+        })
     }
 }

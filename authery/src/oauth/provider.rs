@@ -6,14 +6,17 @@ pub mod oidc;
 pub mod spotify;
 
 use crate::models::oauth::UnmatchedOAuthToken;
-use async_trait::async_trait;
-use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope};
-use url::Url;
 use crate::models::Allow;
+use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope};
+use std::{future::Future, pin::Pin};
+use url::Url;
 
 pub type ExchangeResult = anyhow::Result<UnmatchedOAuthToken>;
 
-#[async_trait]
+/// A boxed future resolving to an [`ExchangeResult`], keeping the trait
+/// object-safe without `async_trait`
+pub type ExchangeFuture<'a> = Pin<Box<dyn Future<Output = ExchangeResult> + Send + 'a>>;
+
 pub trait OAuthProvider: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
 
@@ -33,18 +36,18 @@ pub trait OAuthProvider: std::fmt::Debug + Send + Sync {
         scopes: &[Scope],
     ) -> (Url, CsrfToken, PkceCodeVerifier);
 
-    async fn exchange_authorization_code(
-        &self,
-        provider_name: &str,
-        redirect_url: &RedirectUrl,
-        code: &AuthorizationCode,
+    fn exchange_authorization_code<'a>(
+        &'a self,
+        provider_name: &'a str,
+        redirect_url: &'a RedirectUrl,
+        code: &'a AuthorizationCode,
         pkce_verifier: Option<PkceCodeVerifier>,
-    ) -> ExchangeResult;
+    ) -> ExchangeFuture<'a>;
 
-    async fn exchange_refresh_token(
-        &self,
-        provider_name: &str,
-        redirect_url: &RedirectUrl,
-        refresh_token: &RefreshToken,
-    ) -> ExchangeResult;
+    fn exchange_refresh_token<'a>(
+        &'a self,
+        provider_name: &'a str,
+        redirect_url: &'a RedirectUrl,
+        refresh_token: &'a RefreshToken,
+    ) -> ExchangeFuture<'a>;
 }

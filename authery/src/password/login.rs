@@ -54,7 +54,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 }
                 None => {
                     // Burn comparable time so missing passwords aren't detectable.
-                    self.pass.hasher.genereate_hash(password.to_string()).await;
+                    self.pass.hasher.generate_hash(password.to_string()).await;
                     Err(PasswordLoginError::WrongPassword)
                 }
             },
@@ -62,16 +62,16 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 .store
                 .password_create_user(
                     password_id,
-                    &self.pass.hasher.genereate_hash(password.to_string()).await,
+                    &self.pass.hasher.generate_hash(password.to_string()).await,
                 )
                 .await?),
             None => {
                 // Burn comparable time so unknown users aren't detectable.
-                self.pass.hasher.genereate_hash(password.to_string()).await;
+                self.pass.hasher.generate_hash(password.to_string()).await;
                 Err(PasswordLoginError::WrongPassword)
             }
         }?;
 
-        Ok(self.log_in(LoginMethod::Password, user.get_id()).await?)
+        Ok(self.log_in(LoginMethod::Password, &user.get_id()).await?)
     }
 }

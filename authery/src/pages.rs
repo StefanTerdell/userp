@@ -11,11 +11,11 @@ use crate::models::{LoginSession, User, AutheryCookies};
 use crate::{core::CoreAuthery, store::AutheryStore};
 #[cfg(feature = "oauth")]
 use crate::{models::oauth::OAuthToken, oauth::provider::OAuthProvider};
-use uuid::Uuid;
+
 
 #[cfg(feature = "user")]
 pub struct TemplateLoginSession {
-    pub id: Uuid,
+    pub id: String,
     pub method: LoginMethod,
 }
 
@@ -23,7 +23,7 @@ pub struct TemplateLoginSession {
 impl<T: LoginSession> From<&T> for TemplateLoginSession {
     fn from(value: &T) -> Self {
         TemplateLoginSession {
-            id: value.get_id(),
+            id: value.get_id().to_string(),
             method: value.get_method(),
         }
     }
@@ -48,7 +48,7 @@ impl<'a, T: UserEmail> From<&'a T> for TemplateUserEmail<'a> {
 
 #[derive(Clone, Debug)]
 pub struct TemplateOAuthToken<'a> {
-    pub id: Uuid,
+    pub id: String,
     pub provider_name: &'a str,
 }
 
@@ -56,7 +56,7 @@ pub struct TemplateOAuthToken<'a> {
 impl<'a, T: OAuthToken> From<&'a T> for TemplateOAuthToken<'a> {
     fn from(value: &'a T) -> Self {
         Self {
-            id: value.get_id(),
+            id: value.get_id().to_string(),
             provider_name: value.get_provider_name(),
         }
     }
@@ -128,7 +128,7 @@ pub struct UserTemplateOAuthInfo<'a> {
 pub struct UserTemplate<'a> {
     pub message: Option<&'a str>,
     pub error: Option<&'a str>,
-    pub session_id: Uuid,
+    pub session_id: String,
     pub sessions: Vec<TemplateLoginSession>,
     pub home_page_route: &'a str,
     pub login_page_route: &'a str,
@@ -156,7 +156,7 @@ impl UserTemplate<'_> {
         UserTemplate {
             message,
             error,
-            session_id: session.get_id(),
+            session_id: session.get_id().to_string(),
             sessions: sessions.iter().map(|s| s.into()).collect(),
             home_page_route: &auth.routes.pages.home,
             login_page_route: &auth.routes.pages.login,

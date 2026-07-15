@@ -110,7 +110,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 LoginMethod::PasswordReset {
                     address: challenge.get_address().to_owned(),
                 },
-                user.get_id(),
+                &user.get_id(),
             )
             .await?)
     }
@@ -126,7 +126,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         Ok(self
             .store
-            .get_session(session_id)
+            .get_session(&session_id)
             .await?
             .filter(|s| matches!(s.get_method(), LoginMethod::PasswordReset { address: _ })))
     }
@@ -138,7 +138,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         Ok(self
             .store
-            .get_user(session.get_user_id())
+            .get_user(&session.get_user_id())
             .await?
             .map(|user| (user, session)))
     }

@@ -63,11 +63,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 .store
                 .password_create_user(
                     password_id,
-                    &self.pass.hasher.genereate_hash(password.into()).await,
+                    &self.pass.hasher.generate_hash(password.into()).await,
                 )
                 .await?),
         }?;
 
-        Ok(self.log_in(LoginMethod::Password, user.get_id()).await?)
+        Ok(self.log_in(LoginMethod::Password, &user.get_id()).await?)
     }
 }

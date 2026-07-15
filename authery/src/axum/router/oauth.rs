@@ -18,11 +18,12 @@ use crate::{
     reexports::oauth2::{AuthorizationCode, CsrfToken},
     store::AutheryStore,
 };
-use uuid::Uuid;
+
 
 #[derive(Deserialize)]
 pub struct IdForm {
-    pub id: Uuid,
+    /// An entity ID in its string representation
+    pub id: String,
 }
 #[derive(Serialize, Deserialize)]
 pub struct ProviderNextForm {
@@ -118,7 +119,11 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    let token = match auth.store.oauth_get_token_by_id(token_id).await {
+    let Ok(token_id) = token_id.parse::<St::OAuthTokenId>() else {
+        return Ok(StatusCode::BAD_REQUEST.into_response());
+    };
+
+    let token = match auth.store.oauth_get_token_by_id(&token_id).await {
         Ok(Some(token)) if token.get_user_id() == user.get_id() => token,
         Ok(_) => {
             return Ok(StatusCode::NOT_FOUND.into_response());
