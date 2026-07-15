@@ -6,7 +6,8 @@ use oauth2::{
         BasicErrorResponse, BasicRevocationErrorResponse, BasicTokenIntrospectionResponse,
         BasicTokenType,
     },
-    Client, ExtraTokenFields, StandardRevocableToken, StandardTokenResponse,
+    Client, EndpointNotSet, EndpointSet, ExtraTokenFields, StandardRevocableToken,
+    StandardTokenResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -14,14 +15,39 @@ use serde_json::{Map, Value};
 pub type TokenResponseWithGenericExtraFields =
     StandardTokenResponse<GenericExtraTokenFields, BasicTokenType>;
 
-pub type ClientWithGenericExtraTokenFields = Client<
+/// A freshly-constructed OAuth client, before any endpoint is set. `Client::new`
+/// is defined on the five-parameter form (endpoints default to `EndpointNotSet`).
+pub type ClientWithGenericExtraTokenFieldsBase = Client<
     BasicErrorResponse,
     TokenResponseWithGenericExtraFields,
-    BasicTokenType,
     BasicTokenIntrospectionResponse,
     StandardRevocableToken,
     BasicRevocationErrorResponse,
 >;
+
+/// Our OAuth client, configured with the auth and token endpoints set (the two
+/// endpoints authery uses) and the rest left unset, per oauth2 5's typestate.
+pub type ClientWithGenericExtraTokenFields = Client<
+    BasicErrorResponse,
+    TokenResponseWithGenericExtraFields,
+    BasicTokenIntrospectionResponse,
+    StandardRevocableToken,
+    BasicRevocationErrorResponse,
+    EndpointSet,    // auth url
+    EndpointNotSet, // device auth url
+    EndpointNotSet, // introspection url
+    EndpointNotSet, // revocation url
+    EndpointSet,    // token url
+>;
+
+/// A reqwest client that refuses to follow redirects, as recommended by oauth2
+/// to prevent SSRF via the token endpoint.
+pub(crate) fn http_client() -> Result<reqwest::Client> {
+    reqwest::ClientBuilder::new()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .context("Building the OAuth HTTP client")
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GenericExtraTokenFields(pub Map<String, Value>);

@@ -1,16 +1,17 @@
 use super::{ExchangeFuture, OAuthProvider};
-use crate::oauth::client::{
-    ClientWithGenericExtraTokenFields, TokenResponseWithGenericExtraFields,
-};
+use crate::models::Allow;
 use crate::models::oauth::{OAuthProviderUser, UnmatchedOAuthToken};
+use crate::oauth::client::{
+    http_client, ClientWithGenericExtraTokenFields, ClientWithGenericExtraTokenFieldsBase,
+    TokenResponseWithGenericExtraFields,
+};
 use anyhow::Context;
 use oauth2::{
-    reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
 };
 use std::{fmt::Display, future::Future, pin::Pin};
 use url::Url;
-use crate::models::Allow;
 
 pub type OAuthProviderUserCallbackResult = anyhow::Result<OAuthProviderUser>;
 
@@ -78,12 +79,11 @@ impl OAuthCustomProvider {
         Fut: Future<Output = OAuthProviderUserCallbackResult> + Send + 'static,
         F: Fn(String, &TokenResponseWithGenericExtraFields) -> Fut + Send + Sync + 'static,
     {
-        let client = ClientWithGenericExtraTokenFields::new(
-            ClientId::new(client_id.into()),
-            Some(ClientSecret::new(client_secret.into())),
-            AuthUrl::from_url(Url::parse(&auth_url.into())?),
-            Some(TokenUrl::from_url(Url::parse(&token_url.into())?)),
-        );
+        let client: ClientWithGenericExtraTokenFields =
+            ClientWithGenericExtraTokenFieldsBase::new(ClientId::new(client_id.into()))
+                .set_client_secret(ClientSecret::new(client_secret.into()))
+                .set_auth_uri(AuthUrl::from_url(Url::parse(&auth_url.into())?))
+                .set_token_uri(TokenUrl::from_url(Url::parse(&token_url.into())?));
 
         Ok(Self {
             allow_login: None,
@@ -173,7 +173,7 @@ impl OAuthProvider for OAuthCustomProvider {
             }
 
             let res = req
-                .request_async(async_http_client)
+                .request_async(&http_client()?)
                 .await
                 .context("Requesting authorization code exchange")?;
 
@@ -202,7 +202,7 @@ impl OAuthProvider for OAuthCustomProvider {
                 .clone()
                 .set_redirect_uri(redirect_url.clone())
                 .exchange_refresh_token(refresh_token)
-                .request_async(async_http_client)
+                .request_async(&http_client()?)
                 .await
                 .context("Requesting refresh token exchange")?;
 

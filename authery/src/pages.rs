@@ -2,7 +2,21 @@
 
 use askama::Template;
 #[cfg(feature = "axum")]
-use askama_axum::IntoResponse;
+use axum::response::{Html, IntoResponse};
+
+/// Render a template to an axum response, or a 500 with the error if rendering
+/// fails. Askama dropped its built-in axum integration, so we do it here.
+#[cfg(feature = "axum")]
+pub fn render_response<T: Template>(template: T) -> axum::response::Response {
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(err) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            err.to_string(),
+        )
+            .into_response(),
+    }
+}
 use std::sync::Arc;
 use crate::models::LoginMethod;
 #[cfg(feature = "email")]
@@ -250,7 +264,7 @@ impl UserTemplate<'_> {
         #[cfg(feature = "email")] emails: &[S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
     ) -> impl IntoResponse {
-        Self::with(
+        render_response(Self::with(
             auth,
             user,
             session,
@@ -261,8 +275,7 @@ impl UserTemplate<'_> {
             emails,
             #[cfg(feature = "oauth")]
             oauth_tokens,
-        )
-        .into_response()
+        ))
     }
 }
 
@@ -358,7 +371,7 @@ impl LoginTemplate<'_> {
         message: Option<&str>,
         error: Option<&str>,
     ) -> impl IntoResponse {
-        Self::with(auth, next, message, error).into_response()
+        render_response(Self::with(auth, next, message, error))
     }
 }
 
@@ -440,6 +453,6 @@ impl SignupTemplate<'_> {
         message: Option<&str>,
         error: Option<&str>,
     ) -> impl IntoResponse {
-        Self::with(auth, next, message, error).into_response()
+        render_response(Self::with(auth, next, message, error))
     }
 }

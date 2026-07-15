@@ -5,14 +5,21 @@ mod templates;
 use self::store::MemoryStore;
 use self::templates::{IndexTemplate, ProtectedTemplate};
 
-use askama_axum::IntoResponse;
-use axum::{extract::State, response::Redirect, routing::get, serve, Router};
+use askama::Template;
+use axum::{
+    extract::State,
+    response::{Html, IntoResponse},
+    routing::get,
+    serve, Router,
+};
+use axum::response::Redirect;
 use axum_macros::FromRef;
 use dotenv::var;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 
-use authery::prelude::{url::Url, *};
+use authery::prelude::*;
+use authery::reexports::url::Url;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -91,7 +98,7 @@ async fn main() {
 async fn get_index(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let logged_in = auth.logged_in().await.unwrap();
 
-    IndexTemplate { logged_in }
+    Html(IndexTemplate { logged_in }.render().unwrap())
 }
 
 async fn get_store(State(state): State<AppState>) -> impl IntoResponse {
@@ -107,9 +114,13 @@ async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {
         .into_response();
     };
 
-    ProtectedTemplate {
-        user: format!("{user:#?}"),
-        session: format!("{session:#?}"),
-    }
+    Html(
+        ProtectedTemplate {
+            user: format!("{user:#?}"),
+            session: format!("{session:#?}"),
+        }
+        .render()
+        .unwrap(),
+    )
     .into_response()
 }

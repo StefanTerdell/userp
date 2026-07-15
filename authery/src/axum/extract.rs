@@ -1,6 +1,5 @@
 use super::cookies::AxumAutheryCookies;
 use crate::{config::AutheryConfig, core::CoreAuthery, store::AutheryStore};
-use axum::async_trait;
 use axum::{
     extract::{FromRef, FromRequestParts},
     http::request::Parts,
@@ -20,7 +19,6 @@ impl<S: AutheryStore> IntoResponseParts for CoreAuthery<S, AxumAutheryCookies> {
     }
 }
 
-#[async_trait]
 impl<S, St> FromRequestParts<S> for CoreAuthery<St, AxumAutheryCookies>
 where
     St: AutheryStore,
@@ -38,7 +36,7 @@ where
         };
         let store = St::from_ref(state);
 
-        return Ok(CoreAuthery {
+        Ok(CoreAuthery {
             allow_signup: config.allow_signup,
             allow_login: config.allow_login,
             routes: config.routes,
@@ -50,6 +48,6 @@ where
             pass: config.pass,
             #[cfg(feature = "oauth")]
             oauth: config.oauth,
-        });
+        })
     }
 }

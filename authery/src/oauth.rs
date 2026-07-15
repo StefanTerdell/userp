@@ -176,7 +176,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             format!("{path}/")
         };
 
-        let path = path.replace(":provider", provider_name);
+        let path = path.replace("{provider}", provider_name);
 
         RedirectUrl::from_url(self.oauth.base_url.join(path.as_str()).unwrap())
     }

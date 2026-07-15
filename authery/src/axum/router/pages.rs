@@ -114,16 +114,15 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::SendResetPasswordTemplate;
+    use crate::pages::{render_response, SendResetPasswordTemplate};
 
-    Ok(SendResetPasswordTemplate {
+    Ok(render_response(SendResetPasswordTemplate {
         sent: query.sent.is_some_and(|sent| sent),
         address: query.address.as_deref(),
         error: query.error.as_deref(),
         message: query.message.as_deref(),
         send_reset_password_action_route: &auth.routes.email.password_send_reset,
-    }
-    .into_response())
+    }))
 }
 
 #[cfg(all(feature = "email", feature = "password"))]
@@ -133,13 +132,12 @@ where
     St::Error: IntoResponse,
 {
     use axum::http::StatusCode;
-    use crate::pages::ResetPasswordTemplate;
+    use crate::pages::{render_response, ResetPasswordTemplate};
 
     if auth.is_reset_session().await? {
-        Ok(ResetPasswordTemplate {
+        Ok(render_response(ResetPasswordTemplate {
             reset_password_action_route: &auth.routes.email.password_reset,
-        }
-        .into_response())
+        }))
     } else {
         Ok(StatusCode::UNAUTHORIZED.into_response())
     }

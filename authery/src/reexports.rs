@@ -26,7 +26,3 @@ pub use url;
 
 #[cfg(feature = "pages")]
 pub use askama;
-#[cfg(feature = "axum")]
-pub use axum;
-#[cfg(feature = "axum")]
-pub use axum_extra;

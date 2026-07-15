@@ -5,8 +5,9 @@ mod templates;
 use self::store::MemoryStore;
 use self::templates::{IndexTemplate, ProtectedTemplate};
 
-use askama_axum::IntoResponse;
+use askama::Template;
 use axum::Form;
+use axum::response::{Html, IntoResponse};
 use axum::{extract::State, response::Redirect, routing::get, serve, Router};
 use axum_macros::FromRef;
 use models::SigninForm;
@@ -57,11 +58,11 @@ async fn main() {
 async fn get_index(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let logged_in = auth.logged_in().await.unwrap();
 
-    IndexTemplate { logged_in }
+    Html(IndexTemplate { logged_in }.render().unwrap())
 }
 
 async fn get_signin() -> impl IntoResponse {
-    SigninTemplate { message: None }
+    Html(SigninTemplate { message: None }.render().unwrap())
 }
 
 async fn post_signin(auth: Authery<MemoryStore>, Form(data): Form<SigninForm>) -> impl IntoResponse {
@@ -70,9 +71,13 @@ async fn post_signin(auth: Authery<MemoryStore>, Form(data): Form<SigninForm>) -
         .await
     {
         Ok(auth) => (auth, Redirect::to("/protected")).into_response(),
-        Err(err) => SigninTemplate {
-            message: Some(err.to_string()),
-        }
+        Err(err) => Html(
+            SigninTemplate {
+                message: Some(err.to_string()),
+            }
+            .render()
+            .unwrap(),
+        )
         .into_response(),
     }
 }
@@ -86,10 +91,14 @@ async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {
         return Redirect::to("/signin").into_response();
     };
 
-    ProtectedTemplate {
-        user: format!("{user:#?}"),
-        session: format!("{session:#?}"),
-    }
+    Html(
+        ProtectedTemplate {
+            user: format!("{user:#?}"),
+            session: format!("{session:#?}"),
+        }
+        .render()
+        .unwrap(),
+    )
     .into_response()
 }
 

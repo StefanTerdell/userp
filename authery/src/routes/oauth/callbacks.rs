@@ -7,23 +7,23 @@ use std::fmt::Display;
 /// Contains routes used to recieve the OAuth login, signup, link and refresh callbacks
 /// Setting all callback routes to the same route is supported.
 pub struct OAuthCallbackRoutes<T = &'static str> {
-    /// Get - Receives the login callback. Must contain a `/:provider` route segment!
+    /// Get - Receives the login callback. Must contain a `/{provider}` route segment!
     pub login_oauth_provider: T,
-    /// Get - Receives the signup callback. Must contain a `/:provider` route segment!
+    /// Get - Receives the signup callback. Must contain a `/{provider}` route segment!
     pub signup_oauth_provider: T,
-    /// Get - Receives the link callback. Must contain a `/:provider` route segment!
+    /// Get - Receives the link callback. Must contain a `/{provider}` route segment!
     pub user_oauth_link_provider: T,
-    /// Get - Receives the refresh callback. Must contain a `/:provider` route segment!
+    /// Get - Receives the refresh callback. Must contain a `/{provider}` route segment!
     pub user_oauth_refresh_provider: T,
 }
 
 impl Default for OAuthCallbackRoutes {
     fn default() -> Self {
         Self {
-            login_oauth_provider: "/login/oauth/:provider",
-            signup_oauth_provider: "/signup/oauth/:provider",
-            user_oauth_link_provider: "/user/oauth/link/:provider",
-            user_oauth_refresh_provider: "/user/oauth/refresh/:provider",
+            login_oauth_provider: "/login/oauth/{provider}",
+            signup_oauth_provider: "/signup/oauth/{provider}",
+            user_oauth_link_provider: "/user/oauth/link/{provider}",
+            user_oauth_refresh_provider: "/user/oauth/refresh/{provider}",
         }
     }
 }
@@ -65,12 +65,12 @@ impl<T: Display> OAuthCallbackRoutes<T> {
 
 impl OAuthCallbackRoutes<String> {
     /// Creates a new instance of OAuthCallbackRoutes where all included routes are the same
-    /// Panics if the route does not include `/:provider`
+    /// Panics if the route does not include `/{provider}`
     pub fn same(route: impl Into<String>) -> Self {
         let route = route.into();
 
-        if !route.contains("/:provider") {
-            panic!("All oauth callback routes must contain /:provider")
+        if !route.contains("/{provider}") {
+            panic!("All oauth callback routes must contain /{{provider}}")
         }
 
         Self {
@@ -83,7 +83,7 @@ impl OAuthCallbackRoutes<String> {
 }
 
 impl<T: AsRef<str>> OAuthCallbackRoutes<T> {
-    /// Panics if any route does not include `/:provider`
+    /// Panics if any route does not include `/{provider}`
     pub fn validate_oauth_callback_routes(self) -> Self {
         if [
             self.login_oauth_provider.as_ref(),
@@ -92,9 +92,9 @@ impl<T: AsRef<str>> OAuthCallbackRoutes<T> {
             self.user_oauth_refresh_provider.as_ref(),
         ]
         .into_iter()
-        .any(|r| !r.contains("/:provider"))
+        .any(|r| !r.contains("/{provider}"))
         {
-            panic!("All oauth callback routes must contain /:provider")
+            panic!("All oauth callback routes must contain /{{provider}}")
         };
 
         self
