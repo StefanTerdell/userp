@@ -2,3 +2,4 @@
 /examples/*/target
 .env
 /todo.md
+/dev/postgres-data
