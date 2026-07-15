@@ -90,7 +90,7 @@ impl OAuthConfig {
     }
 
     pub fn with_client(mut self, client: impl OAuthProvider + 'static) -> Self {
-        self.providers.0.push(Arc::new(client));
+        self.providers.push(Arc::new(client));
         self
     }
 
@@ -110,12 +110,23 @@ impl OAuthConfig {
     }
 }
 
+/// The configured OAuth providers. Wrapped in a single `Arc` so cloning the
+/// config (which happens once per request) is one refcount bump rather than a
+/// per-provider allocation.
 #[derive(Debug, Clone, Default)]
-pub struct OAuthProviders(pub(super) Vec<Arc<dyn OAuthProvider>>);
+pub struct OAuthProviders(pub(super) Arc<Vec<Arc<dyn OAuthProvider>>>);
 
 impl OAuthProviders {
+    pub(super) fn push(&mut self, provider: Arc<dyn OAuthProvider>) {
+        Arc::make_mut(&mut self.0).push(provider);
+    }
+
     pub fn get(&self, name: &str) -> Option<&Arc<dyn OAuthProvider>> {
         self.0.iter().find(|c| c.name() == name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn OAuthProvider>> {
+        self.0.iter()
     }
 }
 
