@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use userp_server::{
     axum::AxumUserp,
+    models::{oauth::OAuthToken, User},
     oauth::{
         link::{OAuthLinkCallbackError, OAuthLinkInitError},
         login::OAuthLoginCallbackError,
@@ -53,7 +54,7 @@ where
 
     match auth.oauth_login_callback(provider, code, state).await {
         Ok((auth, next)) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.to_string());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
@@ -88,10 +89,8 @@ where
         .await
     {
         Ok(next) => {
-            let next = next.unwrap_or(format!(
-                "{user_route}?message={} token refreshed!",
-                provider
-            ));
+            let fallback = format!("{user_route}?message={} token refreshed!", provider);
+            let next = crate::router::safe_next(next, &fallback);
             Ok(Redirect::to(&next).into_response())
         }
         Err(err) => match err {
@@ -115,13 +114,13 @@ where
     St: UserpStore,
     St::Error: IntoResponse,
 {
-    if !auth.logged_in().await? {
+    let Some(user) = auth.user().await? else {
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
     let token = match auth.store.oauth_get_token_by_id(token_id).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
+        Ok(Some(token)) if token.get_user_id() == user.get_id() => token,
+        Ok(_) => {
             return Ok(StatusCode::NOT_FOUND.into_response());
         }
         Err(err) => {
@@ -177,7 +176,7 @@ where
 
     match auth.oauth_generic_callback(provider, code, state).await {
         Ok((auth, next)) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
@@ -209,7 +208,7 @@ where
 
     match auth.oauth_signup_callback(provider, code, state).await {
         Ok((auth, next)) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
@@ -268,7 +267,7 @@ where
 {
     match auth.oauth_link_callback(provider, code, state).await {
         Ok(next) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
