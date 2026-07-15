@@ -1,4 +1,4 @@
-use super::cookies::AxumAutheryCookies;
+use super::cookies::{AxumAutheryCookies, JarHandle, SharedCookieJar};
 use crate::{config::AutheryConfig, core::CoreAuthery, store::AutheryStore};
 use axum::{
     extract::{FromRef, FromRequestParts},
@@ -30,8 +30,21 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Infallible> {
         let config = AutheryConfig::from_ref(state);
+
+        // When the cookie-propagation middleware is present it has already built
+        // the jar and shared it via request extensions; use that so mutations
+        // survive to the response without the handler returning the auth service.
+        // Otherwise fall back to an owned jar written via IntoResponseParts.
+        let jar = match parts.extensions.get::<SharedCookieJar>() {
+            Some(shared) => JarHandle::Shared(shared.clone()),
+            None => JarHandle::Owned(PrivateCookieJar::from_headers(
+                &parts.headers,
+                Key::from(config.key.as_bytes()),
+            )),
+        };
+
         let cookies = AxumAutheryCookies {
-            jar: PrivateCookieJar::from_headers(&parts.headers, Key::from(config.key.as_bytes())),
+            jar,
             https_only: config.https_only,
         };
         let store = St::from_ref(state);

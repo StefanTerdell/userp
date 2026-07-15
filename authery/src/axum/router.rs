@@ -10,14 +10,43 @@ pub mod pages;
 pub mod password;
 
 use axum::{
-    extract::FromRef,
+    extract::{FromRef, Request},
     http::StatusCode,
+    middleware::{from_fn, Next},
     response::{IntoResponse, Redirect},
     routing::{get, post},
     Router,
 };
+use axum_extra::extract::cookie::{Key, PrivateCookieJar};
+use std::sync::{Arc, Mutex};
+use crate::axum::cookies::SharedCookieJar;
 use crate::routes::Routes;
 use crate::{config::AutheryConfig, store::AutheryStore, Authery as AxumAuthery};
+
+/// Wraps `router` with middleware that builds the encrypted cookie jar once per
+/// request, shares it with the handler via request extensions, and serializes it
+/// onto the response afterwards. With this applied, handlers no longer need to
+/// return the auth service to persist session cookies. The built-in
+/// [`AxumRouter::router`] applies it automatically; call this yourself when
+/// wiring authery handlers into a hand-rolled router.
+pub fn with_cookie_layer<S>(router: Router<S>, key: Key) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router.layer(from_fn(move |mut req: Request, next: Next| {
+        let key = key.clone();
+        async move {
+            let jar = PrivateCookieJar::from_headers(req.headers(), key);
+            let shared = SharedCookieJar(Arc::new(Mutex::new(jar)));
+            req.extensions_mut().insert(shared.clone());
+
+            let res = next.run(req).await;
+
+            let jar = shared.0.lock().unwrap().clone();
+            (jar, res).into_response()
+        }
+    }))
+}
 
 /// Guards against open redirects: only local paths pass through,
 /// anything absolute, protocol-relative or malformed becomes the fallback.
@@ -37,6 +66,9 @@ pub(crate) fn safe_next(next: Option<String>, fallback: &str) -> String {
 
 pub trait AxumRouter {
     fn routes(&self) -> &Routes;
+
+    /// The cookie-encryption key, used to install the cookie-propagation layer.
+    fn cookie_key(&self) -> Key;
 
     fn router<St, S>(&self) -> Router<S>
     where
@@ -391,13 +423,17 @@ pub trait AxumRouter {
             }
         }
 
-        router
+        with_cookie_layer(router, self.cookie_key())
     }
 }
 
 impl AxumRouter for AutheryConfig {
     fn routes(&self) -> &Routes {
         &self.routes
+    }
+
+    fn cookie_key(&self) -> Key {
+        Key::from(self.key.as_bytes())
     }
 }
 
