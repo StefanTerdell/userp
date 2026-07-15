@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-userp = { path = "../../userp", default-features = false, features = [
+authery = { path = "../../authery", default-features = false, features = [
   "password",
-  "axum-router",
+  "axum",
 ] }
 axum = "0.7.7"
 axum-macros = "0.4.2"

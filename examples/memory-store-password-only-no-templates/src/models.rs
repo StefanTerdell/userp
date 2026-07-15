@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use userp::{prelude::*, reexports::uuid::Uuid};
+use authery::{prelude::*, reexports::uuid::Uuid};
 
 #[derive(Deserialize)]
 pub struct SigninForm {

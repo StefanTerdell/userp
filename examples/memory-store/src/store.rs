@@ -6,7 +6,7 @@ use axum::{
 };
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
-use userp::{
+use authery::{
     prelude::*,
     reexports::{
         chrono::{DateTime, Utc},
@@ -40,7 +40,7 @@ impl IntoResponse for MemoryStoreError {
 }
 
 #[async_trait]
-impl UserpStore for MemoryStore {
+impl AutheryStore for MemoryStore {
     type User = MyUser;
     type UserEmail = MyUserEmail;
     type LoginSession = MyLoginSession;

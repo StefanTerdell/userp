@@ -14,12 +14,12 @@ use templates::SigninTemplate;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 
-use userp::prelude::*;
+use authery::prelude::*;
 
 #[derive(Clone, FromRef)]
 struct AppState {
     store: MemoryStore,
-    auth: UserpConfig,
+    auth: AutheryConfig,
 }
 
 #[tokio::main]
@@ -30,7 +30,7 @@ async fn main() {
 
     let key = String::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
-    let auth = UserpConfig::new(key, Routes::default(), PasswordConfig::new())
+    let auth = AutheryConfig::new(key, Routes::default(), PasswordConfig::new())
         .with_https_only(false)
         .with_allow_signup(Allow::OnEither)
         .with_allow_login(Allow::OnEither);
@@ -49,12 +49,12 @@ async fn main() {
         .with_state(state)
         .layer(TraceLayer::new_for_http());
 
-    println!("Userp example listening at http://localhost:3000 :)");
+    println!("Authery example listening at http://localhost:3000 :)");
     let tcp = TcpListener::bind("0.0.0.0:3000").await.unwrap();
     serve(tcp, app.into_make_service()).await.unwrap();
 }
 
-async fn get_index(auth: Userp<MemoryStore>) -> impl IntoResponse {
+async fn get_index(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let logged_in = auth.logged_in().await.unwrap();
 
     IndexTemplate { logged_in }
@@ -64,7 +64,7 @@ async fn get_signin() -> impl IntoResponse {
     SigninTemplate { message: None }
 }
 
-async fn post_signin(auth: Userp<MemoryStore>, Form(data): Form<SigninForm>) -> impl IntoResponse {
+async fn post_signin(auth: Authery<MemoryStore>, Form(data): Form<SigninForm>) -> impl IntoResponse {
     match auth
         .password_login(&data.email_address, &data.password)
         .await
@@ -81,7 +81,7 @@ async fn get_store(State(state): State<AppState>) -> impl IntoResponse {
     format!("{:#?}", state.store).into_response()
 }
 
-async fn get_protected(auth: Userp<MemoryStore>) -> impl IntoResponse {
+async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let Some((user, session)) = auth.user_session().await.unwrap() else {
         return Redirect::to("/signin").into_response();
     };
@@ -93,7 +93,7 @@ async fn get_protected(auth: Userp<MemoryStore>) -> impl IntoResponse {
     .into_response()
 }
 
-async fn get_logout(auth: Userp<MemoryStore>) -> impl IntoResponse {
+async fn get_logout(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let auth = auth.log_out().await.unwrap();
 
     (auth, Redirect::to("/"))

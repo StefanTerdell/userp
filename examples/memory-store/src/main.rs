@@ -12,12 +12,12 @@ use dotenv::var;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 
-use userp::prelude::{url::Url, *};
+use authery::prelude::{url::Url, *};
 
 #[derive(Clone, FromRef)]
 struct AppState {
     store: MemoryStore,
-    auth: UserpConfig,
+    auth: AutheryConfig,
 }
 
 #[tokio::main]
@@ -34,7 +34,7 @@ async fn main() {
 
     let key = String::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
-    let auth = UserpConfig::new(
+    let auth = AutheryConfig::new(
         key,
         Routes::default(),
         PasswordConfig::new().with_allow_reset(PasswordReset::AnyUserEmail),
@@ -83,12 +83,12 @@ async fn main() {
         .with_state(state)
         .layer(TraceLayer::new_for_http());
 
-    println!("Userp example listening at http://localhost:3000 :)");
+    println!("Authery example listening at http://localhost:3000 :)");
     let tcp = TcpListener::bind("0.0.0.0:3000").await.unwrap();
     serve(tcp, app.into_make_service()).await.unwrap();
 }
 
-async fn get_index(auth: Userp<MemoryStore>) -> impl IntoResponse {
+async fn get_index(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let logged_in = auth.logged_in().await.unwrap();
 
     IndexTemplate { logged_in }
@@ -98,7 +98,7 @@ async fn get_store(State(state): State<AppState>) -> impl IntoResponse {
     format!("{:#?}", state.store).into_response()
 }
 
-async fn get_protected(auth: Userp<MemoryStore>) -> impl IntoResponse {
+async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let Some((user, session)) = auth.user_session().await.unwrap() else {
         return Redirect::to(&format!(
             "/login?next={}",

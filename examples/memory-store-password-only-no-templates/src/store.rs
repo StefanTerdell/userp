@@ -2,7 +2,7 @@ use crate::models::{MyLoginSession, MyUser};
 use axum::async_trait;
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 use tokio::sync::RwLock;
-use userp::{prelude::*, reexports::uuid::Uuid};
+use authery::{prelude::*, reexports::uuid::Uuid};
 
 #[derive(Clone, Default, Debug)]
 pub struct MemoryStore {
@@ -11,7 +11,7 @@ pub struct MemoryStore {
 }
 
 #[async_trait]
-impl UserpStore for MemoryStore {
+impl AutheryStore for MemoryStore {
     type User = MyUser;
     type LoginSession = MyLoginSession;
     type Error = Infallible;
