@@ -10,9 +10,7 @@ use userp_client::models::{Allow, LoginMethod};
 pub enum PasswordLoginError<T: std::error::Error> {
     #[error("Password login not allowed")]
     NotAllowed,
-    #[error("User doesn't exists")]
-    NoUser,
-    #[error("Wrong password")]
+    #[error("Wrong email or password")]
     WrongPassword,
     #[error(transparent)]
     StoreError(#[from] T),
@@ -54,7 +52,11 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
                         Err(PasswordLoginError::WrongPassword)
                     }
                 }
-                None => Err(PasswordLoginError::NotAllowed),
+                None => {
+                    // Burn comparable time so missing passwords aren't detectable.
+                    self.pass.hasher.genereate_hash(password.to_string()).await;
+                    Err(PasswordLoginError::WrongPassword)
+                }
             },
             None if allow_signup => Ok(self
                 .store
@@ -63,7 +65,11 @@ impl<S: UserpStore, C: UserpCookies> CoreUserp<S, C> {
                     &self.pass.hasher.genereate_hash(password.to_string()).await,
                 )
                 .await?),
-            None => Err(PasswordLoginError::NoUser),
+            None => {
+                // Burn comparable time so unknown users aren't detectable.
+                self.pass.hasher.genereate_hash(password.to_string()).await;
+                Err(PasswordLoginError::WrongPassword)
+            }
         }?;
 
         Ok(self.log_in(LoginMethod::Password, user.get_id()).await?)
