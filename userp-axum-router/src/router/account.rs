@@ -7,6 +7,9 @@ use userp_server::{
     models::{LoginSession, User},
     store::UserpStore,
 };
+
+#[cfg(feature = "email")]
+use userp_server::models::email::UserEmail;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -50,10 +53,12 @@ where
     St::Error: IntoResponse,
 {
     let mut user_session = auth.user_session().await?;
+    let mut is_reset_session = false;
 
     #[cfg(all(feature = "password", feature = "email"))]
     if user_session.is_none() {
         user_session = auth.reset_user_session().await?;
+        is_reset_session = user_session.is_some();
     }
 
     let Some((user, session)) = user_session else {
@@ -66,7 +71,19 @@ where
         .set_user_password_hash(user.get_id(), new_password_hash, session.get_id())
         .await?;
 
-    let user_route = auth.routes.pages.user;
+    let user_route = auth.routes.pages.user.clone();
+
+    // A reset session is single-use - drop it once the password is set.
+    if is_reset_session {
+        let login_route = auth.routes.pages.login.clone();
+        let auth = auth.log_out().await?;
+
+        return Ok((
+            auth,
+            Redirect::to(&format!("{login_route}?message=The password has been set!")),
+        )
+            .into_response());
+    }
 
     Ok(Redirect::to(&format!("{user_route}?message=The password has been set!")).into_response())
 }
@@ -168,6 +185,25 @@ where
     let Some(user) = auth.user().await? else {
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
+
+    let user_route = auth.routes.pages.user.clone();
+
+    // Only verified addresses may be used for link login - otherwise the
+    // owner of an unverified address could be logged into this account.
+    let verified = auth
+        .store
+        .get_user_emails(user.get_id())
+        .await?
+        .iter()
+        .any(|e| e.get_address() == email && e.get_verified());
+
+    if !verified {
+        return Ok(Redirect::to(&format!(
+            "{user_route}?error={}",
+            encode("The address must be verified first")
+        ))
+        .into_response());
+    }
 
     auth.store
         .set_user_email_allow_link_login(user.get_id(), email.clone(), true)

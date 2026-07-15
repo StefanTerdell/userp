@@ -10,7 +10,7 @@ use userp_server::{
     email::{
         login::{EmailLoginCallbackError, EmailLoginError, EmailLoginInitError},
         signup::{EmailSignupCallbackError, EmailSignupInitError},
-        verify::EmailVerifyCallbackError,
+        verify::{EmailVerifyCallbackError, EmailVerifyInitError},
         SendEmailChallengeError,
     },
     store::UserpStore,
@@ -229,7 +229,8 @@ where
             Ok(Redirect::to(&next).into_response())
         }
         Err(err) => match err {
-            SendEmailChallengeError::Store(err) => Err(err),
+            EmailVerifyInitError::Store(err)
+            | EmailVerifyInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
             _ => {
                 let next = format!(
                     "{user_route}?error={}",
@@ -287,9 +288,16 @@ where
             .set_user_password_hash(user.get_id(), new_password_hash, session.get_id())
             .await?;
 
-        let login_route = auth.routes.pages.login;
+        let login_route = auth.routes.pages.login.clone();
 
-        Ok(Redirect::to(&format!("{login_route}?message=Password has been reset")).into_response())
+        // The reset session is single-use - drop it now that the password is set.
+        let auth = auth.log_out().await?;
+
+        Ok((
+            auth,
+            Redirect::to(&format!("{login_route}?message=Password has been reset")),
+        )
+            .into_response())
     } else {
         Ok(StatusCode::UNAUTHORIZED.into_response())
     }
