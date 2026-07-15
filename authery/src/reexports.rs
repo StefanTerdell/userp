@@ -9,7 +9,7 @@ pub use uuid;
 #[cfg(feature = "oauth")]
 pub use anyhow;
 #[cfg(feature = "oauth")]
-pub use base64;
+pub use jsonwebtoken;
 #[cfg(feature = "email")]
 pub use lettre;
 #[cfg(feature = "oauth")]

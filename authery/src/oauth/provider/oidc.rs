@@ -1,9 +1,10 @@
 use super::{ExchangeFuture, OAuthProvider};
 use crate::models::Allow;
-use crate::oauth::client::{
-    http_client, ClientWithGenericExtraTokenFields, ClientWithGenericExtraTokenFieldsBase,
-};
 use crate::models::oauth::UnmatchedOAuthToken;
+use crate::oauth::client::{
+    fetch_jwks, http_client, ClientWithGenericExtraTokenFields,
+    ClientWithGenericExtraTokenFieldsBase,
+};
 use anyhow::Context;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
@@ -12,10 +13,11 @@ use oauth2::{
 use std::fmt::Display;
 use url::Url;
 
-/// ⚠️ Warning: JWT token signature is not checked yet.
 #[derive(Debug)]
 pub struct OAuthOidcProvider {
     client: ClientWithGenericExtraTokenFields,
+    client_id: String,
+    issuer: String,
     name: String,
     display_name: String,
     scopes: Vec<Scope>,
@@ -25,18 +27,23 @@ pub struct OAuthOidcProvider {
 }
 
 impl OAuthOidcProvider {
-    /// ⚠️ Warning: JWT token signature is not checked yet.
+    /// `issuer` is the OIDC issuer URL (e.g. `https://accounts.google.com`); its
+    /// discovery document and JWKS are used to validate returned id_tokens.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: impl Into<String>,
         display_name: impl Into<String>,
         client_id: impl Into<String>,
         client_secret: impl Into<String>,
+        issuer: impl Into<String>,
         auth_url: impl Into<String>,
         token_url: impl Into<String>,
         scopes: &[impl Display],
     ) -> Result<OAuthOidcProvider, anyhow::Error> {
+        let client_id = client_id.into();
+
         let client: ClientWithGenericExtraTokenFields =
-            ClientWithGenericExtraTokenFieldsBase::new(ClientId::new(client_id.into()))
+            ClientWithGenericExtraTokenFieldsBase::new(ClientId::new(client_id.clone()))
                 .set_client_secret(ClientSecret::new(client_secret.into()))
                 .set_auth_uri(AuthUrl::from_url(Url::parse(&auth_url.into())?))
                 .set_token_uri(TokenUrl::from_url(Url::parse(&token_url.into())?));
@@ -67,6 +74,8 @@ impl OAuthOidcProvider {
             allow_signup: None,
             allow_linking: None,
             client,
+            client_id,
+            issuer: issuer.into(),
             display_name: display_name.into(),
             scopes,
             name,
@@ -118,8 +127,9 @@ impl OAuthProvider for OAuthOidcProvider {
         &self,
         base_redirect_url: &RedirectUrl,
         scopes: &[Scope],
-    ) -> (Url, CsrfToken, PkceCodeVerifier) {
+    ) -> (Url, CsrfToken, PkceCodeVerifier, Option<String>) {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+        let nonce = CsrfToken::new_random().secret().to_owned();
 
         let client = self.client.clone().set_redirect_uri(base_redirect_url.clone());
 
@@ -127,9 +137,10 @@ impl OAuthProvider for OAuthOidcProvider {
             .authorize_url(CsrfToken::new_random)
             .add_scopes(scopes.to_vec())
             .set_pkce_challenge(pkce_challenge)
+            .add_extra_param("nonce", &nonce)
             .url();
 
-        (url, csrf_state, pkce_verifier)
+        (url, csrf_state, pkce_verifier, Some(nonce))
     }
 
     fn exchange_authorization_code<'a>(
@@ -138,6 +149,7 @@ impl OAuthProvider for OAuthOidcProvider {
         redirect_url: &'a RedirectUrl,
         code: &'a AuthorizationCode,
         pkce_verifier: Option<PkceCodeVerifier>,
+        nonce: Option<String>,
     ) -> ExchangeFuture<'a> {
         Box::pin(async move {
             let client = self.client.clone().set_redirect_uri(redirect_url.clone());
@@ -153,9 +165,13 @@ impl OAuthProvider for OAuthOidcProvider {
                 .await
                 .context("Requesting authorization code exchange")?;
 
-            let provider_user = res
-                .extra_fields()
-                .get_oauth_oidc_provider_user_unvalidated()?;
+            let jwks = fetch_jwks(&self.issuer).await?;
+            let provider_user = res.extra_fields().get_oauth_oidc_provider_user_validated(
+                &jwks,
+                &self.issuer,
+                &self.client_id,
+                nonce.as_deref(),
+            )?;
 
             Ok(UnmatchedOAuthToken::from_standard_token_response(
                 &res,
@@ -181,9 +197,14 @@ impl OAuthProvider for OAuthOidcProvider {
                 .await
                 .context("Requesting refresh token exchange")?;
 
-            let provider_user = res
-                .extra_fields()
-                .get_oauth_oidc_provider_user_unvalidated()?;
+            // A refreshed id_token carries no fresh nonce (none was sent).
+            let jwks = fetch_jwks(&self.issuer).await?;
+            let provider_user = res.extra_fields().get_oauth_oidc_provider_user_validated(
+                &jwks,
+                &self.issuer,
+                &self.client_id,
+                None,
+            )?;
 
             Ok(UnmatchedOAuthToken::from_standard_token_response(
                 &res,

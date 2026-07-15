@@ -43,8 +43,8 @@ impl GitLabOAuthProvider {
         .expect("Built in providers should work")
     }
 
-    /// ⚠️ Warning: JWT token signature is not checked yet.
-    pub fn new_oidc_unverified(
+    /// GitLab via OIDC, with id_token signature and claim validation.
+    pub fn new_oidc(
         client_id: impl Into<String>,
         client_secret: impl Into<String>,
     ) -> OAuthOidcProvider {
@@ -53,6 +53,7 @@ impl GitLabOAuthProvider {
             "GitLab OIDC",
             client_id,
             client_secret,
+            "https://gitlab.com",
             "https://gitlab.com/oauth/authorize",
             "https://gitlab.com/oauth/token",
             &["openid"],

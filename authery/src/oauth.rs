@@ -198,14 +198,15 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         provider: Arc<dyn OAuthProvider>,
         oauth_flow: OAuthFlow,
     ) -> (Self, Url) {
-        let (auth_url, csrf_state, pkce_verifier) = provider.get_authorization_url_and_state(
-            &self.redirect_uri(path, provider.name()),
-            provider.scopes(),
-        );
+        let (auth_url, csrf_state, pkce_verifier, nonce) = provider
+            .get_authorization_url_and_state(
+                &self.redirect_uri(path, provider.name()),
+                provider.scopes(),
+            );
 
         self.cookies.add(
             OAUTH_DATA_KEY,
-            &json!((csrf_state, pkce_verifier.secret(), oauth_flow)).to_string(),
+            &json!((csrf_state, pkce_verifier.secret(), nonce, oauth_flow)).to_string(),
         );
 
         (self, auth_url)
@@ -233,8 +234,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         // The state cookie is single-use.
         self.cookies.remove(OAUTH_DATA_KEY);
 
-        let (prev_csrf_token, pkce_verifier, oauth_flow) =
-            serde_json::from_str::<(CsrfToken, String, OAuthFlow)>(&oauth_data)?;
+        let (prev_csrf_token, pkce_verifier, nonce, oauth_flow) =
+            serde_json::from_str::<(CsrfToken, String, Option<String>, OAuthFlow)>(&oauth_data)?;
 
         if csrf_token.secret() != prev_csrf_token.secret() {
             return Err(OAuthCallbackError::CsrfMismatch);
@@ -246,6 +247,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 &self.redirect_uri(path, &provider_name),
                 &code,
                 Some(PkceCodeVerifier::new(pkce_verifier)),
+                nonce,
             )
             .await?;
 

@@ -30,18 +30,25 @@ pub trait OAuthProvider: std::fmt::Debug + Send + Sync {
 
     fn scopes(&self) -> &[Scope];
 
+    /// Build the authorization URL. Returns the URL, the CSRF state, the PKCE
+    /// verifier, and - for OIDC providers - a nonce to be stored and later
+    /// checked against the returned id_token. Non-OIDC providers return `None`.
     fn get_authorization_url_and_state(
         &self,
         base_redirect_url: &RedirectUrl,
         scopes: &[Scope],
-    ) -> (Url, CsrfToken, PkceCodeVerifier);
+    ) -> (Url, CsrfToken, PkceCodeVerifier, Option<String>);
 
+    /// Exchange the authorization code for tokens. `nonce` is the value returned
+    /// from [`Self::get_authorization_url_and_state`], round-tripped through the
+    /// state cookie, used to validate the OIDC id_token.
     fn exchange_authorization_code<'a>(
         &'a self,
         provider_name: &'a str,
         redirect_url: &'a RedirectUrl,
         code: &'a AuthorizationCode,
         pkce_verifier: Option<PkceCodeVerifier>,
+        nonce: Option<String>,
     ) -> ExchangeFuture<'a>;
 
     fn exchange_refresh_token<'a>(

@@ -142,7 +142,7 @@ impl OAuthProvider for OAuthCustomProvider {
         &self,
         base_redirect_url: &RedirectUrl,
         scopes: &[Scope],
-    ) -> (Url, CsrfToken, PkceCodeVerifier) {
+    ) -> (Url, CsrfToken, PkceCodeVerifier, Option<String>) {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
         let client = self.client.clone().set_redirect_uri(base_redirect_url.clone());
@@ -153,7 +153,8 @@ impl OAuthProvider for OAuthCustomProvider {
             .set_pkce_challenge(pkce_challenge)
             .url();
 
-        (url, csrf_state, pkce_verifier)
+        // Non-OIDC providers have no id_token, so no nonce.
+        (url, csrf_state, pkce_verifier, None)
     }
 
     fn exchange_authorization_code<'a>(
@@ -162,6 +163,7 @@ impl OAuthProvider for OAuthCustomProvider {
         redirect_url: &'a RedirectUrl,
         code: &'a AuthorizationCode,
         pkce_verifier: Option<PkceCodeVerifier>,
+        _nonce: Option<String>,
     ) -> ExchangeFuture<'a> {
         Box::pin(async move {
             let client = self.client.clone().set_redirect_uri(redirect_url.clone());
