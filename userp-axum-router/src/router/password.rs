@@ -32,7 +32,7 @@ where
 
     match auth.password_signup(&email, &password).await {
         Ok(auth) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
@@ -64,7 +64,7 @@ where
 
     match auth.password_login(&email, &password).await {
         Ok(auth) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {

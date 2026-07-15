@@ -19,6 +19,22 @@ use axum::{
 use userp_client::routes::Routes;
 use userp_server::{config::UserpConfig, store::UserpStore, Userp as AxumUserp};
 
+/// Guards against open redirects: only local paths pass through,
+/// anything absolute, protocol-relative or malformed becomes the fallback.
+pub(crate) fn safe_next(next: Option<String>, fallback: &str) -> String {
+    match next {
+        Some(next)
+            if next.starts_with('/')
+                && !next.starts_with("//")
+                && !next.starts_with("/\\")
+                && !next.contains(|c: char| c.is_ascii_control()) =>
+        {
+            next
+        }
+        _ => fallback.to_string(),
+    }
+}
+
 pub trait AxumRouter {
     fn routes(&self) -> &Routes;
 

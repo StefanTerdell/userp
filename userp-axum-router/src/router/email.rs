@@ -76,7 +76,7 @@ where
 
     match auth.email_login_callback(code).await {
         Ok((auth, next)) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
@@ -137,7 +137,7 @@ where
 
     match auth.email_signup_callback(code).await {
         Ok((auth, next)) => {
-            let next = next.unwrap_or(auth.routes.pages.post_login.clone());
+            let next = crate::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
         Err(err) => match err {
@@ -171,7 +171,7 @@ where
     match auth.email_verify_callback(code).await {
         Ok((address, next)) => {
             let next = match next {
-                Some(next) => next,
+                Some(next) => crate::router::safe_next(Some(next), &login_route),
                 None => {
                     if auth.logged_in().await? {
                         format!(
@@ -256,12 +256,15 @@ where
         let next = format!(
             "{password_send_reset_route}?error={}&address={}",
             urlencoding::encode(&err.to_string()),
-            email
+            urlencoding::encode(&email)
         );
 
         Ok(Redirect::to(&next).into_response())
     } else {
-        let next = format!("{password_send_reset_route}?sent=true&address={}", email);
+        let next = format!(
+            "{password_send_reset_route}?sent=true&address={}",
+            urlencoding::encode(&email)
+        );
 
         Ok(Redirect::to(&next).into_response())
     }
