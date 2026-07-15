@@ -1,6 +1,6 @@
 use crate::models::oauth::OAuthProviderUser;
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use oauth2::{
     basic::{
         BasicErrorResponse, BasicRevocationErrorResponse, BasicTokenIntrospectionResponse,
@@ -39,7 +39,7 @@ impl GenericExtraTokenFields {
             .split('.')
             .nth(1)
             .context("No body found. Misformed jwt?")?;
-        let body = STANDARD.decode(body)?;
+        let body = URL_SAFE_NO_PAD.decode(body)?;
         let body = serde_json::from_slice::<Value>(&body)?;
 
         let sub = body["sub"]
