@@ -13,7 +13,11 @@ pub use crate::routes::oauth::{actions::*, callbacks::*, OAuthRoutes};
 pub use crate::routes::password::*;
 
 #[cfg(feature = "axum")]
-pub use crate::axum::{cookies::*, router::AxumRouter, AxumAuthery};
+pub use crate::axum::{
+    cookies::AxumAutheryCookies,
+    router::{with_cookie_layer, AxumRouter},
+    AxumAuthery,
+};
 
 #[cfg(all(feature = "email", feature = "password"))]
 pub use crate::email::reset::*;
