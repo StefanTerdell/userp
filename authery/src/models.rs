@@ -92,9 +92,16 @@ pub trait LoginSession: Send + Sync + Sized {
     fn get_user_id(&self) -> Self::UserId;
     fn get_method(&self) -> LoginMethod;
 
+    /// When this session expires. Also used to order sessions by age when
+    /// enforcing the concurrent-session cap (all sessions share one lifetime,
+    /// so earliest expiry means oldest session).
+    fn get_expires(&self) -> chrono::DateTime<chrono::Utc>;
+
     /// Whether this session has passed its expiry. The core treats an expired
     /// session as logged-out and evicts it from the store on next use.
-    fn is_expired(&self) -> bool;
+    fn is_expired(&self) -> bool {
+        self.get_expires() < chrono::Utc::now()
+    }
 }
 
 pub trait User: Send + Sync + Sized {

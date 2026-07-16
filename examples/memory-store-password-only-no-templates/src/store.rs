@@ -31,6 +31,16 @@ impl AutheryStore for MemoryStore {
         Ok(sessions.get(session_id).cloned())
     }
 
+    async fn get_user_sessions(&self, user_id: &Uuid) -> Result<Vec<MyLoginSession>, Self::Error> {
+        let sessions = self.sessions.read().await;
+
+        Ok(sessions
+            .values()
+            .filter(|s| s.user_id == *user_id)
+            .cloned()
+            .collect())
+    }
+
     async fn delete_session(&self, user_id: &Uuid, session_id: &Uuid) -> Result<(), Self::Error> {
         let mut sessions = self.sessions.write().await;
 

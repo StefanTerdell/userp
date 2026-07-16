@@ -44,6 +44,10 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
         session_id: &Self::SessionId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn get_user_sessions(
+        &self,
+        user_id: &Self::UserId,
+    ) -> impl Future<Output = Result<Vec<Self::LoginSession>, Self::Error>> + Send;
 
     // password store
     #[cfg(feature = "password")]
@@ -123,11 +127,6 @@ pub trait AutheryStore: Send + Sync {
     ) -> impl Future<Output = Result<Option<(Self::User, Self::OAuthToken)>, Self::Error>> + Send;
 
     // user store
-    #[cfg(feature = "user")]
-    fn get_user_sessions(
-        &self,
-        user_id: &Self::UserId,
-    ) -> impl Future<Output = Result<Vec<Self::LoginSession>, Self::Error>> + Send;
     #[cfg(all(feature = "user", feature = "oauth"))]
     fn get_user_oauth_tokens(
         &self,

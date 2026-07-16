@@ -21,6 +21,7 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub allow_signup: Allow,
     pub allow_login: Allow,
     pub session_lifetime: Duration,
+    pub max_concurrent_sessions: Option<usize>,
     pub rate_limiter: std::sync::Arc<dyn crate::ratelimit::RateLimiter>,
     pub cookies: C,
     pub store: S,
@@ -43,10 +44,36 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let expires = Utc::now() + self.session_lifetime;
         let session = self.store.create_session(user_id, method, expires).await?;
 
+        if let Some(max) = self.max_concurrent_sessions {
+            self.enforce_session_cap(user_id, max).await?;
+        }
+
         self.cookies
             .add(SESSION_ID_KEY, &session.get_id().to_string());
 
         Ok(self)
+    }
+
+    /// Delete the user's oldest sessions until at most `max` remain. Expired
+    /// sessions are already logged-out, so they are evicted first regardless of
+    /// the cap. "Oldest" is by earliest expiry, which matches creation order
+    /// since every session gets the same lifetime.
+    async fn enforce_session_cap(&self, user_id: &S::UserId, max: usize) -> Result<(), S::Error> {
+        let mut sessions = self.store.get_user_sessions(user_id).await?;
+
+        sessions.sort_by_key(|s| s.get_expires());
+
+        let (expired, live): (Vec<_>, Vec<_>) = sessions.into_iter().partition(|s| s.is_expired());
+
+        let excess = live.len().saturating_sub(max);
+
+        for session in expired.iter().chain(live.iter().take(excess)) {
+            self.store
+                .delete_session(user_id, &session.get_id())
+                .await?;
+        }
+
+        Ok(())
     }
 
     pub fn get_encoded_cookies(&self) -> Vec<String> {

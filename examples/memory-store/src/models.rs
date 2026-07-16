@@ -77,8 +77,8 @@ impl LoginSession for MyLoginSession {
         self.method.clone()
     }
 
-    fn is_expired(&self) -> bool {
-        self.expires < Utc::now()
+    fn get_expires(&self) -> DateTime<Utc> {
+        self.expires
     }
 }
 

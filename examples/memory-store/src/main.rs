@@ -77,7 +77,8 @@ async fn main() {
     )
     .expect("valid auth config")
     .with_https_only(false)
-    .with_rate_limiter(FixedWindowRateLimiter::default());
+    .with_rate_limiter(FixedWindowRateLimiter::default())
+    .with_max_concurrent_sessions(3);
 
     let auth_router = auth.router::<MemoryStore, AppState>();
 

@@ -30,6 +30,10 @@ pub struct AutheryConfig {
     /// Absolute lifetime of a login session. Sessions older than this are
     /// treated as logged-out and evicted. Defaults to 30 days.
     pub session_lifetime: Duration,
+    /// Maximum number of concurrent sessions per user. On login past the cap,
+    /// the user's oldest sessions are deleted. `None` (the default) is
+    /// unlimited.
+    pub max_concurrent_sessions: Option<usize>,
     /// Consulted before abusable operations (password attempts, email sends).
     /// Defaults to no limiting; see [`crate::ratelimit`].
     pub rate_limiter: Arc<dyn RateLimiter>,
@@ -64,6 +68,7 @@ impl AutheryConfig {
             allow_signup: Allow::OnSelf,
             allow_login: Allow::OnSelf,
             session_lifetime: Duration::days(30),
+            max_concurrent_sessions: None,
             rate_limiter: Arc::new(NoRateLimit),
             routes: routes.into(),
             #[cfg(feature = "password")]
@@ -99,6 +104,13 @@ impl AutheryConfig {
     /// Install a [`RateLimiter`] consulted before abusable operations.
     pub fn with_rate_limiter(mut self, rate_limiter: impl RateLimiter + 'static) -> Self {
         self.rate_limiter = Arc::new(rate_limiter);
+        self
+    }
+
+    /// Cap concurrent sessions per user; logins past the cap evict the user's
+    /// oldest sessions.
+    pub fn with_max_concurrent_sessions(mut self, max: usize) -> Self {
+        self.max_concurrent_sessions = Some(max);
         self
     }
 
