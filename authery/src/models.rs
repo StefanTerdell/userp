@@ -2,6 +2,8 @@
 pub mod email;
 #[cfg(feature = "oauth")]
 pub mod oauth;
+#[cfg(feature = "organizations")]
+pub mod org;
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
