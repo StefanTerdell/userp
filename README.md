@@ -1,65 +1,80 @@
-# Userp
+# Authery
 
-## Work in progress
+Batteries-included authentication for Axum: sessions, passwords, email links
+and one-time codes, OAuth2/OIDC, passkeys, and MFA — behind one composable
+crate with a ready-made router and replaceable pages, on top of whatever
+storage you bring.
 
-Warning: This crate is heavily WIP! I'm holding off on doc-comments until I've worked out the module hierarchy and basic API to my satisfaction.
+> **Status**: pre-release, APIs still moving. The `authery` branch is the
+> active rewrite of the earlier `userp` crate.
 
-## Summary
+## What you get
 
-This crate provides a high-level user, authentication and session handling system for Axum, and likely Actix later on. The idea is to use it as a base for something like Next Auth but for Leptos, being easy to set up while heavy on features, with including batteris a higher approach than full customizability.
+- **Session handling** — encrypted `HttpOnly` cookies, absolute expiry,
+  optional per-user concurrent-session caps, server-side logout.
+- **Login methods**, each behind a feature flag:
+  - `password` — argon2 hashing (pluggable hasher), enumeration-resistant login
+  - `email` — magic links: signup, login, verification, password reset
+  - `otp` — six-digit codes over email instead of links
+  - `oauth` — OAuth2/OIDC with PKCE, validated id_tokens (JWKS + nonce),
+    token refresh and account linking; 11 built-in providers plus fully
+    custom ones, resolvable at runtime for multi-tenant setups
+  - `webauthn` — passkeys: usernameless login and account-page registration
+  - `mfa` — policy-driven second factors (passkey or emailed code) on top of
+    any first factor
+- **An Axum router** serving all of it, with templated pages (`pages`
+  feature) you can restyle or replace wholesale via a `Pages` trait — or skip
+  the router and call the core flows from your own handlers.
+- **Your storage** — implement the `AutheryStore` trait over any backend;
+  entities are trait-defined with generic ID types, so your existing models
+  and id scheme stay yours. A rate-limiter hook lets you plug your own
+  counters in front of abusable operations.
 
-If you need something truly custom you might want to look at the awesome axum-login or oauth2 crates, but if you just want...
-1. Users to be able to Log In
-2. Reset their Passwords with their verified Email
-3. Link their social accounts
-4. Manage their multiple Sessions
+## Quickstart
 
-... Then this might be something for you!
+```rust,ignore
+use authery::prelude::*;
 
-## Screenshots
+#[derive(Clone, axum_macros::FromRef)]
+struct AppState {
+    store: MyStore, // your AutheryStore implementation
+    auth: AutheryConfig,
+}
 
-Before you ask: design PRs are most welcome 😅
+let auth = AutheryConfig::new(
+    std::env::var("AUTH_KEY")?, // >= 64 bytes, secret
+    Routes::default(),
+    PasswordConfig::new(),
+    EmailConfig::new(base_url.clone(), SmtpSettings::new(smtp_url, from)),
+    OAuthConfig::new(base_url.clone())
+        .with_client(GitHubOAuthProvider::new(client_id, client_secret)),
+    WebauthnConfig::new(base_url, "My app")?,
+)?;
 
-<table align="center">
-<tr>
-  <td align="center">
-    <img alt="A screenshot of the included sign-up screen" src="https://raw.githubusercontent.com/StefanTerdell/userp/refs/heads/main/.github/sign-up.png" width="320px" />
+let app = axum::Router::new()
+    .merge(auth.router::<MyStore, AppState>())
+    .with_state(AppState { store, auth });
+```
 
-  </td>
-</tr>
-<tr>
-  <td align="center">
-    <img alt="A screenshot of the included user account management screen" src="https://raw.githubusercontent.com/StefanTerdell/userp/refs/heads/main/.github/account-manager.png" width="500px" />
-  </td>
-</tr>
-</table>
+That's a working `/login`, `/signup`, `/user`, password reset, magic links,
+GitHub SSO and passkeys. See `examples/memory-store` for the full picture —
+including multi-tenant per-org SSO built at app level on the provider
+resolver — and `examples/memory-store-password-only-no-templates` for the
+minimal, bring-your-own-pages setup.
 
+## Development
 
-## Features
+```sh
+docker compose -f dev/compose.yaml up -d   # Keycloak (OIDC) + Mailhog (SMTP)
+cargo test -p authery --no-default-features \
+  --features password,email,otp,mfa,user   # core flow tests
+cargo test -p authery                      # + live Keycloak OIDC validation when up
+mdbook serve docs                          # the book
+```
 
-- Login types
-  - Username / Password
-  - Email magic link
-  - Social logins (OAuth)
-- Emails
-  - Validation
-  - Password reset
-- Oauth
-  - Easily extendable with custom providers
-  - Ergonomicly implement user info fetching procedure
-  - Optional split callback paths
-- Batteries included
-  - Askama based templates provide basic login/signup/account pages
-  - Growing list of built-in social providers
-  - Multiple sessions
+`dev/PROVIDERS.md` lists the external OAuth providers and the env vars the
+example picks them up from.
 
-## Todo
-- [x] Granular feature-controlled templates
-- [ ] Replacable templates (by typed Fns returning impl IntoResponse)
-- [ ] Webauthn
-- [ ] MFA
-- [ ] Doc-comments
-- [ ] Tests
-- [ ] ???
-- [ ] Publish!
+## License
 
+ISC
