@@ -27,6 +27,10 @@ use webauthn::*;
 pub mod mfa;
 #[cfg(feature = "mfa")]
 use mfa::*;
+#[cfg(feature = "organizations")]
+pub mod org;
+#[cfg(feature = "organizations")]
+use org::*;
 use serde::{Deserialize, Serialize};
 
 use std::fmt::Display;
@@ -54,6 +58,9 @@ pub struct Routes<T = String> {
     #[cfg(feature = "mfa")]
     /// Contains the routes for completing a second factor
     pub mfa: MfaRoutes<T>,
+    #[cfg(feature = "organizations")]
+    /// Contains the organization pages and management actions
+    pub org: OrgRoutes<T>,
     /// Post - deletes the current UserLogin session and redirects the user to pages.post_logout
     pub logout: T,
     /// Get - returns 200 if the current session is still present on the server. Returns 401 if not.
@@ -76,6 +83,8 @@ impl Default for Routes<&'static str> {
             webauthn: WebauthnRoutes::default(),
             #[cfg(feature = "mfa")]
             mfa: MfaRoutes::default(),
+            #[cfg(feature = "organizations")]
+            org: OrgRoutes::default(),
             user_verify_session: "/verify-session",
             logout: "/logout",
         }
@@ -110,6 +119,8 @@ impl<'a> From<&'a Routes<String>> for Routes<&'a str> {
             webauthn: value.webauthn.as_ref().into(),
             #[cfg(feature = "mfa")]
             mfa: value.mfa.as_ref().into(),
+            #[cfg(feature = "organizations")]
+            org: value.org.as_ref().into(),
             user_verify_session: &value.user_verify_session,
             logout: &value.logout,
         }
@@ -133,6 +144,8 @@ impl<T: Display> Routes<T> {
             webauthn: self.webauthn.with_prefix(&prefix),
             #[cfg(feature = "mfa")]
             mfa: self.mfa.with_prefix(&prefix),
+            #[cfg(feature = "organizations")]
+            org: self.org.with_prefix(&prefix),
             user_verify_session: format!("{prefix}{}", self.user_verify_session),
             logout: format!("{prefix}{}", self.logout),
         }

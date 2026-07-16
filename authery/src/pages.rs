@@ -550,6 +550,81 @@ pub struct OtpTemplate<'a> {
     pub error: Option<&'a str>,
 }
 
+#[cfg(feature = "organizations")]
+pub struct OrgsTemplateItem {
+    pub slug: String,
+    pub name: String,
+    /// Effective roles, comma-joined for display.
+    pub roles: String,
+    pub page_route: String,
+}
+
+/// The organizations overview: the user's memberships plus a create form.
+#[cfg(feature = "organizations")]
+#[derive(Template)]
+#[template(path = "orgs.html")]
+pub struct OrgsTemplate<'a> {
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub orgs: Vec<OrgsTemplateItem>,
+    pub create_action_route: &'a str,
+    pub home_route: &'a str,
+}
+
+#[cfg(feature = "organizations")]
+pub struct OrgTemplateMember {
+    pub user_id: String,
+    /// Comma-joined for display.
+    pub roles: String,
+}
+
+#[cfg(feature = "organizations")]
+pub struct OrgTemplateChild {
+    pub slug: String,
+    pub name: String,
+    pub page_route: String,
+}
+
+#[cfg(feature = "organizations")]
+pub struct OrgTemplateProvider {
+    pub name: String,
+    pub display_name: String,
+    pub issuer: String,
+}
+
+/// The management page for one organization. Owner-only sections (settings,
+/// invites, providers) render when `is_owner`.
+#[cfg(feature = "organizations")]
+#[derive(Template)]
+#[template(path = "org.html")]
+pub struct OrgTemplate<'a> {
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub slug: &'a str,
+    pub name: &'a str,
+    pub is_owner: bool,
+    /// The viewer's effective roles, comma-joined.
+    pub roles: String,
+    pub rules: crate::models::org::OrgLoginRules,
+    /// `parent_role=role_here` lines for the settings textarea.
+    pub role_inheritance: String,
+    pub members: Vec<OrgTemplateMember>,
+    pub children: Vec<OrgTemplateChild>,
+    /// Org SSO providers; empty when the oauth feature is off.
+    pub providers: Vec<OrgTemplateProvider>,
+    /// The org-scoped login page path.
+    pub login_route: String,
+    pub orgs_route: &'a str,
+    pub update_action_route: String,
+    pub delete_action_route: String,
+    pub member_upsert_action_route: String,
+    pub member_remove_action_route: String,
+    pub sub_create_action_route: String,
+    pub invite_create_action_route: String,
+    pub provider_upsert_action_route: String,
+    pub provider_delete_action_route: String,
+}
+
 /// Renders the built-in pages to HTML. Implement this and register it with
 /// [`crate::config::AutheryConfig::with_pages`] to replace the bundled Askama
 /// templates with your own markup while keeping the built-in router and flows.
@@ -564,6 +639,10 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
+    #[cfg(feature = "organizations")]
+    fn render_orgs(&self, view: &OrgsTemplate<'_>) -> String;
+    #[cfg(feature = "organizations")]
+    fn render_org(&self, view: &OrgTemplate<'_>) -> String;
     #[cfg(feature = "user")]
     fn render_user(&self, view: &UserTemplate<'_>) -> String;
     #[cfg(all(feature = "password", feature = "email"))]
@@ -598,6 +677,16 @@ impl Pages for AskamaPages {
 
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "organizations")]
+    fn render_orgs(&self, view: &OrgsTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "organizations")]
+    fn render_org(&self, view: &OrgTemplate<'_>) -> String {
         render_or_err(view)
     }
 

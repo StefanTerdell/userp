@@ -10,6 +10,8 @@ pub mod otp;
 pub mod webauthn;
 #[cfg(feature = "mfa")]
 pub mod mfa;
+#[cfg(feature = "organizations")]
+pub mod org;
 #[cfg(feature = "pages")]
 pub mod pages;
 #[cfg(feature = "password")]
@@ -434,6 +436,59 @@ pub trait AxumRouter {
                     self.routes().webauthn.user_webauthn_delete.as_str(),
                     post(webauthn::post_user_webauthn_delete::<St>),
                 );
+            }
+        }
+
+        #[cfg(feature = "organizations")]
+        {
+            router = router
+                .route(
+                    self.routes().org.org_create.as_str(),
+                    post(org::post_org_create::<St>),
+                )
+                .route(
+                    self.routes().org.org_update.as_str(),
+                    post(org::post_org_update::<St>),
+                )
+                .route(
+                    self.routes().org.org_delete.as_str(),
+                    post(org::post_org_delete::<St>),
+                )
+                .route(
+                    self.routes().org.org_member_upsert.as_str(),
+                    post(org::post_org_member_upsert::<St>),
+                )
+                .route(
+                    self.routes().org.org_member_remove.as_str(),
+                    post(org::post_org_member_remove::<St>),
+                )
+                .route(
+                    self.routes().org.org_sub_create.as_str(),
+                    post(org::post_org_sub_create::<St>),
+                )
+                .route(
+                    self.routes().org.org_invite_create.as_str(),
+                    post(org::post_org_invite_create::<St>),
+                );
+
+            #[cfg(feature = "oauth")]
+            {
+                router = router
+                    .route(
+                        self.routes().org.org_provider_upsert.as_str(),
+                        post(org::post_org_provider_upsert::<St>),
+                    )
+                    .route(
+                        self.routes().org.org_provider_delete.as_str(),
+                        post(org::post_org_provider_delete::<St>),
+                    );
+            }
+
+            #[cfg(feature = "pages")]
+            {
+                router = router
+                    .route(self.routes().org.orgs.as_str(), get(org::get_orgs::<St>))
+                    .route(self.routes().org.org.as_str(), get(org::get_org::<St>));
             }
         }
 
