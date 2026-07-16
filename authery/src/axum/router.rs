@@ -8,6 +8,8 @@ pub mod oauth;
 pub mod otp;
 #[cfg(feature = "webauthn")]
 pub mod webauthn;
+#[cfg(feature = "mfa")]
+pub mod mfa;
 #[cfg(feature = "pages")]
 pub mod pages;
 #[cfg(feature = "password")]
@@ -421,6 +423,38 @@ pub trait AxumRouter {
                     self.routes().webauthn.user_webauthn_delete.as_str(),
                     post(webauthn::post_user_webauthn_delete::<St>),
                 );
+            }
+        }
+
+        #[cfg(feature = "mfa")]
+        {
+            #[cfg(feature = "pages")]
+            {
+                router = router.route(
+                    self.routes().mfa.login_mfa.as_str(),
+                    get(pages::get_login_mfa::<St>),
+                );
+            }
+
+            #[cfg(feature = "otp")]
+            {
+                router = router.route(
+                    self.routes().mfa.login_mfa_otp.as_str(),
+                    post(mfa::post_login_mfa_otp::<St>),
+                );
+            }
+
+            #[cfg(feature = "webauthn")]
+            {
+                router = router
+                    .route(
+                        self.routes().mfa.login_mfa_webauthn_start.as_str(),
+                        post(mfa::post_login_mfa_webauthn_start::<St>),
+                    )
+                    .route(
+                        self.routes().mfa.login_mfa_webauthn_finish.as_str(),
+                        post(mfa::post_login_mfa_webauthn_finish::<St>),
+                    );
             }
         }
 

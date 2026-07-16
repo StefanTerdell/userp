@@ -55,6 +55,13 @@ where
 
     match auth.oauth_login_callback(provider, code, state).await {
         Ok((auth, next)) => {
+            #[cfg(feature = "mfa")]
+            if auth.mfa_pending_session().await?.is_some() {
+                let url =
+                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                return Ok((auth, Redirect::to(&url)).into_response());
+            }
+
             let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
@@ -181,6 +188,13 @@ where
 
     match auth.oauth_generic_callback(provider, code, state).await {
         Ok((auth, next)) => {
+            #[cfg(feature = "mfa")]
+            if auth.mfa_pending_session().await?.is_some() {
+                let url =
+                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                return Ok((auth, Redirect::to(&url)).into_response());
+            }
+
             let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }
@@ -213,6 +227,13 @@ where
 
     match auth.oauth_signup_callback(provider, code, state).await {
         Ok((auth, next)) => {
+            #[cfg(feature = "mfa")]
+            if auth.mfa_pending_session().await?.is_some() {
+                let url =
+                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                return Ok((auth, Redirect::to(&url)).into_response());
+            }
+
             let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
             Ok((auth, Redirect::to(&next)).into_response())
         }

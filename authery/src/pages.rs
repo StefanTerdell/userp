@@ -456,6 +456,32 @@ impl SignupTemplate<'_> {
     }
 }
 
+#[cfg(feature = "mfa")]
+pub struct MfaOtpTemplateInfo<'a> {
+    pub action_route: &'a str,
+    /// A masked rendering of the address the code goes to, e.g. `s***@x.com`.
+    pub address_hint: String,
+}
+
+#[cfg(feature = "mfa")]
+pub struct MfaWebauthnTemplateInfo<'a> {
+    pub start_route: &'a str,
+    pub finish_route: &'a str,
+}
+
+/// The second-factor picker shown after a first factor succeeded but the MFA
+/// policy demands more. Offers only factors the pending user actually has.
+#[cfg(feature = "mfa")]
+#[derive(Template)]
+#[template(path = "mfa.html")]
+pub struct MfaTemplate<'a> {
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub otp: Option<MfaOtpTemplateInfo<'a>>,
+    pub webauthn: Option<MfaWebauthnTemplateInfo<'a>>,
+}
+
 /// The one-time-code entry page: the user has been sent a code and types it
 /// here. `action_route` is the OTP route the form posts back to (login or
 /// signup), with the address carried in a hidden field.
@@ -481,6 +507,8 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
     #[cfg(feature = "otp")]
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
+    #[cfg(feature = "mfa")]
+    fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
     #[cfg(feature = "user")]
     fn render_user(&self, view: &UserTemplate<'_>) -> String;
     #[cfg(all(feature = "password", feature = "email"))]
@@ -510,6 +538,11 @@ impl Pages for AskamaPages {
 
     #[cfg(feature = "otp")]
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "mfa")]
+    fn render_mfa(&self, view: &MfaTemplate<'_>) -> String {
         render_or_err(view)
     }
 

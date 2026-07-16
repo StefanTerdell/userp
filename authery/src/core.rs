@@ -33,6 +33,8 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub oauth: OAuthConfig,
     #[cfg(feature = "webauthn")]
     pub webauthn: crate::webauthn::WebauthnConfig,
+    #[cfg(feature = "mfa")]
+    pub mfa_policy: crate::mfa::MfaPolicy,
     #[cfg(feature = "pages")]
     pub pages: std::sync::Arc<dyn crate::pages::Pages>,
 }
@@ -43,6 +45,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         method: LoginMethod,
         user_id: &S::UserId,
     ) -> Result<Self, S::Error> {
+        // When the MFA policy demands a second factor for this method and the
+        // user has one registered, downgrade to a pending session that can
+        // only complete the MFA flow.
+        #[cfg(feature = "mfa")]
+        let method = self.mfa_wrap_method(method, user_id).await?;
+
         let expires = Utc::now() + self.session_lifetime;
         let session = self.store.create_session(user_id, method, expires).await?;
 
@@ -107,15 +115,16 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         session_id_cookie.parse::<S::SessionId>().ok()
     }
 
+    /// Whether this session counts as logged-in. Purpose-bound sessions
+    /// (password reset, pending MFA) can only drive their own flow.
     fn is_login_session(session: &S::LoginSession) -> bool {
-        #[cfg(all(feature = "password", feature = "email"))]
-        return !matches!(
-            session.get_method(),
-            LoginMethod::PasswordReset { address: _ }
-        );
-
-        #[cfg(not(all(feature = "password", feature = "email")))]
-        return true;
+        match session.get_method() {
+            #[cfg(all(feature = "password", feature = "email"))]
+            LoginMethod::PasswordReset { .. } => false,
+            #[cfg(feature = "mfa")]
+            LoginMethod::MfaPending { .. } => false,
+            _ => true,
+        }
     }
 
     pub async fn logged_in(&self) -> Result<bool, S::Error> {

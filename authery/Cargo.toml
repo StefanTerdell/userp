@@ -57,6 +57,7 @@ default = ["user", "email", "password", "oauth"]
 user = []
 email = ["dep:lettre", "dep:url"]
 otp = ["email"]
+mfa = []
 webauthn = [
   "dep:webauthn-rs",
   "dep:webauthn-rs-proto",

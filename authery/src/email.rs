@@ -137,7 +137,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         .await
     }
 
-    async fn send_email(
+    pub(crate) async fn send_email(
         &self,
         to: &str,
         subject: &str,

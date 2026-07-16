@@ -6,6 +6,8 @@ use crate::oauth::OAuthConfig;
 use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
+#[cfg(feature = "mfa")]
+use crate::mfa::MfaPolicy;
 use crate::ratelimit::{NoRateLimit, RateLimiter};
 #[cfg(feature = "webauthn")]
 use crate::webauthn::WebauthnConfig;
@@ -48,6 +50,11 @@ pub struct AutheryConfig {
     pub oauth: OAuthConfig,
     #[cfg(feature = "webauthn")]
     pub webauthn: WebauthnConfig,
+    /// Which first factors demand a second one; see [`crate::mfa`]. Defaults
+    /// to requiring MFA for password logins when the user has a factor
+    /// registered.
+    #[cfg(feature = "mfa")]
+    pub mfa_policy: MfaPolicy,
     /// The renderer for the built-in pages. Defaults to the bundled Askama
     /// templates; override with [`AutheryConfig::with_pages`].
     #[cfg(feature = "pages")]
@@ -84,6 +91,8 @@ impl AutheryConfig {
             oauth,
             #[cfg(feature = "webauthn")]
             webauthn,
+            #[cfg(feature = "mfa")]
+            mfa_policy: MfaPolicy::default(),
             #[cfg(feature = "pages")]
             pages: Arc::new(AskamaPages),
         })
@@ -118,6 +127,13 @@ impl AutheryConfig {
     /// oldest sessions.
     pub fn with_max_concurrent_sessions(mut self, max: usize) -> Self {
         self.max_concurrent_sessions = Some(max);
+        self
+    }
+
+    /// Set which first factors demand a second one.
+    #[cfg(feature = "mfa")]
+    pub fn with_mfa_policy(mut self, mfa_policy: MfaPolicy) -> Self {
+        self.mfa_policy = mfa_policy;
         self
     }
 

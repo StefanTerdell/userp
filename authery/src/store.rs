@@ -190,7 +190,7 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
         session_id: &Self::SessionId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    #[cfg(all(feature = "user", feature = "email"))]
+    #[cfg(feature = "email")]
     fn get_user_emails(
         &self,
         user_id: &Self::UserId,

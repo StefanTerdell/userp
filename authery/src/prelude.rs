@@ -56,6 +56,10 @@ pub use crate::models::email::*;
 pub use crate::models::oauth::*;
 pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginSession, User};
 
+#[cfg(feature = "mfa")]
+pub use crate::mfa::{MfaError, MfaFactors, MfaPolicy};
+#[cfg(feature = "mfa")]
+pub use crate::routes::mfa::MfaRoutes;
 pub use crate::ratelimit::{NoRateLimit, RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};
 #[cfg(feature = "webauthn")]
 pub use crate::routes::webauthn::WebauthnRoutes;

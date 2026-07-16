@@ -57,6 +57,71 @@ where
     Ok(Html(auth.pages.render_signup(&view)).into_response())
 }
 
+#[cfg(feature = "mfa")]
+pub async fn get_login_mfa<St>(
+    auth: AxumAuthery<St>,
+    Query(NextMessageErrorQuery {
+        next,
+        message,
+        error,
+        ..
+    }): Query<NextMessageErrorQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::models::{LoginMethod, LoginSession};
+    use crate::pages::MfaTemplate;
+
+    let login_route = auth.routes.pages.login.clone();
+
+    let Some(pending) = auth.mfa_pending_session().await? else {
+        return Ok(Redirect::to(&login_route).into_response());
+    };
+    let LoginMethod::MfaPending { first } = pending.get_method() else {
+        return Ok(Redirect::to(&login_route).into_response());
+    };
+
+    let factors = auth.mfa_factors(&pending.get_user_id(), &first).await?;
+
+    let view = MfaTemplate {
+        next: next.as_deref(),
+        message: message.as_deref(),
+        error: error.as_deref(),
+        #[cfg(feature = "otp")]
+        otp: factors.otp_address.map(|address| crate::pages::MfaOtpTemplateInfo {
+            action_route: &auth.routes.mfa.login_mfa_otp,
+            address_hint: mask_address(&address),
+        }),
+        #[cfg(not(feature = "otp"))]
+        otp: None,
+        #[cfg(feature = "webauthn")]
+        webauthn: factors
+            .webauthn
+            .then_some(crate::pages::MfaWebauthnTemplateInfo {
+                start_route: &auth.routes.mfa.login_mfa_webauthn_start,
+                finish_route: &auth.routes.mfa.login_mfa_webauthn_finish,
+            }),
+        #[cfg(not(feature = "webauthn"))]
+        webauthn: None,
+    };
+
+    Ok(Html(auth.pages.render_mfa(&view)).into_response())
+}
+
+/// `stefan@example.com` -> `s***@example.com`
+#[cfg(all(feature = "mfa", feature = "otp"))]
+fn mask_address(address: &str) -> String {
+    match address.split_once('@') {
+        Some((local, domain)) => {
+            let first = local.chars().next().unwrap_or('*');
+            format!("{first}***@{domain}")
+        }
+        None => "***".to_string(),
+    }
+}
+
 #[cfg(feature = "otp")]
 #[derive(Deserialize)]
 pub struct OtpPageQuery {

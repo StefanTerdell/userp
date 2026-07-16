@@ -11,6 +11,7 @@ authery = { path = "../../authery", features = [
   "pages",
   "otp",
   "webauthn",
+  "mfa",
 ] }
 axum = "0.8.9"
 axum-macros = "0.5.0"

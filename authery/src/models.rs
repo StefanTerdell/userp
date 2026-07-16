@@ -81,6 +81,22 @@ pub enum LoginMethod {
         /// The hex-encoded credential id of the passkey used
         credential_id: String,
     },
+    #[cfg(feature = "mfa")]
+    /// A first factor succeeded but the MFA policy demands a second one.
+    /// Sessions with this method are NOT logged in - they can only be used to
+    /// complete the second factor, which replaces them with [`LoginMethod::Mfa`].
+    MfaPending {
+        /// The first factor that already succeeded
+        first: Box<LoginMethod>,
+    },
+    #[cfg(feature = "mfa")]
+    /// The login session was created by completing two factors
+    Mfa {
+        /// The first factor
+        first: Box<LoginMethod>,
+        /// The second factor
+        second: Box<LoginMethod>,
+    },
     #[cfg(feature = "oauth")]
     /// The login session was created using the Oauth method
     OAuth {

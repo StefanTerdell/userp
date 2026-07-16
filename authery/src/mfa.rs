@@ -1,0 +1,454 @@
+//! Multi-factor authentication as a policy layer over the other login methods.
+//!
+//! [`MfaPolicy`] names the first factors that must be backed by a second one.
+//! When such a login succeeds and the user *has* a second factor registered,
+//! the created session gets [`LoginMethod::MfaPending`] - treated as logged-out
+//! everywhere except the MFA completion flow. Completing a second factor
+//! deletes the pending session and creates a real one with
+//! [`LoginMethod::Mfa`], recording both factors.
+//!
+//! Users without a registered second factor log in normally ("if configured"
+//! semantics): hard-requiring MFA would lock out every fresh signup, so apps
+//! that want mandatory MFA should steer users to register a factor and can
+//! check `matches!(session.get_method(), LoginMethod::Mfa { .. })` on their
+//! own sensitive routes.
+//!
+//! Available second factors:
+//! - a passkey ceremony scoped to the user's registered credentials
+//!   (`webauthn` feature)
+//! - a one-time code mailed to the user's own verified address (`otp`
+//!   feature) - never to an address supplied in the request, and not offered
+//!   when the first factor already proved control of the mailbox
+
+use crate::{
+    core::CoreAuthery,
+    models::{AutheryCookies, LoginMethod, LoginSession},
+    store::AutheryStore,
+};
+use thiserror::Error;
+
+/// Which first factors require a second factor (when the user has one
+/// registered). The default requires MFA for password logins only: emailed
+/// links/codes and oauth already involve a second system, while a password is
+/// a pure knowledge factor.
+#[derive(Debug, Clone)]
+pub struct MfaPolicy {
+    #[cfg(feature = "password")]
+    pub require_for_password: bool,
+    pub require_for_email: bool,
+    #[cfg(feature = "otp")]
+    pub require_for_otp: bool,
+    #[cfg(feature = "oauth")]
+    pub require_for_oauth: bool,
+}
+
+impl Default for MfaPolicy {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "password")]
+            require_for_password: true,
+            require_for_email: false,
+            #[cfg(feature = "otp")]
+            require_for_otp: false,
+            #[cfg(feature = "oauth")]
+            require_for_oauth: false,
+        }
+    }
+}
+
+impl MfaPolicy {
+    fn requires_second_factor(&self, method: &LoginMethod) -> bool {
+        match method {
+            #[cfg(feature = "password")]
+            LoginMethod::Password => self.require_for_password,
+            #[cfg(feature = "email")]
+            LoginMethod::Email { .. } => self.require_for_email,
+            #[cfg(feature = "otp")]
+            LoginMethod::Otp { .. } => self.require_for_otp,
+            #[cfg(feature = "oauth")]
+            LoginMethod::OAuth { .. } => self.require_for_oauth,
+            // Webauthn is already possession + user verification; purpose-bound
+            // and second-factor methods never re-trigger.
+            _ => false,
+        }
+    }
+}
+
+/// The second factors a pending user can choose from.
+#[derive(Debug, Clone, Default)]
+pub struct MfaFactors {
+    /// The user has at least one passkey registered.
+    pub webauthn: bool,
+    /// A code can be mailed to this (verified) address.
+    pub otp_address: Option<String>,
+}
+
+impl MfaFactors {
+    pub fn any(&self) -> bool {
+        self.webauthn || self.otp_address.is_some()
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MfaError<StoreError: std::error::Error> {
+    #[error("No MFA login in progress")]
+    NoPending,
+    #[error("This second factor is not available")]
+    FactorUnavailable,
+    #[error(transparent)]
+    Store(StoreError),
+}
+
+impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    /// Called on every login: downgrade to a pending session when the policy
+    /// demands a second factor the user actually has.
+    pub(crate) async fn mfa_wrap_method(
+        &self,
+        method: LoginMethod,
+        user_id: &S::UserId,
+    ) -> Result<LoginMethod, S::Error> {
+        if !self.mfa_policy.requires_second_factor(&method) {
+            return Ok(method);
+        }
+
+        if self.mfa_factors(user_id, &method).await?.any() {
+            Ok(LoginMethod::MfaPending {
+                first: Box::new(method),
+            })
+        } else {
+            Ok(method)
+        }
+    }
+
+    /// The second factors available to this user, given the first factor
+    /// already used. An emailed code is not offered when the first factor
+    /// already proved control of the mailbox.
+    pub async fn mfa_factors(
+        &self,
+        user_id: &S::UserId,
+        first: &LoginMethod,
+    ) -> Result<MfaFactors, S::Error> {
+        let mut factors = MfaFactors::default();
+
+        #[cfg(feature = "webauthn")]
+        {
+            factors.webauthn = !self.store.webauthn_get_credentials(user_id).await?.is_empty();
+        }
+
+        #[cfg(feature = "otp")]
+        {
+            use crate::models::email::UserEmail;
+
+            let email_based_first = matches!(
+                first,
+                LoginMethod::Email { .. } | LoginMethod::Otp { .. }
+            );
+
+            if !email_based_first {
+                factors.otp_address = self
+                    .store
+                    .get_user_emails(user_id)
+                    .await?
+                    .iter()
+                    .find(|e| e.get_verified())
+                    .map(|e| e.get_address().to_owned());
+            }
+        }
+
+        #[cfg(not(feature = "otp"))]
+        let _ = first;
+
+        Ok(factors)
+    }
+
+    /// The session awaiting a second factor, if any.
+    pub async fn mfa_pending_session(&self) -> Result<Option<S::LoginSession>, S::Error> {
+        let Some(session_id) = self.session_id_cookie() else {
+            return Ok(None);
+        };
+
+        let Some(session) = self.store.get_session(&session_id).await? else {
+            return Ok(None);
+        };
+
+        if session.is_expired() {
+            self.store
+                .delete_session(&session.get_user_id(), &session.get_id())
+                .await?;
+            return Ok(None);
+        }
+
+        Ok(Some(session)
+            .filter(|s| matches!(s.get_method(), LoginMethod::MfaPending { .. })))
+    }
+
+    /// Replace the pending session with a full one recording both factors.
+    /// Callers must have verified `second` against this user.
+    pub(crate) async fn mfa_upgrade(
+        mut self,
+        pending: S::LoginSession,
+        second: LoginMethod,
+    ) -> Result<Self, S::Error> {
+        let LoginMethod::MfaPending { first } = pending.get_method() else {
+            // Guarded by every caller; a non-pending session never gets here.
+            return Ok(self);
+        };
+
+        let user_id = pending.get_user_id();
+
+        self.store
+            .delete_session(&user_id, &pending.get_id())
+            .await?;
+        self.cookies.remove(crate::constants::SESSION_ID_KEY);
+
+        self.log_in(
+            LoginMethod::Mfa {
+                first,
+                second: Box::new(second),
+            },
+            &user_id,
+        )
+        .await
+    }
+}
+
+#[cfg(feature = "otp")]
+mod otp_factor {
+    use super::*;
+    use crate::email::SendEmailChallengeError;
+    use crate::models::email::EmailChallenge;
+    use crate::ratelimit::{RateLimitOp, RateLimited};
+    use chrono::Utc;
+
+    fn challenge_key(address: &str, code: &str) -> String {
+        format!("mfa:{address}:{code}")
+    }
+
+    #[derive(Debug, Error)]
+    pub enum MfaOtpError<StoreError: std::error::Error> {
+        #[error("No MFA login in progress")]
+        NoPending,
+        #[error("This second factor is not available")]
+        FactorUnavailable,
+        #[error("Wrong or expired code")]
+        WrongCode,
+        #[error(transparent)]
+        RateLimited(RateLimited),
+        #[error(transparent)]
+        SendingEmail(SendEmailChallengeError<StoreError>),
+        #[error(transparent)]
+        Store(StoreError),
+    }
+
+    impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+        /// Mail a second-factor code to the pending user's own verified
+        /// address. The address is never taken from the request.
+        pub async fn mfa_otp_init(&self) -> Result<String, MfaOtpError<S::Error>> {
+            let (_pending, address) = self.mfa_otp_target().await?;
+
+            self.rate_limiter
+                .check(RateLimitOp::EmailSend { address: &address })
+                .await
+                .map_err(MfaOtpError::RateLimited)?;
+
+            let digits = crate::email::otp::generate_code();
+            let key = challenge_key(&address, &digits);
+
+            self.store
+                .email_create_challenge(
+                    address.clone(),
+                    key,
+                    None,
+                    Utc::now() + self.email.challenge_lifetime,
+                )
+                .await
+                .map_err(MfaOtpError::Store)?;
+
+            self.send_email(
+                &address,
+                "Your verification code",
+                format!("<p>Your verification code is:</p><h1>{digits}</h1><p>It expires shortly. If you did not request it, ignore this email.</p>"),
+            )
+            .await
+            .map_err(MfaOtpError::SendingEmail)?;
+
+            Ok(address)
+        }
+
+        /// Verify the mailed code and upgrade the pending session.
+        #[must_use = "Don't forget to return the auth session as part of the response!"]
+        pub async fn mfa_otp_verify(self, code: &str) -> Result<Self, MfaOtpError<S::Error>> {
+            let (pending, address) = self.mfa_otp_target().await?;
+
+            self.rate_limiter
+                .check(RateLimitOp::OtpAttempt { address: &address })
+                .await
+                .map_err(MfaOtpError::RateLimited)?;
+
+            let Some(challenge) = self
+                .store
+                .email_consume_challenge(challenge_key(&address, code))
+                .await
+                .map_err(MfaOtpError::Store)?
+            else {
+                return Err(MfaOtpError::WrongCode);
+            };
+
+            if challenge.get_expires() < Utc::now() {
+                return Err(MfaOtpError::WrongCode);
+            }
+
+            self.mfa_upgrade(pending, LoginMethod::Otp { address })
+                .await
+                .map_err(MfaOtpError::Store)
+        }
+
+        /// The pending session and the verified address codes go to.
+        async fn mfa_otp_target(
+            &self,
+        ) -> Result<(S::LoginSession, String), MfaOtpError<S::Error>> {
+            let Some(pending) = self
+                .mfa_pending_session()
+                .await
+                .map_err(MfaOtpError::Store)?
+            else {
+                return Err(MfaOtpError::NoPending);
+            };
+
+            let LoginMethod::MfaPending { first } = pending.get_method() else {
+                return Err(MfaOtpError::NoPending);
+            };
+
+            let factors = self
+                .mfa_factors(&pending.get_user_id(), &first)
+                .await
+                .map_err(MfaOtpError::Store)?;
+
+            match factors.otp_address {
+                Some(address) => Ok((pending, address)),
+                None => Err(MfaOtpError::FactorUnavailable),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "otp")]
+pub use otp_factor::MfaOtpError;
+
+#[cfg(feature = "webauthn")]
+mod webauthn_factor {
+    use super::*;
+    use webauthn_rs::prelude::{
+        PasskeyAuthentication, PublicKeyCredential, RequestChallengeResponse, WebauthnError,
+    };
+
+    const MFA_WEBAUTHN_KEY: &str = "authery-mfa-webauthn";
+
+    #[derive(Debug, Error)]
+    pub enum MfaWebauthnError<StoreError: std::error::Error> {
+        #[error("No MFA login in progress")]
+        NoPending,
+        #[error("This second factor is not available")]
+        FactorUnavailable,
+        #[error("No ceremony in progress")]
+        NoCeremony,
+        #[error("Webauthn: {0}")]
+        Webauthn(#[from] WebauthnError),
+        #[error("Corrupt ceremony state: {0}")]
+        BadState(#[from] serde_json::Error),
+        #[error(transparent)]
+        Store(StoreError),
+    }
+
+    impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+        /// Begin a passkey ceremony scoped to the pending user's credentials.
+        pub async fn mfa_webauthn_start(
+            &mut self,
+        ) -> Result<RequestChallengeResponse, MfaWebauthnError<S::Error>> {
+            let Some(pending) = self
+                .mfa_pending_session()
+                .await
+                .map_err(MfaWebauthnError::Store)?
+            else {
+                return Err(MfaWebauthnError::NoPending);
+            };
+
+            let passkeys = self
+                .store
+                .webauthn_get_credentials(&pending.get_user_id())
+                .await
+                .map_err(MfaWebauthnError::Store)?;
+
+            if passkeys.is_empty() {
+                return Err(MfaWebauthnError::FactorUnavailable);
+            }
+
+            let (rcr, auth_state) = self
+                .webauthn
+                .webauthn
+                .start_passkey_authentication(&passkeys)?;
+
+            self.cookies
+                .add(MFA_WEBAUTHN_KEY, &serde_json::to_string(&auth_state)?);
+
+            Ok(rcr)
+        }
+
+        /// Verify the assertion and upgrade the pending session.
+        #[must_use = "Don't forget to return the auth session as part of the response!"]
+        pub async fn mfa_webauthn_finish(
+            mut self,
+            credential: &PublicKeyCredential,
+        ) -> Result<Self, MfaWebauthnError<S::Error>> {
+            let Some(pending) = self
+                .mfa_pending_session()
+                .await
+                .map_err(MfaWebauthnError::Store)?
+            else {
+                return Err(MfaWebauthnError::NoPending);
+            };
+
+            let Some(state_json) = self.cookies.get(MFA_WEBAUTHN_KEY) else {
+                return Err(MfaWebauthnError::NoCeremony);
+            };
+            self.cookies.remove(MFA_WEBAUTHN_KEY);
+
+            let auth_state: PasskeyAuthentication = serde_json::from_str(&state_json)?;
+
+            // The state carries the allowed credentials from start (this
+            // user's passkeys), so a foreign credential fails verification.
+            let result = self
+                .webauthn
+                .webauthn
+                .finish_passkey_authentication(credential, &auth_state)?;
+
+            let user_id = pending.get_user_id();
+
+            // Persist counter/backup-state updates.
+            let passkeys = self
+                .store
+                .webauthn_get_credentials(&user_id)
+                .await
+                .map_err(MfaWebauthnError::Store)?;
+            if let Some(mut passkey) = passkeys
+                .into_iter()
+                .find(|p| p.cred_id() == result.cred_id())
+                && passkey.update_credential(&result).unwrap_or(false)
+            {
+                self.store
+                    .webauthn_update_credential(&user_id, passkey)
+                    .await
+                    .map_err(MfaWebauthnError::Store)?;
+            }
+
+            let credential_id = result.cred_id().iter().map(|b| format!("{b:02x}")).collect();
+
+            self.mfa_upgrade(pending, LoginMethod::Webauthn { credential_id })
+                .await
+                .map_err(MfaWebauthnError::Store)
+        }
+    }
+}
+
+#[cfg(feature = "webauthn")]
+pub use webauthn_factor::MfaWebauthnError;
