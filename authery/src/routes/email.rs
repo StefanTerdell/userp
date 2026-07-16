@@ -16,6 +16,14 @@ pub struct EmailActionRoutes<T = &'static str> {
     /// Post - Initiate an Email verification by creating an EmailChallenge and sending the link
     /// Get - Receives the challenge code, and verifies the address. Does NOT create a LoginSession
     pub user_email_verify: T,
+    #[cfg(feature = "otp")]
+    /// Post without `code` - sends a one-time code to the address
+    /// Post with `code` - verifies the code and creates the LoginSession using the Otp method
+    /// Get - renders the code-entry page (when the `pages` feature is active)
+    pub login_otp: T,
+    #[cfg(feature = "otp")]
+    /// As `login_otp`, but for signup
+    pub signup_otp: T,
     #[cfg(feature = "password")]
     /// Post - Sets the users new password. Requires a LoginSession using the PasswordReset method
     pub password_reset: T,
@@ -33,6 +41,10 @@ impl Default for EmailActionRoutes {
             login_email: "/login/email",
             signup_email: "/signup/email",
             user_email_verify: "/user/email/verify",
+            #[cfg(feature = "otp")]
+            login_otp: "/login/otp",
+            #[cfg(feature = "otp")]
+            signup_otp: "/signup/otp",
             #[cfg(feature = "password")]
             password_reset: "/password/reset",
             #[cfg(feature = "password")]
@@ -49,6 +61,10 @@ impl<'a> From<&'a EmailActionRoutes<String>> for EmailActionRoutes<&'a str> {
             login_email: &value.login_email,
             signup_email: &value.signup_email,
             user_email_verify: &value.user_email_verify,
+            #[cfg(feature = "otp")]
+            login_otp: &value.login_otp,
+            #[cfg(feature = "otp")]
+            signup_otp: &value.signup_otp,
             #[cfg(feature = "password")]
             password_reset: &value.password_reset,
             #[cfg(feature = "password")]
@@ -78,6 +94,10 @@ impl<T: Display> EmailActionRoutes<T> {
             login_email: format!("{prefix}{}", self.login_email),
             signup_email: format!("{prefix}{}", self.signup_email),
             user_email_verify: format!("{prefix}{}", self.user_email_verify),
+            #[cfg(feature = "otp")]
+            login_otp: format!("{prefix}{}", self.login_otp),
+            #[cfg(feature = "otp")]
+            signup_otp: format!("{prefix}{}", self.signup_otp),
             #[cfg(feature = "password")]
             password_send_reset: format!("{prefix}{}", self.password_send_reset),
             #[cfg(feature = "password")]

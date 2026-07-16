@@ -49,6 +49,7 @@ urlencoding = { version = "2.1.3", optional = true }
 default = ["user", "email", "password", "oauth"]
 user = []
 email = ["dep:lettre", "dep:url"]
+otp = ["email"]
 password = ["dep:password-auth", "dep:tokio"]
 oauth = [
   "dep:oauth2",

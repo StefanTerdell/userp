@@ -25,6 +25,10 @@ pub enum RateLimitOp<'a> {
     /// An outgoing email challenge - login/signup/verify/reset links or codes.
     /// Key of interest: the address, to cap mail spam per recipient.
     EmailSend { address: &'a str },
+    /// A one-time-code verification attempt. Key of interest: the address.
+    /// Six-digit codes are guessable, so cap attempts tightly (the code is
+    /// also single-use and short-lived).
+    OtpAttempt { address: &'a str },
 }
 
 /// Refusal returned by a limiter. `retry_after` is advisory and surfaced to the

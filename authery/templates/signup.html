@@ -30,6 +30,27 @@
     </form>
   </div>
 
+  {% if password.is_some() || oauth.is_some() || otp.is_some() %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if let Some(otp) = otp %}
+  <div class="otp-login">
+    <form action="{{ otp.action_route }}" method="post" class="form">
+      <div class="form-group">
+        <label for="otp-email">Email for One-Time Code</label>
+        <input type="email" id="otp-email" name="email" required>
+      </div>
+      <button type="submit">Sign up with a code</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+  </div>
+
   {% if password.is_some() || oauth.is_some() %}
   <div class="or-divider">
     <span>or</span>

@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 const WINDOW_MINUTES: i64 = 1;
 const MAX_PASSWORD_ATTEMPTS: u32 = 5;
 const MAX_EMAIL_SENDS: u32 = 3;
+const MAX_OTP_ATTEMPTS: u32 = 5;
 
 #[derive(Debug, Default, Clone)]
 pub struct FixedWindowRateLimiter {
@@ -47,6 +48,9 @@ impl RateLimiter for FixedWindowRateLimiter {
             }
             RateLimitOp::EmailSend { address } => {
                 self.hit(format!("email:{address}"), MAX_EMAIL_SENDS)
+            }
+            RateLimitOp::OtpAttempt { address } => {
+                self.hit(format!("otp:{address}"), MAX_OTP_ATTEMPTS)
             }
             _ => Ok(()),
         };

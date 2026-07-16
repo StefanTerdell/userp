@@ -69,6 +69,12 @@ pub enum LoginMethod {
         /// The email-address used to create the Email session
         address: String,
     },
+    #[cfg(feature = "otp")]
+    /// The login session was created with a one-time code sent by email
+    Otp {
+        /// The email-address the code was sent to
+        address: String,
+    },
     #[cfg(feature = "oauth")]
     /// The login session was created using the Oauth method
     OAuth {

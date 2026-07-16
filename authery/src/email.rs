@@ -1,4 +1,6 @@
 pub mod login;
+#[cfg(feature = "otp")]
+pub mod otp;
 #[cfg(feature = "password")]
 pub mod reset;
 pub mod signup;
@@ -127,6 +129,20 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .join(&format!("{path}?code={code}"))
             .map_err(SendEmailChallengeError::Url)?;
 
+        self.send_email(
+            challenge.get_address(),
+            "Login link",
+            format!("<a href=\"{url}\">{message}</a>"),
+        )
+        .await
+    }
+
+    async fn send_email(
+        &self,
+        to: &str,
+        subject: &str,
+        html_body: String,
+    ) -> Result<(), SendEmailChallengeError<S::Error>> {
         let email = Message::builder()
             .from(
                 self.email
@@ -135,13 +151,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                     .parse()
                     .map_err(SendEmailChallengeError::Address)?,
             )
-            .to(challenge
-                .get_address()
-                .parse()
-                .map_err(SendEmailChallengeError::Address)?)
-            .subject("Login link")
+            .to(to.parse().map_err(SendEmailChallengeError::Address)?)
+            .subject(subject)
             .header(ContentType::TEXT_HTML)
-            .body(format!("<a href=\"{url}\">{message}</a>"))
+            .body(html_body)
             .map_err(SendEmailChallengeError::MessageBuilding)?;
 
         let mailer =

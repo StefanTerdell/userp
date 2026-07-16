@@ -248,6 +248,10 @@ pub struct TemplateEmailInfo<'a> {
     pub action_route: &'a str,
 }
 
+pub struct TemplateOtpInfo<'a> {
+    pub action_route: &'a str,
+}
+
 pub struct TemplatePasswordInfo<'a> {
     pub action_route: &'a str,
     pub reset_route: Option<&'a str>,
@@ -261,6 +265,7 @@ pub struct LoginTemplate<'a> {
     pub error: Option<&'a str>,
     pub password: Option<TemplatePasswordInfo<'a>>,
     pub email: Option<TemplateEmailInfo<'a>>,
+    pub otp: Option<TemplateOtpInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub signup_route: &'a str,
 }
@@ -298,6 +303,12 @@ impl LoginTemplate<'_> {
             }),
             #[cfg(not(feature = "email"))]
             email: None,
+            #[cfg(feature = "otp")]
+            otp: Some(TemplateOtpInfo {
+                action_route: &auth.routes.email.login_otp,
+            }),
+            #[cfg(not(feature = "otp"))]
+            otp: None,
             #[cfg(feature = "oauth")]
             oauth: ({
                 if oauth_login_providers.is_empty() {
@@ -336,6 +347,7 @@ pub struct SignupTemplate<'a> {
     pub error: Option<&'a str>,
     pub password: Option<TemplatePasswordInfo<'a>>,
     pub email: Option<TemplateEmailInfo<'a>>,
+    pub otp: Option<TemplateOtpInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub login_route: &'a str,
 }
@@ -372,6 +384,12 @@ impl SignupTemplate<'_> {
             }),
             #[cfg(not(feature = "email"))]
             email: None,
+            #[cfg(feature = "otp")]
+            otp: Some(TemplateOtpInfo {
+                action_route: &auth.routes.email.signup_otp,
+            }),
+            #[cfg(not(feature = "otp"))]
+            otp: None,
             #[cfg(feature = "oauth")]
             oauth: ({
                 if oauth_signup_providers.is_empty() {
@@ -402,6 +420,19 @@ impl SignupTemplate<'_> {
     }
 }
 
+/// The one-time-code entry page: the user has been sent a code and types it
+/// here. `action_route` is the OTP route the form posts back to (login or
+/// signup), with the address carried in a hidden field.
+#[derive(Template)]
+#[template(path = "otp.html")]
+pub struct OtpTemplate<'a> {
+    pub address: &'a str,
+    pub action_route: &'a str,
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+}
+
 /// Renders the built-in pages to HTML. Implement this and register it with
 /// [`crate::config::AutheryConfig::with_pages`] to replace the bundled Askama
 /// templates with your own markup while keeping the built-in router and flows.
@@ -412,6 +443,8 @@ impl SignupTemplate<'_> {
 pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_login(&self, view: &LoginTemplate<'_>) -> String;
     fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
+    #[cfg(feature = "otp")]
+    fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
     #[cfg(feature = "user")]
     fn render_user(&self, view: &UserTemplate<'_>) -> String;
     #[cfg(all(feature = "password", feature = "email"))]
@@ -436,6 +469,11 @@ impl Pages for AskamaPages {
     }
 
     fn render_signup(&self, view: &SignupTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "otp")]
+    fn render_otp(&self, view: &OtpTemplate<'_>) -> String {
         render_or_err(view)
     }
 

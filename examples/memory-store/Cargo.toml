@@ -6,7 +6,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-authery = { path = "../../authery", features = ["axum", "pages"] }
+authery = { path = "../../authery", features = ["axum", "pages", "otp"] }
 axum = "0.8.9"
 axum-macros = "0.5.0"
 tokio = { version = "1.52.3", features = ["full"] }

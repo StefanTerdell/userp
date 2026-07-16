@@ -57,6 +57,57 @@ where
     Ok(Html(auth.pages.render_signup(&view)).into_response())
 }
 
+#[cfg(feature = "otp")]
+#[derive(Deserialize)]
+pub struct OtpPageQuery {
+    pub address: String,
+    pub next: Option<String>,
+    pub message: Option<String>,
+    pub error: Option<String>,
+}
+
+#[cfg(feature = "otp")]
+pub async fn get_login_otp<St>(
+    auth: AxumAuthery<St>,
+    Query(query): Query<OtpPageQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::OtpTemplate;
+
+    let view = OtpTemplate {
+        address: &query.address,
+        action_route: &auth.routes.email.login_otp,
+        next: query.next.as_deref(),
+        message: query.message.as_deref(),
+        error: query.error.as_deref(),
+    };
+    Ok(Html(auth.pages.render_otp(&view)))
+}
+
+#[cfg(feature = "otp")]
+pub async fn get_signup_otp<St>(
+    auth: AxumAuthery<St>,
+    Query(query): Query<OtpPageQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::OtpTemplate;
+
+    let view = OtpTemplate {
+        address: &query.address,
+        action_route: &auth.routes.email.signup_otp,
+        next: query.next.as_deref(),
+        message: query.message.as_deref(),
+        error: query.error.as_deref(),
+    };
+    Ok(Html(auth.pages.render_otp(&view)))
+}
+
 #[cfg(feature = "user")]
 pub async fn get_user<St>(
     auth: AxumAuthery<St>,
