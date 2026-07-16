@@ -35,8 +35,6 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub webauthn: crate::webauthn::WebauthnConfig,
     #[cfg(feature = "mfa")]
     pub mfa_policy: crate::mfa::MfaPolicy,
-    #[cfg(feature = "organizations")]
-    pub org_config: crate::org::OrgConfig,
     #[cfg(feature = "pages")]
     pub pages: std::sync::Arc<dyn crate::pages::Pages>,
 }
@@ -57,17 +55,6 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         // only complete the MFA flow.
         #[cfg(feature = "mfa")]
         let method = self.mfa_wrap_method(method, user_id).await?;
-
-        // A pending invite joins its org first, so the private-org hook below
-        // sees the membership and stands down.
-        #[cfg(feature = "organizations")]
-        self.org_apply_invite(user_id).await?;
-
-        // SaaS mode: users without any org membership get a private org they
-        // own. Hooked here (rather than at each user-creation site) since it
-        // is idempotent and self-heals users predating the feature.
-        #[cfg(feature = "organizations")]
-        self.org_ensure_private_org(user_id).await?;
 
         let expires = Utc::now() + self.session_lifetime;
         let session = self.store.create_session(user_id, method, expires).await?;

@@ -69,7 +69,51 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let path = self.routes.oauth.callbacks.signup_oauth_provider.clone();
 
         Ok(self
-            .oauth_init(path, provider, OAuthFlow::SignUp { next })
+            .oauth_init(
+                path,
+                provider,
+                OAuthFlow::SignUp {
+                    next,
+                    context: None,
+                },
+            )
+            .await)
+    }
+
+    /// Begin a signup through a dynamically resolved provider. See
+    /// [`CoreAuthery::oauth_login_init_with_context`].
+    pub async fn oauth_signup_init_with_context(
+        self,
+        context: String,
+        provider_name: &str,
+        next: Option<String>,
+    ) -> Result<(Self, Url), OAuthSignupInitError> {
+        let provider = self
+            .oauth_resolve_provider(Some(&context), provider_name)
+            .await
+            .map_err(|_| OAuthSignupInitError::ProviderNotFound(provider_name.to_string()))?;
+
+        if provider.allow_signup().as_ref().unwrap_or(
+            self.oauth
+                .allow_signup
+                .as_ref()
+                .unwrap_or(&self.allow_signup),
+        ) == &Allow::Never
+        {
+            return Err(OAuthSignupInitError::NotAllowed);
+        };
+
+        let path = self.routes.oauth.callbacks.signup_oauth_provider.clone();
+
+        Ok(self
+            .oauth_init(
+                path,
+                provider,
+                OAuthFlow::SignUp {
+                    next,
+                    context: Some(context),
+                },
+            )
             .await)
     }
 
@@ -99,7 +143,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         unmatched_token: UnmatchedOAuthToken,
         flow: OAuthFlow,
     ) -> Result<(Self, Option<String>), OAuthSignupCallbackError<S::Error>> {
-        let OAuthFlow::SignUp { next } = flow else {
+        let OAuthFlow::SignUp { next, .. } = flow else {
             return Err(OAuthSignupCallbackError::UnexpectedFlow(flow));
         };
 

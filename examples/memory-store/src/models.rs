@@ -142,169 +142,40 @@ impl OAuthToken for MyOAuthToken {
     }
 }
 
+// --- App-level organizations ---
+//
+// Orgs are the app's domain, not authery's: plain structs in the app's own
+// store, no authery traits involved. Authery's contribution is the dynamic
+// provider resolver + the `context` string that rides the oauth flow and
+// arrives on `UnmatchedOAuthToken` at user/token creation - which is where
+// `MemoryStore` below upserts memberships.
+
 #[derive(Debug, Clone)]
-pub struct MyOrganization {
+pub struct AppOrg {
     pub id: Uuid,
-    pub parent: Option<Uuid>,
     pub slug: String,
     pub name: String,
-    pub login_rules: OrgLoginRules,
-    pub role_inheritance: Vec<(String, String)>,
-    pub privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
-}
-
-impl Organization for MyOrganization {
-    type Id = Uuid;
-
-    fn get_id(&self) -> Uuid {
-        self.id
-    }
-
-    fn get_parent_id(&self) -> Option<Uuid> {
-        self.parent
-    }
-
-    fn get_slug(&self) -> &str {
-        &self.slug
-    }
-
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    fn get_login_rules(&self) -> OrgLoginRules {
-        self.login_rules.clone()
-    }
-
-    fn get_role_inheritance(&self) -> Vec<(String, String)> {
-        self.role_inheritance.clone()
-    }
-
-    fn get_privilege_inheritance(&self) -> Vec<(OrgPrivilege, OrgPrivilege)> {
-        self.privilege_inheritance.clone()
-    }
+    /// Enforced by the app's own routes via `LoginMethodRules`.
+    pub login_rules: LoginMethodRules,
 }
 
 #[derive(Debug, Clone)]
-pub struct MyOrgMember {
+pub struct AppOrgMember {
     pub user_id: Uuid,
     pub org_id: Uuid,
-    pub privilege: Option<OrgPrivilege>,
-    pub roles: Vec<String>,
+    pub admin: bool,
 }
 
-impl OrgMember for MyOrgMember {
-    type UserId = Uuid;
-    type OrgId = Uuid;
-
-    fn get_user_id(&self) -> Uuid {
-        self.user_id
-    }
-
-    fn get_org_id(&self) -> Uuid {
-        self.org_id
-    }
-
-    fn get_privilege(&self) -> Option<OrgPrivilege> {
-        self.privilege
-    }
-
-    fn get_roles(&self) -> Vec<String> {
-        self.roles.clone()
-    }
-}
-
+/// Per-org OIDC provider config; built into a live provider by the app's
+/// `OAuthProviderResolver` impl.
 #[derive(Debug, Clone)]
-pub struct MyOrgOidcProvider {
+pub struct AppOrgProvider {
     pub org_id: Uuid,
-    pub config: authery::models::org::NewOrgOidcProvider,
-}
-
-impl authery::models::org::OrgOidcProvider for MyOrgOidcProvider {
-    type OrgId = Uuid;
-
-    fn get_org_id(&self) -> Uuid {
-        self.org_id
-    }
-
-    fn get_name(&self) -> &str {
-        &self.config.name
-    }
-
-    fn get_display_name(&self) -> &str {
-        &self.config.display_name
-    }
-
-    fn get_client_id(&self) -> &str {
-        &self.config.client_id
-    }
-
-    fn get_client_secret(&self) -> &str {
-        &self.config.client_secret
-    }
-
-    fn get_issuer(&self) -> &str {
-        &self.config.issuer
-    }
-
-    fn get_auth_url(&self) -> &str {
-        &self.config.auth_url
-    }
-
-    fn get_token_url(&self) -> &str {
-        &self.config.token_url
-    }
-
-    fn get_scopes(&self) -> Vec<String> {
-        self.config.scopes.clone()
-    }
-
-    fn get_allow_login(&self) -> bool {
-        self.config.allow_login
-    }
-
-    fn get_default_roles(&self) -> Vec<String> {
-        self.config.default_roles.clone()
-    }
-
-    fn get_claim_role_mapping(&self) -> Vec<(String, String, String)> {
-        self.config.claim_role_mapping.clone()
-    }
-
-    fn get_claim_privilege_mapping(&self) -> Vec<(String, String, OrgPrivilege)> {
-        self.config.claim_privilege_mapping.clone()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MyOrgInvite {
-    pub org_id: Uuid,
-    pub code: String,
-    pub privilege: Option<OrgPrivilege>,
-    pub roles: Vec<String>,
-    pub expires: DateTime<Utc>,
-}
-
-impl OrgInvite for MyOrgInvite {
-    type OrgId = Uuid;
-
-    fn get_org_id(&self) -> Uuid {
-        self.org_id
-    }
-
-    fn get_code(&self) -> &str {
-        &self.code
-    }
-
-    fn get_privilege(&self) -> Option<OrgPrivilege> {
-        self.privilege
-    }
-
-    fn get_roles(&self) -> Vec<String> {
-        self.roles.clone()
-    }
-
-    fn get_expires(&self) -> DateTime<Utc> {
-        self.expires
-    }
+    pub name: String,
+    pub display_name: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub issuer: String,
+    pub auth_url: String,
+    pub token_url: String,
 }

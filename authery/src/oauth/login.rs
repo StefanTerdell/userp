@@ -70,7 +70,53 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let path = self.routes.oauth.callbacks.login_oauth_provider.clone();
 
         Ok(self
-            .oauth_init(path, provider, OAuthFlow::LogIn { next })
+            .oauth_init(
+                path,
+                provider,
+                OAuthFlow::LogIn {
+                    next,
+                    context: None,
+                },
+            )
+            .await)
+    }
+
+    /// Begin a login through a dynamically resolved provider. `context` is an
+    /// opaque, app-chosen string (e.g. a tenant or org id) handed to the
+    /// configured [`crate::oauth::OAuthProviderResolver`] here and again at
+    /// the callback; the store receives it on the resulting token as
+    /// [`UnmatchedOAuthToken::context`].
+    pub async fn oauth_login_init_with_context(
+        self,
+        context: String,
+        provider_name: &str,
+        next: Option<String>,
+    ) -> Result<(Self, Url), OAuthLoginInitError> {
+        let provider = self
+            .oauth_resolve_provider(Some(&context), provider_name)
+            .await
+            .map_err(|_| OAuthLoginInitError::ProviderNotFound(provider_name.to_string()))?;
+
+        if provider
+            .allow_login()
+            .as_ref()
+            .unwrap_or(self.oauth.allow_login.as_ref().unwrap_or(&self.allow_login))
+            == &Allow::Never
+        {
+            return Err(OAuthLoginInitError::NotAllowed);
+        };
+
+        let path = self.routes.oauth.callbacks.login_oauth_provider.clone();
+
+        Ok(self
+            .oauth_init(
+                path,
+                provider,
+                OAuthFlow::LogIn {
+                    next,
+                    context: Some(context),
+                },
+            )
             .await)
     }
 
@@ -80,7 +126,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         unmatched_token: UnmatchedOAuthToken,
         flow: OAuthFlow,
     ) -> Result<(Self, Option<String>), OAuthLoginCallbackError<S::Error>> {
-        let OAuthFlow::LogIn { next } = flow else {
+        let OAuthFlow::LogIn { next, .. } = flow else {
             return Err(OAuthLoginCallbackError::UnexpectedFlow(flow));
         };
 
@@ -134,13 +180,6 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 self.routes.oauth.callbacks.login_oauth_provider.clone(),
             )
             .await?;
-
-        #[cfg(feature = "organizations")]
-        if matches!(flow, OAuthFlow::OrgLogIn { .. }) {
-            return self
-                .org_oauth_login_callback_inner(unmatched_token, flow)
-                .await;
-        }
 
         self.oauth_login_callback_inner(provider, unmatched_token, flow)
             .await

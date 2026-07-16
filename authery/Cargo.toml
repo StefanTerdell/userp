@@ -55,7 +55,6 @@ urlencoding = { version = "2.1.3", optional = true }
 [features]
 default = ["user", "email", "password", "oauth"]
 user = []
-organizations = ["user"]
 email = ["dep:lettre", "dep:url"]
 otp = ["email"]
 mfa = []

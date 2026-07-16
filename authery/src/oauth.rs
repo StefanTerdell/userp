@@ -27,7 +27,7 @@ use oauth2::{basic::BasicTokenType, StandardTokenResponse};
 use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, TokenResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{fmt::Display, sync::Arc};
+use std::{fmt::Display, future::Future, pin::Pin, sync::Arc};
 use thiserror::Error;
 use url::Url;
 
@@ -42,17 +42,14 @@ pub enum RefreshInitResult {
 pub enum OAuthFlow {
     LogIn {
         next: Option<String>,
-    },
-    #[cfg(feature = "organizations")]
-    /// A login through an org-attached OIDC provider. The provider is
-    /// resolved from the store at callback time using the org id (in its
-    /// string representation).
-    OrgLogIn {
-        org_id: String,
-        next: Option<String>,
+        /// App-chosen context for dynamically resolved providers; see
+        /// [`OAuthProviderResolver`]. `None` for statically configured ones.
+        context: Option<String>,
     },
     SignUp {
         next: Option<String>,
+        /// See [`OAuthFlow::LogIn::context`].
+        context: Option<String>,
     },
     Link {
         /// The linking user's ID, in its string representation
@@ -66,12 +63,22 @@ pub enum OAuthFlow {
     },
 }
 
+impl OAuthFlow {
+    /// The provider-resolution context this flow was started with, if any.
+    pub fn context(&self) -> Option<&str> {
+        match self {
+            OAuthFlow::LogIn { context, .. } | OAuthFlow::SignUp { context, .. } => {
+                context.as_deref()
+            }
+            _ => None,
+        }
+    }
+}
+
 impl Display for OAuthFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             OAuthFlow::LogIn { .. } => "LogIn",
-            #[cfg(feature = "organizations")]
-            OAuthFlow::OrgLogIn { .. } => "OrgLogIn",
             OAuthFlow::SignUp { .. } => "SignUp",
             OAuthFlow::Link { .. } => "Link",
             OAuthFlow::Refresh { .. } => "Refresh",
@@ -86,6 +93,9 @@ pub struct OAuthConfig {
     pub allow_linking: bool,
     pub base_url: Url,
     pub providers: OAuthProviders,
+    /// Resolves providers at request time for context-carrying flows; see
+    /// [`OAuthProviderResolver`].
+    pub provider_resolver: Option<Arc<dyn OAuthProviderResolver>>,
 }
 
 impl OAuthConfig {
@@ -96,11 +106,22 @@ impl OAuthConfig {
             allow_signup: None,
             allow_linking: true,
             providers: Default::default(),
+            provider_resolver: None,
         }
     }
 
     pub fn with_client(mut self, client: impl OAuthProvider + 'static) -> Self {
         self.providers.push(Arc::new(client));
+        self
+    }
+
+    /// Install a [`OAuthProviderResolver`] for dynamically resolved (e.g.
+    /// per-tenant) providers.
+    pub fn with_provider_resolver(
+        mut self,
+        resolver: impl OAuthProviderResolver + 'static,
+    ) -> Self {
+        self.provider_resolver = Some(Arc::new(resolver));
         self
     }
 
@@ -157,9 +178,31 @@ impl UnmatchedOAuthToken {
             provider_name: provider_name.into(),
             provider_user_id: provider_user.id,
             provider_user_raw: provider_user.raw,
+            context: None,
         }
     }
 }
+
+/// Resolves OAuth/OIDC providers at request time instead of from the list
+/// configured at startup. Register with
+/// [`OAuthConfig::with_provider_resolver`]; flows started through
+/// [`CoreAuthery::oauth_login_init_with_context`] (or the signup variant)
+/// carry an opaque, app-chosen `context` string through the encrypted state
+/// cookie, and both the init and the callback resolve the provider through
+/// this hook.
+///
+/// This is the primitive for multi-tenant setups: the resolver typically
+/// captures the app's own database handle and builds an
+/// [`provider::oidc::OAuthOidcProvider`] from a per-tenant table keyed by
+/// `context`. Returning `None` fails the flow with
+/// [`OAuthCallbackError::NoProvider`].
+pub trait OAuthProviderResolver: std::fmt::Debug + Send + Sync {
+    fn resolve<'a>(&'a self, context: &'a str, provider_name: &'a str)
+        -> ProviderResolverFuture<'a>;
+}
+
+pub type ProviderResolverFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<Arc<dyn OAuthProvider>>, anyhow::Error>> + Send + 'a>>;
 
 #[derive(Error, Debug)]
 pub enum OAuthCallbackError {
@@ -171,11 +214,8 @@ pub enum OAuthCallbackError {
     MisformedOAuthData(#[from] serde_json::Error),
     #[error("CSRF tokens didn't match")]
     CsrfMismatch,
-    /// Resolving an org-attached provider failed in the store. Stringified
-    /// because this error predates the store's error type in the signature.
-    #[cfg(feature = "organizations")]
-    #[error("Org provider lookup failed: {0}")]
-    OrgProviderLookup(String),
+    #[error("The flow carries a provider context but no provider resolver is configured")]
+    NoProviderResolver,
     #[error(transparent)]
     ExchangeAuthorizationCodeError(#[from] anyhow::Error),
 }
@@ -249,22 +289,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthCallbackError::CsrfMismatch);
         }
 
-        // Org flows resolve the provider from the store; everything else uses
-        // the statically configured providers.
-        let provider = match &oauth_flow {
-            #[cfg(feature = "organizations")]
-            OAuthFlow::OrgLogIn { org_id, .. } => {
-                self.org_oauth_provider(org_id, &provider_name).await?
-            }
-            _ => self
-                .oauth
-                .providers
-                .get(&provider_name)
-                .ok_or(OAuthCallbackError::NoProvider(provider_name.clone()))?
-                .clone(),
-        };
+        // Context-carrying flows resolve the provider through the app's
+        // resolver; everything else uses the statically configured providers.
+        let provider = self
+            .oauth_resolve_provider(oauth_flow.context(), &provider_name)
+            .await?;
 
-        let unmatched_token = provider
+        let mut unmatched_token = provider
             .exchange_authorization_code(
                 provider.name(),
                 &self.redirect_uri(path, &provider_name),
@@ -274,7 +305,36 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             )
             .await?;
 
+        // Hand the context to the store alongside the token, so app-level
+        // tenant logic can act on it at user/token creation.
+        unmatched_token.context = oauth_flow.context().map(str::to_string);
+
         Ok((unmatched_token, oauth_flow, provider))
+    }
+
+    /// Resolve a provider: dynamically via the app's resolver when a context
+    /// is given, otherwise from the static provider list.
+    pub(crate) async fn oauth_resolve_provider(
+        &self,
+        context: Option<&str>,
+        provider_name: &str,
+    ) -> Result<Arc<dyn OAuthProvider>, OAuthCallbackError> {
+        match context {
+            Some(context) => self
+                .oauth
+                .provider_resolver
+                .as_ref()
+                .ok_or(OAuthCallbackError::NoProviderResolver)?
+                .resolve(context, provider_name)
+                .await?
+                .ok_or_else(|| OAuthCallbackError::NoProvider(provider_name.to_string())),
+            None => self
+                .oauth
+                .providers
+                .get(provider_name)
+                .cloned()
+                .ok_or_else(|| OAuthCallbackError::NoProvider(provider_name.to_string())),
+        }
     }
 
     #[must_use = "Don't forget to return the auth session as part of the response!"]
@@ -297,12 +357,6 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             OAuthFlow::LogIn { .. } => {
                 self.oauth_login_callback_inner(provider, unmatched_token, flow)
                     .await?
-            }
-            #[cfg(feature = "organizations")]
-            OAuthFlow::OrgLogIn { .. } => {
-                self.org_oauth_login_callback_inner(unmatched_token, flow)
-                    .await
-                    .map_err(OAuthGenericCallbackError::Login)?
             }
             OAuthFlow::SignUp { .. } => {
                 self.oauth_signup_callback_inner(provider, unmatched_token, flow)

@@ -6,8 +6,6 @@ pub mod core;
 pub mod models;
 #[cfg(feature = "mfa")]
 pub mod mfa;
-#[cfg(feature = "organizations")]
-pub mod org;
 pub mod prelude;
 pub mod ratelimit;
 #[cfg(feature = "webauthn")]

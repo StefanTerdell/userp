@@ -2,8 +2,6 @@
 pub mod email;
 #[cfg(feature = "oauth")]
 pub mod oauth;
-#[cfg(feature = "organizations")]
-pub mod org;
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -111,6 +109,74 @@ pub enum LoginMethod {
 impl Display for LoginMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("{self:#?}"))
+    }
+}
+
+/// App-level policy over login methods, e.g. "accessing this tenant requires
+/// MFA" or "no password sessions here". Authery does not enforce these
+/// anywhere itself - they are a building block for gating your own routes:
+///
+/// ```ignore
+/// let rules = LoginMethodRules { require_mfa: true, ..Default::default() };
+/// if !rules.satisfies(&session.get_method()) {
+///     return Redirect::to("/login/mfa");
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginMethodRules {
+    /// Only two-factor sessions ([`LoginMethod::Mfa`]) - or single-factor
+    /// passkeys, which prove possession plus user verification - satisfy the
+    /// rules.
+    pub require_mfa: bool,
+    /// Whether password-first sessions satisfy the rules.
+    pub allow_password: bool,
+    /// Whether emailed link/code-first sessions satisfy the rules.
+    pub allow_email: bool,
+}
+
+impl Default for LoginMethodRules {
+    fn default() -> Self {
+        Self {
+            require_mfa: false,
+            allow_password: true,
+            allow_email: true,
+        }
+    }
+}
+
+impl LoginMethodRules {
+    /// Whether a session's login method satisfies the rules. The `allow_*`
+    /// rules judge the first factor; `require_mfa` accepts two-factor
+    /// sessions and single-factor passkeys.
+    pub fn satisfies(&self, method: &LoginMethod) -> bool {
+        #[cfg(feature = "mfa")]
+        let (first, is_mfa) = match method {
+            LoginMethod::Mfa { first, .. } => (first.as_ref(), true),
+            method => (method, false),
+        };
+        #[cfg(not(feature = "mfa"))]
+        let (first, is_mfa) = (method, false);
+
+        if self.require_mfa {
+            #[cfg(feature = "webauthn")]
+            let strong_single = matches!(first, LoginMethod::Webauthn { .. });
+            #[cfg(not(feature = "webauthn"))]
+            let strong_single = false;
+
+            if !is_mfa && !strong_single {
+                return false;
+            }
+        }
+
+        match first {
+            #[cfg(feature = "password")]
+            LoginMethod::Password => self.allow_password,
+            #[cfg(feature = "email")]
+            LoginMethod::Email { .. } => self.allow_email,
+            #[cfg(feature = "otp")]
+            LoginMethod::Otp { .. } => self.allow_email,
+            _ => true,
+        }
     }
 }
 

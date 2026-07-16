@@ -29,10 +29,6 @@ pub struct IdForm {
 pub struct ProviderNextForm {
     pub provider: String,
     pub next: Option<String>,
-    /// Org slug: present when the form was posted from an org-scoped login
-    /// page for one of the org's own providers.
-    #[cfg(feature = "organizations")]
-    pub org: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -323,30 +319,6 @@ where
     St::Error: IntoResponse,
 {
     let login_route = auth.routes.pages.login.clone();
-
-    #[cfg(feature = "organizations")]
-    if let Some(org_slug) = form.org.as_deref() {
-        use crate::org::oauth::OrgOAuthLoginInitError;
-
-        let org_login_route = format!("{login_route}/{org_slug}");
-
-        return match auth
-            .org_oauth_login_init(org_slug, &form.provider, form.next)
-            .await
-        {
-            Ok((auth, redirect_url)) => {
-                Ok((auth, Redirect::to(redirect_url.as_str())).into_response())
-            }
-            Err(OrgOAuthLoginInitError::Store(err)) => Err(err),
-            Err(err) => {
-                let next = format!(
-                    "{org_login_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
-        };
-    }
 
     match auth.oauth_login_init(form.provider, form.next).await {
         Ok((auth, redirect_url)) => Ok((auth, Redirect::to(redirect_url.as_str())).into_response()),

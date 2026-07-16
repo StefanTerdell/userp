@@ -271,15 +271,6 @@ pub struct TemplateWebauthnInfo<'a> {
     pub finish_route: &'a str,
 }
 
-/// Rendered on org-scoped login pages (`/login/{slug}`): the org's own SSO
-/// providers, posted to the oauth action route with the org slug attached.
-pub struct TemplateOrgLoginInfo<'a> {
-    pub slug: &'a str,
-    pub name: &'a str,
-    pub providers: Vec<TemplateOAuthProvider<'a>>,
-    pub action_route: &'a str,
-}
-
 #[cfg(feature = "user")]
 pub struct UserTemplateWebauthnInfo<'a> {
     /// Hex-encoded credential ids of the user's registered passkeys.
@@ -305,7 +296,6 @@ pub struct LoginTemplate<'a> {
     pub otp: Option<TemplateOtpInfo<'a>>,
     pub webauthn: Option<TemplateWebauthnInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
-    pub org: Option<TemplateOrgLoginInfo<'a>>,
     pub signup_route: &'a str,
 }
 
@@ -371,53 +361,8 @@ impl LoginTemplate<'_> {
             }),
             #[cfg(not(feature = "oauth"))]
             oauth: None,
-            org: None,
             signup_route: &auth.routes.pages.signup,
         }
-    }
-
-    /// Assemble the org-scoped login page's view-model: like
-    /// [`LoginTemplate::with`], but with the org's own providers added and the
-    /// password/email sections hidden when the org's login rules disallow
-    /// them.
-    #[cfg(all(feature = "organizations", feature = "oauth"))]
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_org<'a, S: AutheryStore, C: AutheryCookies>(
-        auth: &'a CoreAuthery<S, C>,
-        org: &'a S::Organization,
-        org_providers: &'a [S::OrgOidcProvider],
-        next: Option<&'a str>,
-        message: Option<&'a str>,
-        error: Option<&'a str>,
-    ) -> LoginTemplate<'a> {
-        use crate::models::org::{OrgOidcProvider, Organization};
-
-        let rules = org.get_login_rules();
-        let mut template = Self::with(auth, next, message, error);
-
-        if !rules.allow_password {
-            template.password = None;
-        }
-        if !rules.allow_email {
-            template.email = None;
-            template.otp = None;
-        }
-
-        template.org = Some(TemplateOrgLoginInfo {
-            slug: org.get_slug(),
-            name: org.get_name(),
-            providers: org_providers
-                .iter()
-                .filter(|p| p.get_allow_login())
-                .map(|p| TemplateOAuthProvider {
-                    name: p.get_name(),
-                    display_name: p.get_display_name(),
-                })
-                .collect(),
-            action_route: &auth.routes.oauth.actions.login_oauth,
-        });
-
-        template
     }
 
     pub fn render_with<S: AutheryStore, C: AutheryCookies>(
@@ -550,91 +495,6 @@ pub struct OtpTemplate<'a> {
     pub error: Option<&'a str>,
 }
 
-#[cfg(feature = "organizations")]
-pub struct OrgsTemplateItem {
-    pub slug: String,
-    pub name: String,
-    /// The member's privilege as display text; empty when none.
-    pub privilege: String,
-    /// App roles, comma-joined for display.
-    pub roles: String,
-    pub page_route: String,
-}
-
-/// The organizations overview: the user's memberships plus a create form.
-#[cfg(feature = "organizations")]
-#[derive(Template)]
-#[template(path = "orgs.html")]
-pub struct OrgsTemplate<'a> {
-    pub message: Option<&'a str>,
-    pub error: Option<&'a str>,
-    pub orgs: Vec<OrgsTemplateItem>,
-    pub create_action_route: &'a str,
-    pub home_route: &'a str,
-}
-
-#[cfg(feature = "organizations")]
-pub struct OrgTemplateMember {
-    pub user_id: String,
-    /// The member's privilege as display text; empty when none.
-    pub privilege: String,
-    /// App roles, comma-joined for display.
-    pub roles: String,
-}
-
-#[cfg(feature = "organizations")]
-pub struct OrgTemplateChild {
-    pub slug: String,
-    pub name: String,
-    pub page_route: String,
-}
-
-#[cfg(feature = "organizations")]
-pub struct OrgTemplateProvider {
-    pub name: String,
-    pub display_name: String,
-    pub issuer: String,
-}
-
-/// The management page for one organization. Sections render by tier:
-/// members and invites for managers, settings/providers/deletion for owners.
-#[cfg(feature = "organizations")]
-#[derive(Template)]
-#[template(path = "org.html")]
-pub struct OrgTemplate<'a> {
-    pub message: Option<&'a str>,
-    pub error: Option<&'a str>,
-    pub slug: &'a str,
-    pub name: &'a str,
-    pub is_owner: bool,
-    /// True for owners too - the privilege ladder is cumulative.
-    pub is_manager: bool,
-    /// The viewer's effective privilege as display text; empty when none.
-    pub privilege: String,
-    /// The viewer's effective app roles, comma-joined.
-    pub roles: String,
-    pub rules: crate::models::org::OrgLoginRules,
-    /// `parent_role=role_here` lines for the settings textarea.
-    pub role_inheritance: String,
-    /// `parent_privilege=privilege_here` lines for the settings textarea.
-    pub privilege_inheritance: String,
-    pub members: Vec<OrgTemplateMember>,
-    pub children: Vec<OrgTemplateChild>,
-    /// Org SSO providers; empty when the oauth feature is off.
-    pub providers: Vec<OrgTemplateProvider>,
-    /// The org-scoped login page path.
-    pub login_route: String,
-    pub orgs_route: &'a str,
-    pub update_action_route: String,
-    pub delete_action_route: String,
-    pub member_upsert_action_route: String,
-    pub member_remove_action_route: String,
-    pub sub_create_action_route: String,
-    pub invite_create_action_route: String,
-    pub provider_upsert_action_route: String,
-    pub provider_delete_action_route: String,
-}
-
 /// Renders the built-in pages to HTML. Implement this and register it with
 /// [`crate::config::AutheryConfig::with_pages`] to replace the bundled Askama
 /// templates with your own markup while keeping the built-in router and flows.
@@ -649,10 +509,6 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
-    #[cfg(feature = "organizations")]
-    fn render_orgs(&self, view: &OrgsTemplate<'_>) -> String;
-    #[cfg(feature = "organizations")]
-    fn render_org(&self, view: &OrgTemplate<'_>) -> String;
     #[cfg(feature = "user")]
     fn render_user(&self, view: &UserTemplate<'_>) -> String;
     #[cfg(all(feature = "password", feature = "email"))]
@@ -687,16 +543,6 @@ impl Pages for AskamaPages {
 
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String {
-        render_or_err(view)
-    }
-
-    #[cfg(feature = "organizations")]
-    fn render_orgs(&self, view: &OrgsTemplate<'_>) -> String {
-        render_or_err(view)
-    }
-
-    #[cfg(feature = "organizations")]
-    fn render_org(&self, view: &OrgTemplate<'_>) -> String {
         render_or_err(view)
     }
 

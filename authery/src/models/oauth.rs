@@ -11,7 +11,15 @@ pub struct UnmatchedOAuthToken {
     pub scopes: Vec<String>,
     pub provider_name: String,
     pub provider_user_id: String,
+    /// For OIDC providers this holds the VALIDATED id_token claims; for plain
+    /// OAuth providers, the userinfo response.
     pub provider_user_raw: Value,
+    /// The app-chosen context string this flow was started with (see
+    /// [`crate::oauth::OAuthProviderResolver`]), `None` for flows using the
+    /// statically configured providers. The store receives it verbatim at
+    /// user/token creation - the hook where app-level tenant/org logic (e.g.
+    /// membership upserts from `provider_user_raw` claims) belongs.
+    pub context: Option<String>,
 }
 
 pub trait OAuthToken: Send + Sync {

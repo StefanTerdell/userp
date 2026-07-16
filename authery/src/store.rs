@@ -2,8 +2,6 @@
 use crate::models::email::{EmailChallenge, UserEmail};
 #[cfg(feature = "oauth")]
 use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
-#[cfg(feature = "organizations")]
-use crate::models::org::{Organization, OrgMember};
 use crate::models::{Id, LoginMethod, LoginSession, User};
 use chrono::{DateTime, Utc};
 use std::future::Future;
@@ -17,19 +15,8 @@ pub trait AutheryStore: Send + Sync {
     #[cfg(feature = "oauth")]
     type OAuthTokenId: Id;
 
-    #[cfg(feature = "organizations")]
-    type OrgId: Id;
-
     type User: User<Id = Self::UserId>;
     type LoginSession: LoginSession<Id = Self::SessionId, UserId = Self::UserId>;
-    #[cfg(feature = "organizations")]
-    type Organization: Organization<Id = Self::OrgId>;
-    #[cfg(feature = "organizations")]
-    type OrgMember: OrgMember<UserId = Self::UserId, OrgId = Self::OrgId>;
-    #[cfg(feature = "organizations")]
-    type OrgInvite: crate::models::org::OrgInvite<OrgId = Self::OrgId>;
-    #[cfg(all(feature = "organizations", feature = "oauth"))]
-    type OrgOidcProvider: crate::models::org::OrgOidcProvider<OrgId = Self::OrgId>;
     #[cfg(feature = "email")]
     type UserEmail: UserEmail<UserId = Self::UserId>;
     #[cfg(feature = "email")]
@@ -61,129 +48,6 @@ pub trait AutheryStore: Send + Sync {
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<Self::LoginSession>, Self::Error>> + Send;
-
-    // organizations store
-    /// Create an organization. `slug` is unique across all organizations;
-    /// creation fails (store error) on collision.
-    #[cfg(feature = "organizations")]
-    fn org_create(
-        &self,
-        name: &str,
-        slug: &str,
-        parent: Option<&Self::OrgId>,
-    ) -> impl Future<Output = Result<Self::Organization, Self::Error>> + Send;
-    #[cfg(feature = "organizations")]
-    fn org_get(
-        &self,
-        org_id: &Self::OrgId,
-    ) -> impl Future<Output = Result<Option<Self::Organization>, Self::Error>> + Send;
-    #[cfg(feature = "organizations")]
-    fn org_get_by_slug(
-        &self,
-        slug: &str,
-    ) -> impl Future<Output = Result<Option<Self::Organization>, Self::Error>> + Send;
-    /// Direct sub-organizations.
-    #[cfg(feature = "organizations")]
-    fn org_get_children(
-        &self,
-        org_id: &Self::OrgId,
-    ) -> impl Future<Output = Result<Vec<Self::Organization>, Self::Error>> + Send;
-    /// Update the mutable parts of an organization.
-    #[cfg(feature = "organizations")]
-    fn org_update(
-        &self,
-        org_id: &Self::OrgId,
-        name: &str,
-        login_rules: crate::models::org::OrgLoginRules,
-        role_inheritance: Vec<(String, String)>,
-        privilege_inheritance: Vec<(
-            crate::models::org::OrgPrivilege,
-            crate::models::org::OrgPrivilege,
-        )>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    /// Delete an organization and its memberships. Sub-organizations are the
-    /// store's concern (cascade or reject).
-    #[cfg(feature = "organizations")]
-    fn org_delete(
-        &self,
-        org_id: &Self::OrgId,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Add a user to an organization, or replace their privilege and roles if
-    /// already a member.
-    #[cfg(feature = "organizations")]
-    fn org_upsert_member(
-        &self,
-        org_id: &Self::OrgId,
-        user_id: &Self::UserId,
-        privilege: Option<crate::models::org::OrgPrivilege>,
-        roles: Vec<String>,
-    ) -> impl Future<Output = Result<Self::OrgMember, Self::Error>> + Send;
-    #[cfg(feature = "organizations")]
-    fn org_remove_member(
-        &self,
-        org_id: &Self::OrgId,
-        user_id: &Self::UserId,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    #[cfg(feature = "organizations")]
-    fn org_get_member(
-        &self,
-        org_id: &Self::OrgId,
-        user_id: &Self::UserId,
-    ) -> impl Future<Output = Result<Option<Self::OrgMember>, Self::Error>> + Send;
-    #[cfg(feature = "organizations")]
-    fn org_get_members(
-        &self,
-        org_id: &Self::OrgId,
-    ) -> impl Future<Output = Result<Vec<Self::OrgMember>, Self::Error>> + Send;
-    /// All organizations the user is a direct member of.
-    #[cfg(feature = "organizations")]
-    fn org_get_user_memberships(
-        &self,
-        user_id: &Self::UserId,
-    ) -> impl Future<Output = Result<Vec<Self::OrgMember>, Self::Error>> + Send;
-
-    /// Persist an invite under its (unique, unguessable) code.
-    #[cfg(feature = "organizations")]
-    fn org_invite_create(
-        &self,
-        org_id: &Self::OrgId,
-        code: &str,
-        privilege: Option<crate::models::org::OrgPrivilege>,
-        roles: Vec<String>,
-        expires: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Self::OrgInvite, Self::Error>> + Send;
-    /// Fetch AND delete the invite with this code - invites are single-use.
-    #[cfg(feature = "organizations")]
-    fn org_invite_consume(
-        &self,
-        code: &str,
-    ) -> impl Future<Output = Result<Option<Self::OrgInvite>, Self::Error>> + Send;
-
-    /// Create or replace (by name) an org-attached OIDC provider.
-    #[cfg(all(feature = "organizations", feature = "oauth"))]
-    fn org_oidc_upsert(
-        &self,
-        org_id: &Self::OrgId,
-        provider: crate::models::org::NewOrgOidcProvider,
-    ) -> impl Future<Output = Result<Self::OrgOidcProvider, Self::Error>> + Send;
-    #[cfg(all(feature = "organizations", feature = "oauth"))]
-    fn org_oidc_delete(
-        &self,
-        org_id: &Self::OrgId,
-        name: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    #[cfg(all(feature = "organizations", feature = "oauth"))]
-    fn org_oidc_get(
-        &self,
-        org_id: &Self::OrgId,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<Self::OrgOidcProvider>, Self::Error>> + Send;
-    #[cfg(all(feature = "organizations", feature = "oauth"))]
-    fn org_oidc_list(
-        &self,
-        org_id: &Self::OrgId,
-    ) -> impl Future<Output = Result<Vec<Self::OrgOidcProvider>, Self::Error>> + Send;
 
     // webauthn store
     //

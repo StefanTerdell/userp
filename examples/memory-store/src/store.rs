@@ -1,6 +1,6 @@
 use crate::models::{
-    MyEmailChallenge, MyLoginSession, MyOAuthToken, MyOrgInvite, MyOrgMember, MyOrgOidcProvider,
-    MyOrganization, MyUser, MyUserEmail,
+    AppOrg, AppOrgMember, AppOrgProvider, MyEmailChallenge, MyLoginSession, MyOAuthToken, MyUser,
+    MyUserEmail,
 };
 use axum::{
     http::StatusCode,
@@ -9,7 +9,6 @@ use axum::{
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use authery::{
-    models::org::{NewOrgOidcProvider, OrgLoginRules, OrgPrivilege},
     prelude::*,
     reexports::{
         chrono::{DateTime, Utc},
@@ -28,18 +27,16 @@ pub struct MemoryStore {
     /// Passkeys keyed by raw credential id, with their owning user.
     #[allow(clippy::type_complexity)]
     passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
-    orgs: Arc<RwLock<HashMap<Uuid, MyOrganization>>>,
-    org_members: Arc<RwLock<Vec<MyOrgMember>>>,
-    org_oidc_providers: Arc<RwLock<Vec<MyOrgOidcProvider>>>,
-    org_invites: Arc<RwLock<HashMap<String, MyOrgInvite>>>,
+    /// App-level org tables - authery knows nothing about these.
+    pub orgs: Arc<RwLock<HashMap<Uuid, AppOrg>>>,
+    pub org_members: Arc<RwLock<Vec<AppOrgMember>>>,
+    pub org_providers: Arc<RwLock<Vec<AppOrgProvider>>>,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum MemoryStoreError {
     #[error("The email address is already in use: {0}")]
     AddressInUse(String),
-    #[error("The org slug is already in use: {0}")]
-    SlugInUse(String),
     #[error("The token was not found: {0}")]
     TokenNotFound(String),
     #[error("User mismatch")]
@@ -62,11 +59,6 @@ impl AutheryStore for MemoryStore {
     type UserId = Uuid;
     type SessionId = Uuid;
     type OAuthTokenId = Uuid;
-    type OrgId = Uuid;
-    type Organization = MyOrganization;
-    type OrgMember = MyOrgMember;
-    type OrgInvite = MyOrgInvite;
-    type OrgOidcProvider = MyOrgOidcProvider;
 
     async fn webauthn_create_credential(
         &self,
@@ -575,6 +567,8 @@ impl AutheryStore for MemoryStore {
             });
         };
 
+        self.apply_org_context(&unmatched_token, user.id).await;
+
         let token = Self::OAuthToken {
             id: Uuid::new_v4(),
             user_id: user.id,
@@ -596,252 +590,57 @@ impl AutheryStore for MemoryStore {
         &self,
         unmatched_token: UnmatchedOAuthToken,
     ) -> Result<Option<(Self::User, Self::OAuthToken)>, Self::Error> {
-        let tokens = self.oauth_tokens.read().await;
-        let users = self.users.read().await;
+        let found = {
+            let tokens = self.oauth_tokens.read().await;
+            let users = self.users.read().await;
 
-        Ok(tokens
-            .values()
-            .find(|t| {
-                t.provider_name == unmatched_token.provider_name
-                    && t.provider_user_id == unmatched_token.provider_user_id
-            })
-            .and_then(|t| users.get(&t.user_id).map(|u| (u.clone(), t.clone()))))
-    }
-    async fn org_create(
-        &self,
-        name: &str,
-        slug: &str,
-        parent: Option<&Uuid>,
-    ) -> Result<MyOrganization, Self::Error> {
-        let mut orgs = self.orgs.write().await;
-
-        if orgs.values().any(|o| o.slug == slug) {
-            return Err(MemoryStoreError::SlugInUse(slug.to_string()));
-        }
-
-        let org = MyOrganization {
-            id: Uuid::new_v4(),
-            parent: parent.copied(),
-            slug: slug.to_string(),
-            name: name.to_string(),
-            login_rules: OrgLoginRules::default(),
-            role_inheritance: Vec::new(),
-            privilege_inheritance: Vec::new(),
+            tokens
+                .values()
+                .find(|t| {
+                    t.provider_name == unmatched_token.provider_name
+                        && t.provider_user_id == unmatched_token.provider_user_id
+                })
+                .and_then(|t| users.get(&t.user_id).map(|u| (u.clone(), t.clone())))
         };
 
-        orgs.insert(org.id, org.clone());
+        if let Some((user, _)) = &found {
+            self.apply_org_context(&unmatched_token, user.id).await;
+        }
 
-        Ok(org)
+        Ok(found)
     }
+}
 
-    async fn org_get(&self, org_id: &Uuid) -> Result<Option<MyOrganization>, Self::Error> {
-        Ok(self.orgs.read().await.get(org_id).cloned())
-    }
-
-    async fn org_get_by_slug(&self, slug: &str) -> Result<Option<MyOrganization>, Self::Error> {
-        Ok(self
+impl MemoryStore {
+    /// App-level org logic, run wherever the store observes an oauth login
+    /// carrying a provider-resolution context: upsert the user as a member of
+    /// the org the context names. Claim mapping is plain app code - here, the
+    /// admin flag comes from a Keycloak realm role in the validated id_token.
+    async fn apply_org_context(&self, unmatched_token: &UnmatchedOAuthToken, user_id: Uuid) {
+        let Some(slug) = unmatched_token.context.as_deref() else {
+            return;
+        };
+        let Some(org_id) = self
             .orgs
             .read()
             .await
             .values()
             .find(|o| o.slug == slug)
-            .cloned())
-    }
+            .map(|o| o.id)
+        else {
+            return;
+        };
 
-    async fn org_get_children(&self, org_id: &Uuid) -> Result<Vec<MyOrganization>, Self::Error> {
-        Ok(self
-            .orgs
-            .read()
-            .await
-            .values()
-            .filter(|o| o.parent == Some(*org_id))
-            .cloned()
-            .collect())
-    }
+        let admin = unmatched_token.provider_user_raw["realm_access"]["roles"]
+            .as_array()
+            .is_some_and(|roles| roles.iter().any(|r| r.as_str() == Some("authery-admin")));
 
-    async fn org_update(
-        &self,
-        org_id: &Uuid,
-        name: &str,
-        login_rules: OrgLoginRules,
-        role_inheritance: Vec<(String, String)>,
-        privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
-    ) -> Result<(), Self::Error> {
-        if let Some(org) = self.orgs.write().await.get_mut(org_id) {
-            org.name = name.to_string();
-            org.login_rules = login_rules;
-            org.role_inheritance = role_inheritance;
-            org.privilege_inheritance = privilege_inheritance;
-        }
-
-        Ok(())
-    }
-
-    async fn org_delete(&self, org_id: &Uuid) -> Result<(), Self::Error> {
-        self.orgs.write().await.remove(org_id);
-        self.org_members
-            .write()
-            .await
-            .retain(|m| m.org_id != *org_id);
-        self.org_oidc_providers
-            .write()
-            .await
-            .retain(|p| p.org_id != *org_id);
-
-        Ok(())
-    }
-
-    async fn org_upsert_member(
-        &self,
-        org_id: &Uuid,
-        user_id: &Uuid,
-        privilege: Option<OrgPrivilege>,
-        roles: Vec<String>,
-    ) -> Result<MyOrgMember, Self::Error> {
         let mut members = self.org_members.write().await;
-
-        members.retain(|m| !(m.org_id == *org_id && m.user_id == *user_id));
-
-        let member = MyOrgMember {
-            user_id: *user_id,
-            org_id: *org_id,
-            privilege,
-            roles,
-        };
-
-        members.push(member.clone());
-
-        Ok(member)
+        members.retain(|m| !(m.org_id == org_id && m.user_id == user_id));
+        members.push(AppOrgMember {
+            user_id,
+            org_id,
+            admin,
+        });
     }
-
-    async fn org_remove_member(&self, org_id: &Uuid, user_id: &Uuid) -> Result<(), Self::Error> {
-        self.org_members
-            .write()
-            .await
-            .retain(|m| !(m.org_id == *org_id && m.user_id == *user_id));
-
-        Ok(())
-    }
-
-    async fn org_get_member(
-        &self,
-        org_id: &Uuid,
-        user_id: &Uuid,
-    ) -> Result<Option<MyOrgMember>, Self::Error> {
-        Ok(self
-            .org_members
-            .read()
-            .await
-            .iter()
-            .find(|m| m.org_id == *org_id && m.user_id == *user_id)
-            .cloned())
-    }
-
-    async fn org_get_members(&self, org_id: &Uuid) -> Result<Vec<MyOrgMember>, Self::Error> {
-        Ok(self
-            .org_members
-            .read()
-            .await
-            .iter()
-            .filter(|m| m.org_id == *org_id)
-            .cloned()
-            .collect())
-    }
-
-    async fn org_get_user_memberships(
-        &self,
-        user_id: &Uuid,
-    ) -> Result<Vec<MyOrgMember>, Self::Error> {
-        Ok(self
-            .org_members
-            .read()
-            .await
-            .iter()
-            .filter(|m| m.user_id == *user_id)
-            .cloned()
-            .collect())
-    }
-
-    async fn org_oidc_upsert(
-        &self,
-        org_id: &Uuid,
-        config: NewOrgOidcProvider,
-    ) -> Result<MyOrgOidcProvider, Self::Error> {
-        let mut providers = self.org_oidc_providers.write().await;
-
-        providers.retain(|p| !(p.org_id == *org_id && p.config.name == config.name));
-
-        let provider = MyOrgOidcProvider {
-            org_id: *org_id,
-            config,
-        };
-
-        providers.push(provider.clone());
-
-        Ok(provider)
-    }
-
-    async fn org_oidc_delete(&self, org_id: &Uuid, name: &str) -> Result<(), Self::Error> {
-        self.org_oidc_providers
-            .write()
-            .await
-            .retain(|p| !(p.org_id == *org_id && p.config.name == name));
-
-        Ok(())
-    }
-
-    async fn org_oidc_get(
-        &self,
-        org_id: &Uuid,
-        name: &str,
-    ) -> Result<Option<MyOrgOidcProvider>, Self::Error> {
-        Ok(self
-            .org_oidc_providers
-            .read()
-            .await
-            .iter()
-            .find(|p| p.org_id == *org_id && p.config.name == name)
-            .cloned())
-    }
-
-    async fn org_oidc_list(&self, org_id: &Uuid) -> Result<Vec<MyOrgOidcProvider>, Self::Error> {
-        Ok(self
-            .org_oidc_providers
-            .read()
-            .await
-            .iter()
-            .filter(|p| p.org_id == *org_id)
-            .cloned()
-            .collect())
-    }
-
-
-    async fn org_invite_create(
-        &self,
-        org_id: &Uuid,
-        code: &str,
-        privilege: Option<OrgPrivilege>,
-        roles: Vec<String>,
-        expires: DateTime<Utc>,
-    ) -> Result<MyOrgInvite, Self::Error> {
-        let invite = MyOrgInvite {
-            org_id: *org_id,
-            code: code.to_string(),
-            privilege,
-            roles,
-            expires,
-        };
-
-        self.org_invites
-            .write()
-            .await
-            .insert(code.to_string(), invite.clone());
-
-        Ok(invite)
-    }
-
-    async fn org_invite_consume(&self, code: &str) -> Result<Option<MyOrgInvite>, Self::Error> {
-        Ok(self.org_invites.write().await.remove(code))
-    }
-
 }

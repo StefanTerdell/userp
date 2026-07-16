@@ -8,8 +8,6 @@ use crate::pages::{AskamaPages, Pages};
 use crate::password::PasswordConfig;
 #[cfg(feature = "mfa")]
 use crate::mfa::MfaPolicy;
-#[cfg(feature = "organizations")]
-use crate::org::OrgConfig;
 use crate::ratelimit::{NoRateLimit, RateLimiter};
 #[cfg(feature = "webauthn")]
 use crate::webauthn::WebauthnConfig;
@@ -57,9 +55,6 @@ pub struct AutheryConfig {
     /// registered.
     #[cfg(feature = "mfa")]
     pub mfa_policy: MfaPolicy,
-    /// Settings for the organizations feature; see [`crate::org`].
-    #[cfg(feature = "organizations")]
-    pub org_config: OrgConfig,
     /// The renderer for the built-in pages. Defaults to the bundled Askama
     /// templates; override with [`AutheryConfig::with_pages`].
     #[cfg(feature = "pages")]
@@ -98,8 +93,6 @@ impl AutheryConfig {
             webauthn,
             #[cfg(feature = "mfa")]
             mfa_policy: MfaPolicy::default(),
-            #[cfg(feature = "organizations")]
-            org_config: OrgConfig::default(),
             #[cfg(feature = "pages")]
             pages: Arc::new(AskamaPages),
         })
@@ -141,13 +134,6 @@ impl AutheryConfig {
     #[cfg(feature = "mfa")]
     pub fn with_mfa_policy(mut self, mfa_policy: MfaPolicy) -> Self {
         self.mfa_policy = mfa_policy;
-        self
-    }
-
-    /// Configure the organizations feature.
-    #[cfg(feature = "organizations")]
-    pub fn with_org_config(mut self, org_config: OrgConfig) -> Self {
-        self.org_config = org_config;
         self
     }
 
