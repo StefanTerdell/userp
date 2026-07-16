@@ -29,16 +29,16 @@
 pub mod config;
 pub mod constants;
 pub mod core;
-pub mod models;
 #[cfg(feature = "mfa")]
 pub mod mfa;
+pub mod models;
 pub mod prelude;
 pub mod ratelimit;
-#[cfg(feature = "webauthn")]
-pub mod webauthn;
 pub mod reexports;
 pub mod routes;
 pub mod store;
+#[cfg(feature = "webauthn")]
+pub mod webauthn;
 
 #[cfg(feature = "email")]
 pub mod email;

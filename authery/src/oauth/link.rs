@@ -1,7 +1,7 @@
-use super::{provider::OAuthProvider, CoreAuthery, OAuthCallbackError, OAuthFlow, AutheryStore};
+use super::{AutheryStore, CoreAuthery, OAuthCallbackError, OAuthFlow, provider::OAuthProvider};
 use crate::models::{
+    AutheryCookies, User,
     oauth::{OAuthToken, UnmatchedOAuthToken},
-    User, AutheryCookies,
 };
 use oauth2::{AuthorizationCode, CsrfToken};
 use std::sync::Arc;

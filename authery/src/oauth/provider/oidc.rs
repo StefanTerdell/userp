@@ -2,8 +2,8 @@ use super::{ExchangeFuture, OAuthProvider};
 use crate::models::Allow;
 use crate::models::oauth::UnmatchedOAuthToken;
 use crate::oauth::client::{
-    fetch_jwks, http_client, ClientWithGenericExtraTokenFields,
-    ClientWithGenericExtraTokenFieldsBase,
+    ClientWithGenericExtraTokenFields, ClientWithGenericExtraTokenFieldsBase, fetch_jwks,
+    http_client,
 };
 use anyhow::Context;
 use oauth2::{
@@ -65,7 +65,9 @@ impl OAuthOidcProvider {
             .collect::<Vec<_>>();
 
         if !has_openid_scope {
-            eprintln!("Missing 'openid' scope when building '{name}' Oidc provider. This is probably a mistake. Adding.");
+            eprintln!(
+                "Missing 'openid' scope when building '{name}' Oidc provider. This is probably a mistake. Adding."
+            );
             scopes.push(Scope::new("openid".into()));
         };
 
@@ -131,7 +133,10 @@ impl OAuthProvider for OAuthOidcProvider {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let nonce = CsrfToken::new_random().secret().to_owned();
 
-        let client = self.client.clone().set_redirect_uri(base_redirect_url.clone());
+        let client = self
+            .client
+            .clone()
+            .set_redirect_uri(base_redirect_url.clone());
 
         let (url, csrf_state) = client
             .authorize_url(CsrfToken::new_random)

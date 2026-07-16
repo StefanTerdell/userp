@@ -2,8 +2,8 @@ use super::{ExchangeFuture, OAuthProvider};
 use crate::models::Allow;
 use crate::models::oauth::{OAuthProviderUser, UnmatchedOAuthToken};
 use crate::oauth::client::{
-    http_client, ClientWithGenericExtraTokenFields, ClientWithGenericExtraTokenFieldsBase,
-    TokenResponseWithGenericExtraFields,
+    ClientWithGenericExtraTokenFields, ClientWithGenericExtraTokenFieldsBase,
+    TokenResponseWithGenericExtraFields, http_client,
 };
 use anyhow::Context;
 use oauth2::{
@@ -145,7 +145,10 @@ impl OAuthProvider for OAuthCustomProvider {
     ) -> (Url, CsrfToken, PkceCodeVerifier, Option<String>) {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-        let client = self.client.clone().set_redirect_uri(base_redirect_url.clone());
+        let client = self
+            .client
+            .clone()
+            .set_redirect_uri(base_redirect_url.clone());
 
         let (url, csrf_state) = client
             .authorize_url(CsrfToken::new_random)

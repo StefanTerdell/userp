@@ -1,13 +1,13 @@
 #[cfg(feature = "email")]
 use crate::email::EmailConfig;
+#[cfg(feature = "mfa")]
+use crate::mfa::MfaPolicy;
 #[cfg(feature = "oauth")]
 use crate::oauth::OAuthConfig;
 #[cfg(feature = "pages")]
 use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
-#[cfg(feature = "mfa")]
-use crate::mfa::MfaPolicy;
 use crate::ratelimit::{NoRateLimit, RateLimiter};
 #[cfg(feature = "webauthn")]
 use crate::webauthn::WebauthnConfig;

@@ -14,8 +14,8 @@ use crate::ratelimit::{RateLimitOp, RateLimited};
 use crate::{
     core::CoreAuthery,
     models::{
-        email::{EmailChallenge, UserEmail},
         Allow, AutheryCookies, LoginMethod, User,
+        email::{EmailChallenge, UserEmail},
     },
     store::AutheryStore,
 };

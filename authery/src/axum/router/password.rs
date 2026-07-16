@@ -1,13 +1,13 @@
-use axum::{
-    response::{IntoResponse, Redirect},
-    Form,
-};
-use serde::{Deserialize, Serialize};
 use crate::{
     axum::AxumAuthery,
     password::{login::PasswordLoginError, signup::PasswordSignupError},
     store::AutheryStore,
 };
+use axum::{
+    Form,
+    response::{IntoResponse, Redirect},
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PasswordIdNextForm {
@@ -34,8 +34,7 @@ where
         Ok(auth) => {
             #[cfg(feature = "mfa")]
             if auth.mfa_pending_session().await?.is_some() {
-                let url =
-                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
                 return Ok((auth, Redirect::to(&url)).into_response());
             }
 
@@ -73,8 +72,7 @@ where
         Ok(auth) => {
             #[cfg(feature = "mfa")]
             if auth.mfa_pending_session().await?.is_some() {
-                let url =
-                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
                 return Ok((auth, Redirect::to(&url)).into_response());
             }
 

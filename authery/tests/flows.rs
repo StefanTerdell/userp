@@ -15,9 +15,9 @@ use authery::models::{LoginMethod, LoginMethodRules, LoginSession};
 use authery::password::login::PasswordLoginError;
 use authery::ratelimit::{RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};
 use authery::reexports::chrono::Duration;
-use common::{auth, AuthBuilder, TestStore};
-use std::sync::atomic::{AtomicU32, Ordering};
+use common::{AuthBuilder, TestStore, auth};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[tokio::test]
 async fn password_login_happy_path() {
@@ -143,7 +143,11 @@ async fn otp_verify_is_single_use_and_code_checked() {
 
     // Stand in for the emailed code (init would SMTP it): the store key is
     // namespaced per address.
-    store.seed_challenge("otp:alice@x.com:123456", "alice@x.com", Duration::minutes(5));
+    store.seed_challenge(
+        "otp:alice@x.com:123456",
+        "alice@x.com",
+        Duration::minutes(5),
+    );
 
     let err = auth(&store)
         .otp_login_verify("alice@x.com", "999999")
@@ -170,7 +174,11 @@ async fn otp_verify_is_single_use_and_code_checked() {
 async fn otp_verify_rejects_expired_codes() {
     let store = TestStore::default();
     store.seed_user("alice@x.com", None);
-    store.seed_challenge("otp:alice@x.com:123456", "alice@x.com", Duration::seconds(-1));
+    store.seed_challenge(
+        "otp:alice@x.com:123456",
+        "alice@x.com",
+        Duration::seconds(-1),
+    );
 
     let err = auth(&store)
         .otp_login_verify("alice@x.com", "123456")
@@ -186,7 +194,11 @@ async fn otp_codes_are_bound_to_their_address() {
     let store = TestStore::default();
     store.seed_user("alice@x.com", None);
     store.seed_user("bob@x.com", None);
-    store.seed_challenge("otp:alice@x.com:123456", "alice@x.com", Duration::minutes(5));
+    store.seed_challenge(
+        "otp:alice@x.com:123456",
+        "alice@x.com",
+        Duration::minutes(5),
+    );
 
     let err = auth(&store)
         .otp_login_verify("bob@x.com", "123456")
@@ -233,7 +245,11 @@ async fn mfa_policy_creates_pending_session_and_otp_upgrades_it() {
     ));
 
     // Complete the second factor with a directly-seeded code.
-    store.seed_challenge("mfa:alice@x.com:654321", "alice@x.com", Duration::minutes(5));
+    store.seed_challenge(
+        "mfa:alice@x.com:654321",
+        "alice@x.com",
+        Duration::minutes(5),
+    );
     let upgraded = pending.mfa_otp_verify("654321").await.unwrap();
 
     let session = upgraded.session().await.unwrap().expect("now logged in");

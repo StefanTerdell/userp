@@ -10,14 +10,7 @@ use uuid::Uuid;
 /// An entity ID. IDs must roundtrip through their string representation,
 /// which is used for cookies and other wire formats.
 pub trait Id:
-    Clone
-    + std::fmt::Debug
-    + Display
-    + std::str::FromStr
-    + PartialEq
-    + Send
-    + Sync
-    + 'static
+    Clone + std::fmt::Debug + Display + std::str::FromStr + PartialEq + Send + Sync + 'static
 {
     /// Generate a new, unique ID. Must be unguessable (i.e. backed by a CSPRNG),
     /// since IDs generated for sessions act as bearer tokens.

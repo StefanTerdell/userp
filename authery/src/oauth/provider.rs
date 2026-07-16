@@ -12,8 +12,8 @@ pub mod spotify;
 pub mod twitch;
 pub mod x;
 
-use crate::models::oauth::UnmatchedOAuthToken;
 use crate::models::Allow;
+use crate::models::oauth::UnmatchedOAuthToken;
 use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope};
 use std::{future::Future, pin::Pin};
 use url::Url;

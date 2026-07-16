@@ -132,17 +132,19 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         #[cfg(feature = "webauthn")]
         {
-            factors.webauthn = !self.store.webauthn_get_credentials(user_id).await?.is_empty();
+            factors.webauthn = !self
+                .store
+                .webauthn_get_credentials(user_id)
+                .await?
+                .is_empty();
         }
 
         #[cfg(feature = "otp")]
         {
             use crate::models::email::UserEmail;
 
-            let email_based_first = matches!(
-                first,
-                LoginMethod::Email { .. } | LoginMethod::Otp { .. }
-            );
+            let email_based_first =
+                matches!(first, LoginMethod::Email { .. } | LoginMethod::Otp { .. });
 
             if !email_based_first {
                 factors.otp_address = self
@@ -178,8 +180,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Ok(None);
         }
 
-        Ok(Some(session)
-            .filter(|s| matches!(s.get_method(), LoginMethod::MfaPending { .. })))
+        Ok(Some(session).filter(|s| matches!(s.get_method(), LoginMethod::MfaPending { .. })))
     }
 
     /// Replace the pending session with a full one recording both factors.
@@ -304,9 +305,7 @@ mod otp_factor {
         }
 
         /// The pending session and the verified address codes go to.
-        async fn mfa_otp_target(
-            &self,
-        ) -> Result<(S::LoginSession, String), MfaOtpError<S::Error>> {
+        async fn mfa_otp_target(&self) -> Result<(S::LoginSession, String), MfaOtpError<S::Error>> {
             let Some(pending) = self
                 .mfa_pending_session()
                 .await
@@ -441,7 +440,11 @@ mod webauthn_factor {
                     .map_err(MfaWebauthnError::Store)?;
             }
 
-            let credential_id = result.cred_id().iter().map(|b| format!("{b:02x}")).collect();
+            let credential_id = result
+                .cred_id()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
 
             self.mfa_upgrade(pending, LoginMethod::Webauthn { credential_id })
                 .await

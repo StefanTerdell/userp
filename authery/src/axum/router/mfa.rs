@@ -52,20 +52,25 @@ mod otp_factor {
 
         match code {
             None => match auth.mfa_otp_init().await {
-                Ok(_address) => Ok(Redirect::to(&with_query("message", "Code sent!")).into_response()),
+                Ok(_address) => {
+                    Ok(Redirect::to(&with_query("message", "Code sent!")).into_response())
+                }
                 Err(MfaOtpError::Store(err)) => Err(err),
                 Err(MfaOtpError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
-                Err(err) => Ok(Redirect::to(&with_query("error", &err.to_string())).into_response()),
+                Err(err) => {
+                    Ok(Redirect::to(&with_query("error", &err.to_string())).into_response())
+                }
             },
             Some(code) => match auth.mfa_otp_verify(&code).await {
                 Ok(auth) => {
-                    let next =
-                        crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
+                    let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
                     Ok((auth, Redirect::to(&next)).into_response())
                 }
                 Err(MfaOtpError::Store(err)) => Err(err),
                 Err(MfaOtpError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
-                Err(err) => Ok(Redirect::to(&with_query("error", &err.to_string())).into_response()),
+                Err(err) => {
+                    Ok(Redirect::to(&with_query("error", &err.to_string())).into_response())
+                }
             },
         }
     }
@@ -78,7 +83,7 @@ pub(crate) use webauthn_factor::{post_login_mfa_webauthn_finish, post_login_mfa_
 mod webauthn_factor {
     use super::*;
     use crate::mfa::MfaWebauthnError;
-    use axum::{http::StatusCode, Json};
+    use axum::{Json, http::StatusCode};
     use serde_json::json;
     use webauthn_rs::prelude::PublicKeyCredential;
 

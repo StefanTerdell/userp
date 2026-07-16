@@ -93,11 +93,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         &mut self,
         display_name: &str,
     ) -> Result<CreationChallengeResponse, WebauthnRegisterError<S::Error>> {
-        let Some(session) = self
-            .session()
-            .await
-            .map_err(WebauthnRegisterError::Store)?
-        else {
+        let Some(session) = self.session().await.map_err(WebauthnRegisterError::Store)? else {
             return Err(WebauthnRegisterError::NotLoggedIn);
         };
 
@@ -110,8 +106,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(WebauthnRegisterError::Store)?;
 
-        let exclude = (!existing.is_empty())
-            .then(|| existing.iter().map(|p| p.cred_id().clone()).collect());
+        let exclude =
+            (!existing.is_empty()).then(|| existing.iter().map(|p| p.cred_id().clone()).collect());
 
         // The webauthn user handle is a random uuid, deliberately NOT derived
         // from the store's user id: login resolves by credential id, so the
@@ -144,11 +140,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         &mut self,
         credential: &RegisterPublicKeyCredential,
     ) -> Result<(), WebauthnRegisterError<S::Error>> {
-        let Some(session) = self
-            .session()
-            .await
-            .map_err(WebauthnRegisterError::Store)?
-        else {
+        let Some(session) = self.session().await.map_err(WebauthnRegisterError::Store)? else {
             return Err(WebauthnRegisterError::NotLoggedIn);
         };
 

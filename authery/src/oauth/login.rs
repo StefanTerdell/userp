@@ -1,14 +1,14 @@
 use super::provider::OAuthProvider;
-use super::{Allow, CoreAuthery, OAuthCallbackError, OAuthFlow, AutheryStore};
+use super::{Allow, AutheryStore, CoreAuthery, OAuthCallbackError, OAuthFlow};
+use crate::models::LoginMethod;
 use crate::models::{
+    AutheryCookies, User,
     oauth::{OAuthToken, UnmatchedOAuthToken},
-    User, AutheryCookies,
 };
 use oauth2::{AuthorizationCode, CsrfToken};
 use std::sync::Arc;
 use thiserror::Error;
 use url::Url;
-use crate::models::LoginMethod;
 
 #[derive(Error, Debug)]
 pub enum OAuthLoginCallbackError<StoreError: std::error::Error> {

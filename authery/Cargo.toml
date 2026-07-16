@@ -3,10 +3,13 @@ name = "authery"
 version = "0.1.0"
 edition = "2024"
 exclude = [".github/*"]
-description = "Authery is a composable auth system with OAuth/OIDC, password and email support, and a ready-made Axum router with replaceable pages"
+description = "Batteries-included authentication for Axum: sessions, passwords, email links & one-time codes, OAuth/OIDC, passkeys and MFA over storage you bring"
 license = "ISC"
 repository = "https://github.com/StefanTerdell/userp"
 homepage = "https://github.com/StefanTerdell/userp"
+readme = "../README.md"
+keywords = ["authentication", "axum", "oauth", "oidc", "webauthn"]
+categories = ["authentication", "web-programming"]
 
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }

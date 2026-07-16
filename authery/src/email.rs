@@ -8,18 +8,18 @@ pub mod verify;
 
 use chrono::{Duration, Utc};
 use lettre::{
-    message::header::ContentType, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
 };
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
 
+use crate::models::Allow;
 use crate::{
     core::CoreAuthery,
-    models::{email::EmailChallenge, AutheryCookies},
+    models::{AutheryCookies, email::EmailChallenge},
     store::AutheryStore,
 };
-use crate::models::Allow;
 
 #[derive(Debug, Clone)]
 pub struct EmailConfig {

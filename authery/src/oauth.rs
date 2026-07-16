@@ -5,15 +5,15 @@ pub mod provider;
 pub mod refresh;
 pub mod signup;
 
+use crate::models::Allow;
 use crate::{
     core::CoreAuthery,
     models::{
-        oauth::{OAuthProviderUser, UnmatchedOAuthToken},
         AutheryCookies,
+        oauth::{OAuthProviderUser, UnmatchedOAuthToken},
     },
     store::AutheryStore,
 };
-use crate::models::Allow;
 
 use self::link::OAuthLinkCallbackError;
 use self::login::OAuthLoginCallbackError;
@@ -23,8 +23,8 @@ use self::signup::OAuthSignupCallbackError;
 
 use chrono::Utc;
 use oauth2::ExtraTokenFields;
-use oauth2::{basic::BasicTokenType, StandardTokenResponse};
 use oauth2::{AuthorizationCode, CsrfToken, PkceCodeVerifier, RedirectUrl, TokenResponse};
+use oauth2::{StandardTokenResponse, basic::BasicTokenType};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{fmt::Display, future::Future, pin::Pin, sync::Arc};
@@ -197,12 +197,16 @@ impl UnmatchedOAuthToken {
 /// `context`. Returning `None` fails the flow with
 /// [`OAuthCallbackError::NoProvider`].
 pub trait OAuthProviderResolver: std::fmt::Debug + Send + Sync {
-    fn resolve<'a>(&'a self, context: &'a str, provider_name: &'a str)
-        -> ProviderResolverFuture<'a>;
+    fn resolve<'a>(
+        &'a self,
+        context: &'a str,
+        provider_name: &'a str,
+    ) -> ProviderResolverFuture<'a>;
 }
 
-pub type ProviderResolverFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Option<Arc<dyn OAuthProvider>>, anyhow::Error>> + Send + 'a>>;
+pub type ProviderResolverFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<Option<Arc<dyn OAuthProvider>>, anyhow::Error>> + Send + 'a>,
+>;
 
 #[derive(Error, Debug)]
 pub enum OAuthCallbackError {

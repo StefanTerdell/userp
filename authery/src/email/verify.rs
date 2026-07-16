@@ -1,7 +1,7 @@
 use super::SendEmailChallengeError;
 use crate::{
     core::CoreAuthery,
-    models::{email::EmailChallenge, User, AutheryCookies},
+    models::{AutheryCookies, User, email::EmailChallenge},
     store::AutheryStore,
 };
 use chrono::Utc;

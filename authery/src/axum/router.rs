@@ -1,33 +1,33 @@
-#[cfg(feature = "user")]
-pub mod user;
 #[cfg(feature = "email")]
 pub mod email;
+#[cfg(feature = "mfa")]
+pub mod mfa;
 #[cfg(feature = "oauth")]
 pub mod oauth;
 #[cfg(feature = "otp")]
 pub mod otp;
-#[cfg(feature = "webauthn")]
-pub mod webauthn;
-#[cfg(feature = "mfa")]
-pub mod mfa;
 #[cfg(feature = "pages")]
 pub mod pages;
 #[cfg(feature = "password")]
 pub mod password;
+#[cfg(feature = "user")]
+pub mod user;
+#[cfg(feature = "webauthn")]
+pub mod webauthn;
 
+use crate::axum::cookies::SharedCookieJar;
+use crate::routes::Routes;
+use crate::{Authery as AxumAuthery, config::AutheryConfig, store::AutheryStore};
 use axum::{
+    Router,
     extract::{FromRef, Request},
     http::StatusCode,
-    middleware::{from_fn, Next},
+    middleware::{Next, from_fn},
     response::{IntoResponse, Redirect},
     routing::{get, post},
-    Router,
 };
 use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use std::sync::{Arc, Mutex};
-use crate::axum::cookies::SharedCookieJar;
-use crate::routes::Routes;
-use crate::{config::AutheryConfig, store::AutheryStore, Authery as AxumAuthery};
 
 /// Wraps `router` with middleware that builds the encrypted cookie jar once per
 /// request, shares it with the handler via request extensions, and serializes it

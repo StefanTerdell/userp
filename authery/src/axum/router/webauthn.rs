@@ -1,15 +1,15 @@
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Redirect},
-    Json,
-};
-use serde::Deserialize;
-use serde_json::json;
 use crate::{
     axum::AxumAuthery,
     store::AutheryStore,
     webauthn::{WebauthnLoginError, WebauthnRegisterError},
 };
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
+};
+use serde::Deserialize;
+use serde_json::json;
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 /// Begin a discoverable passkey login. Returns the JSON challenge to pass to
@@ -23,9 +23,11 @@ where
 {
     Ok(match auth.webauthn_login_start() {
         Ok(rcr) => (auth, Json(rcr)).into_response(),
-        Err(err) => {
-            (StatusCode::BAD_REQUEST, Json(json!({"error": err.to_string()}))).into_response()
-        }
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": err.to_string()})),
+        )
+            .into_response(),
     })
 }
 

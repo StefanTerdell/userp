@@ -1,6 +1,6 @@
 use super::{CoreAuthery, OAuthCallbackError, OAuthFlow, RefreshInitResult};
-use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
 use crate::models::AutheryCookies;
+use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
 use crate::store::AutheryStore;
 use oauth2::{AuthorizationCode, CsrfToken, RefreshToken};
 use thiserror::Error;

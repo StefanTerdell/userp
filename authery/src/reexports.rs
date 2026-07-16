@@ -20,10 +20,10 @@ pub use password_auth;
 pub use reqwest;
 #[cfg(feature = "password")]
 pub use tokio;
-#[cfg(feature = "webauthn")]
-pub use webauthn_rs;
 #[cfg(any(feature = "email", feature = "oauth"))]
 pub use url;
+#[cfg(feature = "webauthn")]
+pub use webauthn_rs;
 
 #[cfg(feature = "pages")]
 pub use askama;

@@ -1,16 +1,16 @@
 use super::SendEmailChallengeError;
+use crate::models::LoginMethod;
 use crate::{
     core::CoreAuthery,
     models::{
+        AutheryCookies, LoginSession, User,
         email::{EmailChallenge, UserEmail},
-        LoginSession, User, AutheryCookies,
     },
     password::PasswordReset,
     store::AutheryStore,
 };
 use chrono::Utc;
 use thiserror::Error;
-use crate::models::LoginMethod;
 
 #[derive(Debug, Error)]
 pub enum EmailResetInitError<StoreError: std::error::Error> {

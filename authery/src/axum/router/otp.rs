@@ -1,13 +1,13 @@
-use axum::{
-    response::{IntoResponse, Redirect},
-    Form,
-};
-use serde::{Deserialize, Serialize};
 use crate::{
     axum::AxumAuthery,
-    email::{otp::OtpInitError, otp::OtpVerifyError, SendEmailChallengeError},
+    email::{SendEmailChallengeError, otp::OtpInitError, otp::OtpVerifyError},
     store::AutheryStore,
 };
+use axum::{
+    Form,
+    response::{IntoResponse, Redirect},
+};
+use serde::{Deserialize, Serialize};
 
 /// One form serves both steps: without `code` it requests a code to be sent,
 /// with `code` it verifies it.

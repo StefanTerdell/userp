@@ -1,11 +1,11 @@
+use crate::models::{Allow, LoginMethod};
 use crate::ratelimit::{RateLimitOp, RateLimited};
 use crate::{
     core::CoreAuthery,
-    models::{User, AutheryCookies},
+    models::{AutheryCookies, User},
     store::AutheryStore,
 };
 use thiserror::Error;
-use crate::models::{Allow, LoginMethod};
 
 #[derive(Error, Debug)]
 pub enum PasswordSignupError<T: std::error::Error> {

@@ -1,8 +1,8 @@
+use crate::pages::{LoginTemplate, SignupTemplate};
+use crate::{axum::AxumAuthery, store::AutheryStore};
 use axum::extract::Query;
 use axum::response::{Html, IntoResponse, Redirect};
 use serde::Deserialize;
-use crate::pages::{LoginTemplate, SignupTemplate};
-use crate::{axum::AxumAuthery, store::AutheryStore};
 
 #[derive(Deserialize)]
 pub struct NextMessageErrorQuery {
@@ -35,7 +35,8 @@ where
     Ok(if auth.logged_in().await? {
         Redirect::to(&auth.routes.pages.post_login).into_response()
     } else {
-        let view = LoginTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
+        let view =
+            LoginTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
         Html(auth.pages.render_login(&view)).into_response()
     })
 }
@@ -90,10 +91,12 @@ where
         message: message.as_deref(),
         error: error.as_deref(),
         #[cfg(feature = "otp")]
-        otp: factors.otp_address.map(|address| crate::pages::MfaOtpTemplateInfo {
-            action_route: &auth.routes.mfa.login_mfa_otp,
-            address_hint: mask_address(&address),
-        }),
+        otp: factors
+            .otp_address
+            .map(|address| crate::pages::MfaOtpTemplateInfo {
+                action_route: &auth.routes.mfa.login_mfa_otp,
+                address_hint: mask_address(&address),
+            }),
         #[cfg(not(feature = "otp"))]
         otp: None,
         #[cfg(feature = "webauthn")]
@@ -182,8 +185,8 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::UserTemplate;
     use crate::models::User;
+    use crate::pages::UserTemplate;
 
     let login_route = auth.routes.pages.login.clone();
 
@@ -249,8 +252,8 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use axum::http::StatusCode;
     use crate::pages::ResetPasswordTemplate;
+    use axum::http::StatusCode;
 
     if auth.is_reset_session().await? {
         let view = ResetPasswordTemplate {

@@ -1,14 +1,14 @@
 use crate::models::oauth::OAuthProviderUser;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use jsonwebtoken::{DecodingKey, Validation, decode, decode_header};
 use oauth2::{
+    Client, EndpointNotSet, EndpointSet, ExtraTokenFields, StandardRevocableToken,
+    StandardTokenResponse,
     basic::{
         BasicErrorResponse, BasicRevocationErrorResponse, BasicTokenIntrospectionResponse,
         BasicTokenType,
     },
-    Client, EndpointNotSet, EndpointSet, ExtraTokenFields, StandardRevocableToken,
-    StandardTokenResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -162,6 +162,9 @@ impl GenericExtraTokenFields {
             .expect("validate_oidc_id_token guarantees 'sub'")
             .to_string();
 
-        Ok(OAuthProviderUser { id: sub, raw: claims })
+        Ok(OAuthProviderUser {
+            id: sub,
+            raw: claims,
+        })
     }
 }

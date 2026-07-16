@@ -1,15 +1,14 @@
 #![cfg_attr(not(feature = "default"), allow(unused))]
 
-use askama::Template;
-use std::sync::Arc;
 use crate::models::LoginMethod;
 #[cfg(feature = "email")]
 use crate::models::email::UserEmail;
-use crate::models::{LoginSession, User, AutheryCookies};
+use crate::models::{AutheryCookies, LoginSession, User};
 use crate::{core::CoreAuthery, store::AutheryStore};
 #[cfg(feature = "oauth")]
 use crate::{models::oauth::OAuthToken, oauth::provider::OAuthProvider};
-
+use askama::Template;
+use std::sync::Arc;
 
 #[cfg(feature = "user")]
 pub struct TemplateLoginSession {

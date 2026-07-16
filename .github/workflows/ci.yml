@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, authery]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt -p authery --check
+      - run: cargo clippy -p authery --all-features -- -D warnings
+
+  feature-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "password"
+          - "email"
+          - "oauth"
+          - "webauthn"
+          - "otp,mfa,password"
+          - "oauth,axum,pages"
+          - "oauth,axum,pages,user,email,password,otp,webauthn,mfa"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p authery --no-default-features --features "${{ matrix.features }}"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Core flow tests (no external services needed).
+      - run: cargo test -p authery --no-default-features --features password,email,otp,mfa,user
+      # Default features; the Keycloak-dependent test self-skips when it is
+      # not reachable.
+      - run: cargo test -p authery
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --manifest-path examples/memory-store/Cargo.toml
+      - run: cargo build --manifest-path examples/memory-store-password-only-no-templates/Cargo.toml

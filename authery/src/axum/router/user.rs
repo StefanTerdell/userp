@@ -1,12 +1,12 @@
-use axum::response::IntoResponse;
-use axum::{http::StatusCode, response::Redirect, Form};
-use serde::Deserialize;
-use urlencoding::encode;
 use crate::{
     axum::AxumAuthery,
     models::{LoginSession, User},
     store::AutheryStore,
 };
+use axum::response::IntoResponse;
+use axum::{Form, http::StatusCode, response::Redirect};
+use serde::Deserialize;
+use urlencoding::encode;
 
 #[cfg(feature = "email")]
 use crate::models::email::UserEmail;

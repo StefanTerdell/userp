@@ -1,24 +1,23 @@
-use axum::{
-    extract::{Path, Query},
-    http::StatusCode,
-    response::{IntoResponse, Redirect},
-    Form,
-};
-use serde::{Deserialize, Serialize};
 use crate::{
     axum::AxumAuthery,
-    models::{oauth::OAuthToken, User},
+    models::{User, oauth::OAuthToken},
     oauth::{
+        OAuthGenericCallbackError, RefreshInitResult,
         link::{OAuthLinkCallbackError, OAuthLinkInitError},
         login::OAuthLoginCallbackError,
         refresh::OAuthRefreshCallbackError,
         signup::OAuthSignupCallbackError,
-        OAuthGenericCallbackError, RefreshInitResult,
     },
     reexports::oauth2::{AuthorizationCode, CsrfToken},
     store::AutheryStore,
 };
-
+use axum::{
+    Form,
+    extract::{Path, Query},
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct IdForm {
@@ -57,8 +56,7 @@ where
         Ok((auth, next)) => {
             #[cfg(feature = "mfa")]
             if auth.mfa_pending_session().await?.is_some() {
-                let url =
-                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
                 return Ok((auth, Redirect::to(&url)).into_response());
             }
 
@@ -190,8 +188,7 @@ where
         Ok((auth, next)) => {
             #[cfg(feature = "mfa")]
             if auth.mfa_pending_session().await?.is_some() {
-                let url =
-                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
                 return Ok((auth, Redirect::to(&url)).into_response());
             }
 
@@ -229,8 +226,7 @@ where
         Ok((auth, next)) => {
             #[cfg(feature = "mfa")]
             if auth.mfa_pending_session().await?.is_some() {
-                let url =
-                    crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
                 return Ok((auth, Redirect::to(&url)).into_response());
             }
 

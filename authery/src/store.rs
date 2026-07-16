@@ -72,8 +72,9 @@ pub trait AutheryStore: Send + Sync {
     fn webauthn_get_credential_by_credential_id(
         &self,
         credential_id: &[u8],
-    ) -> impl Future<Output = Result<Option<(Self::UserId, webauthn_rs::prelude::Passkey)>, Self::Error>>
-           + Send;
+    ) -> impl Future<
+        Output = Result<Option<(Self::UserId, webauthn_rs::prelude::Passkey)>, Self::Error>,
+    > + Send;
     /// Replace the stored passkey blob (called after logins to persist
     /// counter updates and backup-state changes).
     #[cfg(feature = "webauthn")]
