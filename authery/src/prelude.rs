@@ -38,7 +38,8 @@ pub use crate::oauth::{
     link::*,
     login::*,
     provider::{
-        custom::*, github::*, gitlab::*, google::*, oidc::*, spotify::*, ExchangeResult,
+        custom::*, discord::*, facebook::*, github::*, gitlab::*, google::*, linkedin::*,
+        microsoft::*, oidc::*, slack::*, spotify::*, twitch::*, x::*, ExchangeResult,
         OAuthProvider,
     },
     refresh::*,

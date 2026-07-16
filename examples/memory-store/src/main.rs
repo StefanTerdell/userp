@@ -36,13 +36,38 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let req_var = |name: &'static str| {
-        var(name).unwrap_or_else(|_| panic!("Missing required env var: {name}"))
-    };
-
     let base_url = Url::parse("http://localhost:3000").unwrap();
 
     let key = String::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+
+    // Each provider is added only when its credentials are present, so you
+    // can live-test any one of them by exporting {NAME}_CLIENT_ID and
+    // {NAME}_CLIENT_SECRET and restarting. See dev/PROVIDERS.md.
+    type ProviderBuilder = fn(String, String) -> OAuthCustomProvider;
+    let providers: [(&str, ProviderBuilder); 11] = [
+        ("SPOTIFY", SpotifyOAuthProvider::new),
+        ("GITHUB", GitHubOAuthProvider::new),
+        ("GITLAB", GitLabOAuthProvider::new),
+        ("GOOGLE", GoogleOAuthProvider::new),
+        ("MICROSOFT", MicrosoftOAuthProvider::new),
+        ("DISCORD", DiscordOAuthProvider::new),
+        ("FACEBOOK", FacebookOAuthProvider::new),
+        ("TWITCH", TwitchOAuthProvider::new),
+        ("SLACK", SlackOAuthProvider::new),
+        ("LINKEDIN", LinkedInOAuthProvider::new),
+        ("X", XOAuthProvider::new),
+    ];
+
+    let mut oauth = OAuthConfig::new(base_url.clone());
+    for (name, build) in providers {
+        if let (Ok(id), Ok(secret)) = (
+            var(format!("{name}_CLIENT_ID")),
+            var(format!("{name}_CLIENT_SECRET")),
+        ) {
+            println!("oauth provider enabled: {name}");
+            oauth = oauth.with_client(build(id, secret));
+        }
+    }
 
     let auth = AutheryConfig::new(
         key,
@@ -51,27 +76,11 @@ async fn main() {
         EmailConfig::new(
             base_url.clone(),
             SmtpSettings {
-                server_url: req_var("SMTP_URL"),
-                from: req_var("SMTP_FROM"),
+                server_url: var("SMTP_URL").unwrap_or_else(|_| "smtp://localhost:1025".into()),
+                from: var("SMTP_FROM").unwrap_or_else(|_| "auth@example.com".into()),
             },
         ),
-        OAuthConfig::new(base_url.clone())
-            .with_client(SpotifyOAuthProvider::new(
-                req_var("SPOTIFY_CLIENT_ID"),
-                req_var("SPOTIFY_CLIENT_SECRET"),
-            ))
-            .with_client(GitHubOAuthProvider::new(
-                req_var("GITHUB_CLIENT_ID"),
-                req_var("GITHUB_CLIENT_SECRET"),
-            ))
-            .with_client(GitLabOAuthProvider::new(
-                req_var("GITLAB_CLIENT_ID"),
-                req_var("GITLAB_CLIENT_SECRET"),
-            ))
-            .with_client(GoogleOAuthProvider::new(
-                req_var("GOOGLE_CLIENT_ID"),
-                req_var("GOOGLE_CLIENT_SECRET"),
-            )),
+        oauth,
         WebauthnConfig::new(base_url, "Authery example").expect("valid webauthn config"),
     )
     .expect("valid auth config")

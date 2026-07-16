@@ -1,9 +1,16 @@
 pub mod custom;
+pub mod discord;
+pub mod facebook;
 pub mod github;
 pub mod gitlab;
 pub mod google;
+pub mod linkedin;
+pub mod microsoft;
 pub mod oidc;
+pub mod slack;
 pub mod spotify;
+pub mod twitch;
+pub mod x;
 
 use crate::models::oauth::UnmatchedOAuthToken;
 use crate::models::Allow;
