@@ -5,7 +5,9 @@ pub mod signup;
 pub mod verify;
 
 use chrono::{Duration, Utc};
-use lettre::{message::header::ContentType, Message, SmtpTransport, Transport};
+use lettre::{
+    message::header::ContentType, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+};
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
@@ -53,29 +55,25 @@ impl EmailConfig {
     }
 }
 
+/// SMTP connection settings. The server is given as an SMTP URL (parsed by
+/// lettre), which encodes host, port, credentials and TLS mode in one string:
+///
+/// - `smtps://user:pass@smtp.example.com:465` - implicit TLS
+/// - `smtp://user:pass@smtp.example.com:587?tls=required` - STARTTLS
+/// - `smtp://localhost:1025` - plain, for local dev catchers like Mailhog
+///
+/// Percent-encode reserved characters in the credentials.
 #[derive(Debug, Clone)]
 pub struct SmtpSettings {
     pub server_url: String,
-    pub username: String,
-    pub password: String,
     pub from: String,
-    pub starttls: bool,
 }
 
 impl SmtpSettings {
-    pub fn new(
-        server_url: impl Into<String>,
-        username: impl Into<String>,
-        password: impl Into<String>,
-        from: impl Into<String>,
-        starttls: bool,
-    ) -> Self {
+    pub fn new(server_url: impl Into<String>, from: impl Into<String>) -> Self {
         Self {
             server_url: server_url.into(),
-            username: username.into(),
-            password: password.into(),
             from: from.into(),
-            starttls,
         }
     }
 }
@@ -146,22 +144,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .body(format!("<a href=\"{url}\">{message}</a>"))
             .map_err(SendEmailChallengeError::MessageBuilding)?;
 
-        let transport = if self.email.smtp.starttls {
-            SmtpTransport::starttls_relay
-        } else {
-            SmtpTransport::relay
-        };
-
-        let mailer = (transport)(self.email.smtp.server_url.as_str())
-            .map_err(SendEmailChallengeError::Transport)?
-            .credentials(lettre::transport::smtp::authentication::Credentials::new(
-                self.email.smtp.username.clone(),
-                self.email.smtp.password.clone(),
-            ))
-            .build();
+        let mailer =
+            AsyncSmtpTransport::<Tokio1Executor>::from_url(self.email.smtp.server_url.as_str())
+                .map_err(SendEmailChallengeError::Transport)?
+                .build();
 
         mailer
-            .send(&email)
+            .send(email)
+            .await
             .map_err(SendEmailChallengeError::Transport)?;
 
         Ok(())

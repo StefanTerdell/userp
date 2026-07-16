@@ -51,10 +51,7 @@ async fn main() {
             base_url.clone(),
             SmtpSettings {
                 server_url: req_var("SMTP_URL"),
-                username: req_var("SMTP_USERNAME"),
-                password: req_var("SMTP_PASSWORD"),
                 from: req_var("SMTP_FROM"),
-                starttls: true,
             },
         ),
         OAuthConfig::new(base_url)
