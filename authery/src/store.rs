@@ -26,6 +26,8 @@ pub trait AutheryStore: Send + Sync {
     type Organization: Organization<Id = Self::OrgId>;
     #[cfg(feature = "organizations")]
     type OrgMember: OrgMember<UserId = Self::UserId, OrgId = Self::OrgId>;
+    #[cfg(all(feature = "organizations", feature = "oauth"))]
+    type OrgOidcProvider: crate::models::org::OrgOidcProvider<OrgId = Self::OrgId>;
     #[cfg(feature = "email")]
     type UserEmail: UserEmail<UserId = Self::UserId>;
     #[cfg(feature = "email")]
@@ -133,6 +135,31 @@ pub trait AutheryStore: Send + Sync {
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<Self::OrgMember>, Self::Error>> + Send;
+
+    /// Create or replace (by name) an org-attached OIDC provider.
+    #[cfg(all(feature = "organizations", feature = "oauth"))]
+    fn org_oidc_upsert(
+        &self,
+        org_id: &Self::OrgId,
+        provider: crate::models::org::NewOrgOidcProvider,
+    ) -> impl Future<Output = Result<Self::OrgOidcProvider, Self::Error>> + Send;
+    #[cfg(all(feature = "organizations", feature = "oauth"))]
+    fn org_oidc_delete(
+        &self,
+        org_id: &Self::OrgId,
+        name: &str,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    #[cfg(all(feature = "organizations", feature = "oauth"))]
+    fn org_oidc_get(
+        &self,
+        org_id: &Self::OrgId,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<Self::OrgOidcProvider>, Self::Error>> + Send;
+    #[cfg(all(feature = "organizations", feature = "oauth"))]
+    fn org_oidc_list(
+        &self,
+        org_id: &Self::OrgId,
+    ) -> impl Future<Output = Result<Vec<Self::OrgOidcProvider>, Self::Error>> + Send;
 
     // webauthn store
     //

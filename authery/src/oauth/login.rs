@@ -135,6 +135,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             )
             .await?;
 
+        #[cfg(feature = "organizations")]
+        if matches!(flow, OAuthFlow::OrgLogIn { .. }) {
+            return self
+                .org_oauth_login_callback_inner(unmatched_token, flow)
+                .await;
+        }
+
         self.oauth_login_callback_inner(provider, unmatched_token, flow)
             .await
     }

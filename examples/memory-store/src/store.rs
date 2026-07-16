@@ -1,4 +1,7 @@
-use crate::models::{MyEmailChallenge, MyLoginSession, MyOAuthToken, MyUser, MyUserEmail};
+use crate::models::{
+    MyEmailChallenge, MyLoginSession, MyOAuthToken, MyOrgMember, MyOrgOidcProvider,
+    MyOrganization, MyUser, MyUserEmail,
+};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -6,6 +9,7 @@ use axum::{
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use authery::{
+    models::org::{NewOrgOidcProvider, OrgLoginRules},
     prelude::*,
     reexports::{
         chrono::{DateTime, Utc},
@@ -23,12 +27,17 @@ pub struct MemoryStore {
     oauth_tokens: Arc<RwLock<HashMap<Uuid, MyOAuthToken>>>,
     /// Passkeys keyed by raw credential id, with their owning user.
     passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
+    orgs: Arc<RwLock<HashMap<Uuid, MyOrganization>>>,
+    org_members: Arc<RwLock<Vec<MyOrgMember>>>,
+    org_oidc_providers: Arc<RwLock<Vec<MyOrgOidcProvider>>>,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum MemoryStoreError {
     #[error("The email address is already in use: {0}")]
     AddressInUse(String),
+    #[error("The org slug is already in use: {0}")]
+    SlugInUse(String),
     #[error("The token was not found: {0}")]
     TokenNotFound(String),
     #[error("User mismatch")]
@@ -51,6 +60,10 @@ impl AutheryStore for MemoryStore {
     type UserId = Uuid;
     type SessionId = Uuid;
     type OAuthTokenId = Uuid;
+    type OrgId = Uuid;
+    type Organization = MyOrganization;
+    type OrgMember = MyOrgMember;
+    type OrgOidcProvider = MyOrgOidcProvider;
 
     async fn webauthn_create_credential(
         &self,
@@ -591,4 +604,207 @@ impl AutheryStore for MemoryStore {
             })
             .and_then(|t| users.get(&t.user_id).map(|u| (u.clone(), t.clone()))))
     }
+    async fn org_create(
+        &self,
+        name: &str,
+        slug: &str,
+        parent: Option<&Uuid>,
+    ) -> Result<MyOrganization, Self::Error> {
+        let mut orgs = self.orgs.write().await;
+
+        if orgs.values().any(|o| o.slug == slug) {
+            return Err(MemoryStoreError::SlugInUse(slug.to_string()));
+        }
+
+        let org = MyOrganization {
+            id: Uuid::new_v4(),
+            parent: parent.copied(),
+            slug: slug.to_string(),
+            name: name.to_string(),
+            login_rules: OrgLoginRules::default(),
+            role_inheritance: Vec::new(),
+        };
+
+        orgs.insert(org.id, org.clone());
+
+        Ok(org)
+    }
+
+    async fn org_get(&self, org_id: &Uuid) -> Result<Option<MyOrganization>, Self::Error> {
+        Ok(self.orgs.read().await.get(org_id).cloned())
+    }
+
+    async fn org_get_by_slug(&self, slug: &str) -> Result<Option<MyOrganization>, Self::Error> {
+        Ok(self
+            .orgs
+            .read()
+            .await
+            .values()
+            .find(|o| o.slug == slug)
+            .cloned())
+    }
+
+    async fn org_get_children(&self, org_id: &Uuid) -> Result<Vec<MyOrganization>, Self::Error> {
+        Ok(self
+            .orgs
+            .read()
+            .await
+            .values()
+            .filter(|o| o.parent == Some(*org_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn org_update(
+        &self,
+        org_id: &Uuid,
+        name: &str,
+        login_rules: OrgLoginRules,
+        role_inheritance: Vec<(String, String)>,
+    ) -> Result<(), Self::Error> {
+        if let Some(org) = self.orgs.write().await.get_mut(org_id) {
+            org.name = name.to_string();
+            org.login_rules = login_rules;
+            org.role_inheritance = role_inheritance;
+        }
+
+        Ok(())
+    }
+
+    async fn org_delete(&self, org_id: &Uuid) -> Result<(), Self::Error> {
+        self.orgs.write().await.remove(org_id);
+        self.org_members
+            .write()
+            .await
+            .retain(|m| m.org_id != *org_id);
+        self.org_oidc_providers
+            .write()
+            .await
+            .retain(|p| p.org_id != *org_id);
+
+        Ok(())
+    }
+
+    async fn org_upsert_member(
+        &self,
+        org_id: &Uuid,
+        user_id: &Uuid,
+        roles: Vec<String>,
+    ) -> Result<MyOrgMember, Self::Error> {
+        let mut members = self.org_members.write().await;
+
+        members.retain(|m| !(m.org_id == *org_id && m.user_id == *user_id));
+
+        let member = MyOrgMember {
+            user_id: *user_id,
+            org_id: *org_id,
+            roles,
+        };
+
+        members.push(member.clone());
+
+        Ok(member)
+    }
+
+    async fn org_remove_member(&self, org_id: &Uuid, user_id: &Uuid) -> Result<(), Self::Error> {
+        self.org_members
+            .write()
+            .await
+            .retain(|m| !(m.org_id == *org_id && m.user_id == *user_id));
+
+        Ok(())
+    }
+
+    async fn org_get_member(
+        &self,
+        org_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Result<Option<MyOrgMember>, Self::Error> {
+        Ok(self
+            .org_members
+            .read()
+            .await
+            .iter()
+            .find(|m| m.org_id == *org_id && m.user_id == *user_id)
+            .cloned())
+    }
+
+    async fn org_get_members(&self, org_id: &Uuid) -> Result<Vec<MyOrgMember>, Self::Error> {
+        Ok(self
+            .org_members
+            .read()
+            .await
+            .iter()
+            .filter(|m| m.org_id == *org_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn org_get_user_memberships(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<MyOrgMember>, Self::Error> {
+        Ok(self
+            .org_members
+            .read()
+            .await
+            .iter()
+            .filter(|m| m.user_id == *user_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn org_oidc_upsert(
+        &self,
+        org_id: &Uuid,
+        config: NewOrgOidcProvider,
+    ) -> Result<MyOrgOidcProvider, Self::Error> {
+        let mut providers = self.org_oidc_providers.write().await;
+
+        providers.retain(|p| !(p.org_id == *org_id && p.config.name == config.name));
+
+        let provider = MyOrgOidcProvider {
+            org_id: *org_id,
+            config,
+        };
+
+        providers.push(provider.clone());
+
+        Ok(provider)
+    }
+
+    async fn org_oidc_delete(&self, org_id: &Uuid, name: &str) -> Result<(), Self::Error> {
+        self.org_oidc_providers
+            .write()
+            .await
+            .retain(|p| !(p.org_id == *org_id && p.config.name == name));
+
+        Ok(())
+    }
+
+    async fn org_oidc_get(
+        &self,
+        org_id: &Uuid,
+        name: &str,
+    ) -> Result<Option<MyOrgOidcProvider>, Self::Error> {
+        Ok(self
+            .org_oidc_providers
+            .read()
+            .await
+            .iter()
+            .find(|p| p.org_id == *org_id && p.config.name == name)
+            .cloned())
+    }
+
+    async fn org_oidc_list(&self, org_id: &Uuid) -> Result<Vec<MyOrgOidcProvider>, Self::Error> {
+        Ok(self
+            .org_oidc_providers
+            .read()
+            .await
+            .iter()
+            .filter(|p| p.org_id == *org_id)
+            .cloned()
+            .collect())
+    }
+
 }

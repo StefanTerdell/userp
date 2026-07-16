@@ -141,3 +141,123 @@ impl OAuthToken for MyOAuthToken {
         &self.refresh_token
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct MyOrganization {
+    pub id: Uuid,
+    pub parent: Option<Uuid>,
+    pub slug: String,
+    pub name: String,
+    pub login_rules: OrgLoginRules,
+    pub role_inheritance: Vec<(String, String)>,
+}
+
+impl Organization for MyOrganization {
+    type Id = Uuid;
+
+    fn get_id(&self) -> Uuid {
+        self.id
+    }
+
+    fn get_parent_id(&self) -> Option<Uuid> {
+        self.parent
+    }
+
+    fn get_slug(&self) -> &str {
+        &self.slug
+    }
+
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_login_rules(&self) -> OrgLoginRules {
+        self.login_rules.clone()
+    }
+
+    fn get_role_inheritance(&self) -> Vec<(String, String)> {
+        self.role_inheritance.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MyOrgMember {
+    pub user_id: Uuid,
+    pub org_id: Uuid,
+    pub roles: Vec<String>,
+}
+
+impl OrgMember for MyOrgMember {
+    type UserId = Uuid;
+    type OrgId = Uuid;
+
+    fn get_user_id(&self) -> Uuid {
+        self.user_id
+    }
+
+    fn get_org_id(&self) -> Uuid {
+        self.org_id
+    }
+
+    fn get_roles(&self) -> Vec<String> {
+        self.roles.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MyOrgOidcProvider {
+    pub org_id: Uuid,
+    pub config: authery::models::org::NewOrgOidcProvider,
+}
+
+impl authery::models::org::OrgOidcProvider for MyOrgOidcProvider {
+    type OrgId = Uuid;
+
+    fn get_org_id(&self) -> Uuid {
+        self.org_id
+    }
+
+    fn get_name(&self) -> &str {
+        &self.config.name
+    }
+
+    fn get_display_name(&self) -> &str {
+        &self.config.display_name
+    }
+
+    fn get_client_id(&self) -> &str {
+        &self.config.client_id
+    }
+
+    fn get_client_secret(&self) -> &str {
+        &self.config.client_secret
+    }
+
+    fn get_issuer(&self) -> &str {
+        &self.config.issuer
+    }
+
+    fn get_auth_url(&self) -> &str {
+        &self.config.auth_url
+    }
+
+    fn get_token_url(&self) -> &str {
+        &self.config.token_url
+    }
+
+    fn get_scopes(&self) -> Vec<String> {
+        self.config.scopes.clone()
+    }
+
+    fn get_allow_login(&self) -> bool {
+        self.config.allow_login
+    }
+
+    fn get_default_roles(&self) -> Vec<String> {
+        self.config.default_roles.clone()
+    }
+
+    fn get_claim_role_mapping(&self) -> Vec<(String, String, String)> {
+        self.config.claim_role_mapping.clone()
+    }
+}

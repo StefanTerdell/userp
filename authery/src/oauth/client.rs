@@ -94,7 +94,8 @@ pub(crate) async fn fetch_jwks(issuer: &str) -> Result<JwkSet> {
 }
 
 /// Validate a raw OIDC id_token: verify its signature against `jwks` and check
-/// the `iss`, `aud`, `exp` and (if provided) `nonce` claims. Returns the `sub`.
+/// the `iss`, `aud`, `exp` and (if provided) `nonce` claims. Returns the full
+/// validated claims object (the `sub` is guaranteed present).
 ///
 /// Exposed (not just used internally) so it can be exercised directly in tests
 /// against a real identity provider.
@@ -104,7 +105,7 @@ pub fn validate_oidc_id_token(
     issuer: &str,
     audience: &str,
     expected_nonce: Option<&str>,
-) -> Result<String> {
+) -> Result<Value> {
     let header = decode_header(id_token).context("Decoding id_token header")?;
     let kid = header
         .kid
@@ -134,12 +135,15 @@ pub fn validate_oidc_id_token(
 
     claims["sub"]
         .as_str()
-        .context("Missing 'sub' in validated 'id_token'")
-        .map(|sub| sub.to_string())
+        .context("Missing 'sub' in validated 'id_token'")?;
+
+    Ok(claims)
 }
 
 impl GenericExtraTokenFields {
-    /// Validate this response's id_token and extract the provider user.
+    /// Validate this response's id_token and extract the provider user. The
+    /// user's `raw` value is the validated claims object, so downstream
+    /// consumers (e.g. org claim→role mapping) can trust it.
     pub(crate) fn get_oauth_oidc_provider_user_validated(
         &self,
         jwks: &JwkSet,
@@ -151,11 +155,13 @@ impl GenericExtraTokenFields {
             .as_str()
             .context("Missing 'id_token' field in token response. Consider using non-oidc flow.")?;
 
-        let sub = validate_oidc_id_token(id_token, jwks, issuer, audience, expected_nonce)?;
+        let claims = validate_oidc_id_token(id_token, jwks, issuer, audience, expected_nonce)?;
 
-        Ok(OAuthProviderUser {
-            id: sub,
-            raw: self.0.clone().into(),
-        })
+        let sub = claims["sub"]
+            .as_str()
+            .expect("validate_oidc_id_token guarantees 'sub'")
+            .to_string();
+
+        Ok(OAuthProviderUser { id: sub, raw: claims })
     }
 }

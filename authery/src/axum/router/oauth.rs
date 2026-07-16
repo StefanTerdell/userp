@@ -29,6 +29,10 @@ pub struct IdForm {
 pub struct ProviderNextForm {
     pub provider: String,
     pub next: Option<String>,
+    /// Org slug: present when the form was posted from an org-scoped login
+    /// page for one of the org's own providers.
+    #[cfg(feature = "organizations")]
+    pub org: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -252,7 +256,7 @@ where
 
 pub async fn post_user_oauth_link<St>(
     auth: AxumAuthery<St>,
-    Form(ProviderNextForm { provider, next }): Form<ProviderNextForm>,
+    Form(ProviderNextForm { provider, next, .. }): Form<ProviderNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -312,7 +316,7 @@ where
 
 pub async fn post_login_oauth<St>(
     auth: AxumAuthery<St>,
-    Form(ProviderNextForm { provider, next }): Form<ProviderNextForm>,
+    Form(form): Form<ProviderNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -320,7 +324,31 @@ where
 {
     let login_route = auth.routes.pages.login.clone();
 
-    match auth.oauth_login_init(provider, next).await {
+    #[cfg(feature = "organizations")]
+    if let Some(org_slug) = form.org.as_deref() {
+        use crate::org::oauth::OrgOAuthLoginInitError;
+
+        let org_login_route = format!("{login_route}/{org_slug}");
+
+        return match auth
+            .org_oauth_login_init(org_slug, &form.provider, form.next)
+            .await
+        {
+            Ok((auth, redirect_url)) => {
+                Ok((auth, Redirect::to(redirect_url.as_str())).into_response())
+            }
+            Err(OrgOAuthLoginInitError::Store(err)) => Err(err),
+            Err(err) => {
+                let next = format!(
+                    "{org_login_route}?error={}",
+                    urlencoding::encode(&err.to_string())
+                );
+                Ok(Redirect::to(&next).into_response())
+            }
+        };
+    }
+
+    match auth.oauth_login_init(form.provider, form.next).await {
         Ok((auth, redirect_url)) => Ok((auth, Redirect::to(redirect_url.as_str())).into_response()),
         Err(err) => {
             let next = format!(
@@ -334,7 +362,7 @@ where
 
 pub async fn post_signup_oauth<St>(
     auth: AxumAuthery<St>,
-    Form(ProviderNextForm { provider, next }): Form<ProviderNextForm>,
+    Form(ProviderNextForm { provider, next, .. }): Form<ProviderNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,

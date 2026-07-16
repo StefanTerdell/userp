@@ -2,7 +2,11 @@
 
 {% block content %}
 <div class="form-container">
+  {% if let Some(org) = org %}
+  <h1>Log in to {{ org.name }}</h1>
+  {% else %}
   <h1>Login</h1>
+  {% endif %}
 
   {% if let Some(message) = message %}
   <div class="message" role="alert">
@@ -14,6 +18,29 @@
   <div class="error" role="alert">
     <strong>Something went wrong: {{ error }}</strong>
   </div>
+  {% endif %}
+
+  {% if let Some(org) = org %}
+  {% if !org.providers.is_empty() %}
+  <div class="social-login org-login">
+    {% for provider in org.providers %}
+    <form action="{{ org.action_route }}" method="post" class="form">
+      <input type="hidden" name="provider" value="{{ provider.name }}" />
+      <input type="hidden" name="org" value="{{ org.slug }}" />
+      <button type="submit" class="social-button">Login with {{ provider.display_name }}</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+    {% endfor %}
+  </div>
+
+  {% if password.is_some() || email.is_some() || oauth.is_some() %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  {% endif %}
+  {% endif %}
   {% endif %}
 
   {% if let Some(email) = email %}

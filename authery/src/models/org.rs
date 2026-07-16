@@ -65,3 +65,48 @@ pub trait OrgMember: Send + Sync + Sized {
     fn get_org_id(&self) -> Self::OrgId;
     fn get_roles(&self) -> Vec<String>;
 }
+
+/// The configuration of an org-attached OIDC provider, as passed to the store
+/// on creation. SaaS mode: org owners register their own SSO here.
+#[cfg(feature = "oauth")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewOrgOidcProvider {
+    /// Unique within the organization; used in routes and forms.
+    pub name: String,
+    pub display_name: String,
+    pub client_id: String,
+    pub client_secret: String,
+    /// OIDC issuer URL; its discovery document/JWKS validate id_tokens.
+    pub issuer: String,
+    pub auth_url: String,
+    pub token_url: String,
+    pub scopes: Vec<String>,
+    /// Whether this provider may be used to log in to the org (as opposed to
+    /// integration-only token access).
+    pub allow_login: bool,
+    /// Roles granted to anyone who logs in through this provider.
+    pub default_roles: Vec<String>,
+    /// `(claim, value, role)` rows: when the validated id_token has `claim`
+    /// equal to (or an array containing) `value`, the member gets `role`.
+    pub claim_role_mapping: Vec<(String, String, String)>,
+}
+
+/// A stored org-attached OIDC provider. See [`NewOrgOidcProvider`] for field
+/// semantics.
+#[cfg(feature = "oauth")]
+pub trait OrgOidcProvider: Send + Sync + Sized {
+    type OrgId: Id;
+
+    fn get_org_id(&self) -> Self::OrgId;
+    fn get_name(&self) -> &str;
+    fn get_display_name(&self) -> &str;
+    fn get_client_id(&self) -> &str;
+    fn get_client_secret(&self) -> &str;
+    fn get_issuer(&self) -> &str;
+    fn get_auth_url(&self) -> &str;
+    fn get_token_url(&self) -> &str;
+    fn get_scopes(&self) -> Vec<String>;
+    fn get_allow_login(&self) -> bool;
+    fn get_default_roles(&self) -> Vec<String>;
+    fn get_claim_role_mapping(&self) -> Vec<(String, String, String)>;
+}

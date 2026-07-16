@@ -57,6 +57,47 @@ where
     Ok(Html(auth.pages.render_signup(&view)).into_response())
 }
 
+/// The org-scoped login page: the regular login page constrained by the org's
+/// login rules and extended with its own SSO providers.
+#[cfg(all(feature = "organizations", feature = "oauth"))]
+pub async fn get_org_login<St>(
+    auth: AxumAuthery<St>,
+    axum::extract::Path(org_slug): axum::extract::Path<String>,
+    Query(NextMessageErrorQuery {
+        next,
+        message,
+        error,
+        ..
+    }): Query<NextMessageErrorQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::models::org::Organization;
+    use axum::http::StatusCode;
+
+    let Some(org) = auth.store.org_get_by_slug(&org_slug).await? else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+
+    if auth.logged_in().await? {
+        return Ok(Redirect::to(&auth.routes.pages.post_login).into_response());
+    }
+
+    let org_providers = auth.store.org_oidc_list(&org.get_id()).await?;
+
+    let view = LoginTemplate::with_org(
+        &auth,
+        &org,
+        &org_providers,
+        next.as_deref(),
+        message.as_deref(),
+        error.as_deref(),
+    );
+    Ok(Html(auth.pages.render_login(&view)).into_response())
+}
+
 #[cfg(feature = "mfa")]
 pub async fn get_login_mfa<St>(
     auth: AxumAuthery<St>,

@@ -10,6 +10,9 @@
 //! session's login method satisfies the org's [`OrgLoginRules`] - gate your
 //! org-scoped routes on it.
 
+#[cfg(feature = "oauth")]
+pub mod oauth;
+
 use crate::{
     core::CoreAuthery,
     models::{
@@ -258,7 +261,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
     /// The acting user's id, if they hold the owner role (directly or
     /// inherited) in the organization.
-    async fn org_require_owner(
+    pub(crate) async fn org_require_owner(
         &self,
         org_id: &S::OrgId,
     ) -> Result<S::UserId, OrgError<S::Error>> {

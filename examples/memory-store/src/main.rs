@@ -20,6 +20,7 @@ use dotenv::var;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 
+use authery::models::org::NewOrgOidcProvider;
 use authery::prelude::*;
 use authery::reexports::url::Url;
 
@@ -78,12 +79,53 @@ async fn main() {
     .with_rate_limiter(FixedWindowRateLimiter::default())
     .with_max_concurrent_sessions(3);
 
+    let auth = auth.with_org_config(OrgConfig {
+        create_private_org_on_signup: true,
+    });
+
     let auth_router = auth.router::<MemoryStore, AppState>();
 
-    let state = AppState {
-        store: MemoryStore::default(),
-        auth,
-    };
+    let store = MemoryStore::default();
+
+    // Demo SaaS setup: an "acme" org with Keycloak as its own SSO provider,
+    // reachable at /login/acme. Keycloak realm roles land in the id_token at
+    // realm_access.roles, but a top-level claim keeps the demo simple.
+    let acme = store
+        .org_create("ACME", "acme", None)
+        .await
+        .expect("create acme org");
+    store
+        .org_oidc_upsert(
+            &acme.get_id(),
+            NewOrgOidcProvider {
+                name: "keycloak".into(),
+                display_name: "ACME SSO (Keycloak)".into(),
+                client_id: var("KEYCLOAK_CLIENT_ID")
+                    .unwrap_or_else(|_| "authery-example".into()),
+                client_secret: var("KEYCLOAK_CLIENT_SECRET")
+                    .unwrap_or_else(|_| "authery-secret".into()),
+                issuer: var("KEYCLOAK_ISSUER")
+                    .unwrap_or_else(|_| "http://localhost:8080/realms/authery".into()),
+                auth_url: var("KEYCLOAK_AUTH_URL").unwrap_or_else(|_| {
+                    "http://localhost:8080/realms/authery/protocol/openid-connect/auth".into()
+                }),
+                token_url: var("KEYCLOAK_TOKEN_URL").unwrap_or_else(|_| {
+                    "http://localhost:8080/realms/authery/protocol/openid-connect/token".into()
+                }),
+                scopes: vec!["openid".into()],
+                allow_login: true,
+                default_roles: vec!["member".into()],
+                claim_role_mapping: vec![(
+                    "email_verified".into(),
+                    "true".into(),
+                    "verified".into(),
+                )],
+            },
+        )
+        .await
+        .expect("attach keycloak provider");
+
+    let state = AppState { store, auth };
 
     let app = Router::new()
         .merge(auth_router)

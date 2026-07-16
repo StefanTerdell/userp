@@ -104,6 +104,17 @@ pub trait AxumRouter {
                     get(pages::get_signup::<St>),
                 );
 
+            // The org-scoped login page lives under the login page path;
+            // static sibling routes (/login/email etc.) take precedence over
+            // the capture.
+            #[cfg(all(feature = "organizations", feature = "oauth"))]
+            {
+                router = router.route(
+                    &format!("{}/{{org_slug}}", self.routes().pages.login),
+                    get(pages::get_org_login::<St>),
+                );
+            }
+
             #[cfg(all(feature = "email", feature = "password"))]
             {
                 router = router

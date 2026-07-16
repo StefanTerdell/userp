@@ -271,6 +271,15 @@ pub struct TemplateWebauthnInfo<'a> {
     pub finish_route: &'a str,
 }
 
+/// Rendered on org-scoped login pages (`/login/{slug}`): the org's own SSO
+/// providers, posted to the oauth action route with the org slug attached.
+pub struct TemplateOrgLoginInfo<'a> {
+    pub slug: &'a str,
+    pub name: &'a str,
+    pub providers: Vec<TemplateOAuthProvider<'a>>,
+    pub action_route: &'a str,
+}
+
 #[cfg(feature = "user")]
 pub struct UserTemplateWebauthnInfo<'a> {
     /// Hex-encoded credential ids of the user's registered passkeys.
@@ -296,6 +305,7 @@ pub struct LoginTemplate<'a> {
     pub otp: Option<TemplateOtpInfo<'a>>,
     pub webauthn: Option<TemplateWebauthnInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
+    pub org: Option<TemplateOrgLoginInfo<'a>>,
     pub signup_route: &'a str,
 }
 
@@ -361,8 +371,53 @@ impl LoginTemplate<'_> {
             }),
             #[cfg(not(feature = "oauth"))]
             oauth: None,
+            org: None,
             signup_route: &auth.routes.pages.signup,
         }
+    }
+
+    /// Assemble the org-scoped login page's view-model: like
+    /// [`LoginTemplate::with`], but with the org's own providers added and the
+    /// password/email sections hidden when the org's login rules disallow
+    /// them.
+    #[cfg(all(feature = "organizations", feature = "oauth"))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_org<'a, S: AutheryStore, C: AutheryCookies>(
+        auth: &'a CoreAuthery<S, C>,
+        org: &'a S::Organization,
+        org_providers: &'a [S::OrgOidcProvider],
+        next: Option<&'a str>,
+        message: Option<&'a str>,
+        error: Option<&'a str>,
+    ) -> LoginTemplate<'a> {
+        use crate::models::org::{OrgOidcProvider, Organization};
+
+        let rules = org.get_login_rules();
+        let mut template = Self::with(auth, next, message, error);
+
+        if !rules.allow_password {
+            template.password = None;
+        }
+        if !rules.allow_email {
+            template.email = None;
+            template.otp = None;
+        }
+
+        template.org = Some(TemplateOrgLoginInfo {
+            slug: org.get_slug(),
+            name: org.get_name(),
+            providers: org_providers
+                .iter()
+                .filter(|p| p.get_allow_login())
+                .map(|p| TemplateOAuthProvider {
+                    name: p.get_name(),
+                    display_name: p.get_display_name(),
+                })
+                .collect(),
+            action_route: &auth.routes.oauth.actions.login_oauth,
+        });
+
+        template
     }
 
     pub fn render_with<S: AutheryStore, C: AutheryCookies>(

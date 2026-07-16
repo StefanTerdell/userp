@@ -43,6 +43,14 @@ pub enum OAuthFlow {
     LogIn {
         next: Option<String>,
     },
+    #[cfg(feature = "organizations")]
+    /// A login through an org-attached OIDC provider. The provider is
+    /// resolved from the store at callback time using the org id (in its
+    /// string representation).
+    OrgLogIn {
+        org_id: String,
+        next: Option<String>,
+    },
     SignUp {
         next: Option<String>,
     },
@@ -62,6 +70,8 @@ impl Display for OAuthFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             OAuthFlow::LogIn { .. } => "LogIn",
+            #[cfg(feature = "organizations")]
+            OAuthFlow::OrgLogIn { .. } => "OrgLogIn",
             OAuthFlow::SignUp { .. } => "SignUp",
             OAuthFlow::Link { .. } => "Link",
             OAuthFlow::Refresh { .. } => "Refresh",
@@ -161,6 +171,11 @@ pub enum OAuthCallbackError {
     MisformedOAuthData(#[from] serde_json::Error),
     #[error("CSRF tokens didn't match")]
     CsrfMismatch,
+    /// Resolving an org-attached provider failed in the store. Stringified
+    /// because this error predates the store's error type in the signature.
+    #[cfg(feature = "organizations")]
+    #[error("Org provider lookup failed: {0}")]
+    OrgProviderLookup(String),
     #[error(transparent)]
     ExchangeAuthorizationCodeError(#[from] anyhow::Error),
 }
@@ -192,7 +207,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         RedirectUrl::from_url(self.oauth.base_url.join(path.as_str()).unwrap())
     }
 
-    async fn oauth_init(
+    pub(crate) async fn oauth_init(
         mut self,
         path: String,
         provider: Arc<dyn OAuthProvider>,
@@ -219,13 +234,6 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         csrf_token: CsrfToken,
         path: String,
     ) -> Result<(UnmatchedOAuthToken, OAuthFlow, Arc<dyn OAuthProvider>), OAuthCallbackError> {
-        let provider = self
-            .oauth
-            .providers
-            .get(&provider_name)
-            .ok_or(OAuthCallbackError::NoProvider(provider_name.clone()))?
-            .clone();
-
         let oauth_data = self
             .cookies
             .get(OAUTH_DATA_KEY)
@@ -240,6 +248,21 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         if csrf_token.secret() != prev_csrf_token.secret() {
             return Err(OAuthCallbackError::CsrfMismatch);
         }
+
+        // Org flows resolve the provider from the store; everything else uses
+        // the statically configured providers.
+        let provider = match &oauth_flow {
+            #[cfg(feature = "organizations")]
+            OAuthFlow::OrgLogIn { org_id, .. } => {
+                self.org_oauth_provider(org_id, &provider_name).await?
+            }
+            _ => self
+                .oauth
+                .providers
+                .get(&provider_name)
+                .ok_or(OAuthCallbackError::NoProvider(provider_name.clone()))?
+                .clone(),
+        };
 
         let unmatched_token = provider
             .exchange_authorization_code(
@@ -274,6 +297,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             OAuthFlow::LogIn { .. } => {
                 self.oauth_login_callback_inner(provider, unmatched_token, flow)
                     .await?
+            }
+            #[cfg(feature = "organizations")]
+            OAuthFlow::OrgLogIn { .. } => {
+                self.org_oauth_login_callback_inner(unmatched_token, flow)
+                    .await
+                    .map_err(OAuthGenericCallbackError::Login)?
             }
             OAuthFlow::SignUp { .. } => {
                 self.oauth_signup_callback_inner(provider, unmatched_token, flow)

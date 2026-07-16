@@ -74,9 +74,9 @@ async fn validates_real_keycloak_id_token() {
     let jwks = fetch_jwks().await;
 
     // A genuine token validates and yields a subject.
-    let sub = validate_oidc_id_token(&id_token, &jwks, ISSUER, CLIENT_ID, None)
+    let claims = validate_oidc_id_token(&id_token, &jwks, ISSUER, CLIENT_ID, None)
         .expect("valid token accepted");
-    assert!(!sub.is_empty());
+    assert!(!claims["sub"].as_str().unwrap_or_default().is_empty());
 
     // Wrong audience is rejected.
     assert!(
