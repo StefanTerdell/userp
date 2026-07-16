@@ -261,3 +261,31 @@ impl authery::models::org::OrgOidcProvider for MyOrgOidcProvider {
         self.config.claim_role_mapping.clone()
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct MyOrgInvite {
+    pub org_id: Uuid,
+    pub code: String,
+    pub roles: Vec<String>,
+    pub expires: DateTime<Utc>,
+}
+
+impl OrgInvite for MyOrgInvite {
+    type OrgId = Uuid;
+
+    fn get_org_id(&self) -> Uuid {
+        self.org_id
+    }
+
+    fn get_code(&self) -> &str {
+        &self.code
+    }
+
+    fn get_roles(&self) -> Vec<String> {
+        self.roles.clone()
+    }
+
+    fn get_expires(&self) -> DateTime<Utc> {
+        self.expires
+    }
+}

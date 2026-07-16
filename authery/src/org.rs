@@ -27,6 +27,10 @@ use thiserror::Error;
 /// also guards against parent cycles in a buggy store.
 const MAX_ORG_DEPTH: usize = 32;
 
+/// Cookie holding a pending invite code while the user completes a signup or
+/// login flow.
+const ORG_INVITE_KEY: &str = "authery-org-invite";
+
 /// Configuration for the organizations feature.
 #[derive(Debug, Clone, Default)]
 pub struct OrgConfig {
@@ -229,6 +233,59 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
 
         Ok(Some((session, roles)))
+    }
+
+    /// Create a single-use invite into the organization, carrying the roles
+    /// the joiner will receive. Requires the owner role. Returns the invite;
+    /// embed its code in a link like `{signup_page}?invite={code}`.
+    pub async fn org_invite_create(
+        &self,
+        org_id: &S::OrgId,
+        roles: Vec<String>,
+        lifetime: chrono::Duration,
+    ) -> Result<S::OrgInvite, OrgError<S::Error>> {
+        self.org_require_owner(org_id).await?;
+
+        let code = uuid::Uuid::new_v4().to_string().replace('-', "");
+
+        Ok(self
+            .store
+            .org_invite_create(org_id, &code, roles, chrono::Utc::now() + lifetime)
+            .await?)
+    }
+
+    /// Stash an invite code in the cookie jar so it survives whichever
+    /// signup/login flow the user completes. Typically called by the
+    /// login/signup page handlers when an `invite` query parameter arrives.
+    pub fn org_set_invite_cookie(&mut self, code: &str) {
+        self.cookies.add(ORG_INVITE_KEY, code);
+    }
+
+    /// Login hook: consume a pending invite, if any, and add the user to its
+    /// organization. Runs before private-org provisioning so invited users
+    /// don't get a private org (they already have a membership).
+    pub(crate) async fn org_apply_invite(&mut self, user_id: &S::UserId) -> Result<(), S::Error> {
+        use crate::models::org::OrgInvite;
+
+        let Some(code) = self.cookies.get(ORG_INVITE_KEY) else {
+            return Ok(());
+        };
+        // Single-use either way: a bad invite shouldn't stick around.
+        self.cookies.remove(ORG_INVITE_KEY);
+
+        let Some(invite) = self.store.org_invite_consume(&code).await? else {
+            return Ok(());
+        };
+
+        if invite.get_expires() < chrono::Utc::now() {
+            return Ok(());
+        }
+
+        self.store
+            .org_upsert_member(&invite.get_org_id(), user_id, invite.get_roles())
+            .await?;
+
+        Ok(())
     }
 
     /// SaaS-mode hook, called after a fresh user is created by any signup

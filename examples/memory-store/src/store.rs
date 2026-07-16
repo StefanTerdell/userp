@@ -1,5 +1,5 @@
 use crate::models::{
-    MyEmailChallenge, MyLoginSession, MyOAuthToken, MyOrgMember, MyOrgOidcProvider,
+    MyEmailChallenge, MyLoginSession, MyOAuthToken, MyOrgInvite, MyOrgMember, MyOrgOidcProvider,
     MyOrganization, MyUser, MyUserEmail,
 };
 use axum::{
@@ -26,10 +26,12 @@ pub struct MemoryStore {
     challenges: Arc<RwLock<HashMap<String, MyEmailChallenge>>>,
     oauth_tokens: Arc<RwLock<HashMap<Uuid, MyOAuthToken>>>,
     /// Passkeys keyed by raw credential id, with their owning user.
+    #[allow(clippy::type_complexity)]
     passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
     orgs: Arc<RwLock<HashMap<Uuid, MyOrganization>>>,
     org_members: Arc<RwLock<Vec<MyOrgMember>>>,
     org_oidc_providers: Arc<RwLock<Vec<MyOrgOidcProvider>>>,
+    org_invites: Arc<RwLock<HashMap<String, MyOrgInvite>>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -63,6 +65,7 @@ impl AutheryStore for MemoryStore {
     type OrgId = Uuid;
     type Organization = MyOrganization;
     type OrgMember = MyOrgMember;
+    type OrgInvite = MyOrgInvite;
     type OrgOidcProvider = MyOrgOidcProvider;
 
     async fn webauthn_create_credential(
@@ -805,6 +808,33 @@ impl AutheryStore for MemoryStore {
             .filter(|p| p.org_id == *org_id)
             .cloned()
             .collect())
+    }
+
+
+    async fn org_invite_create(
+        &self,
+        org_id: &Uuid,
+        code: &str,
+        roles: Vec<String>,
+        expires: DateTime<Utc>,
+    ) -> Result<MyOrgInvite, Self::Error> {
+        let invite = MyOrgInvite {
+            org_id: *org_id,
+            code: code.to_string(),
+            roles,
+            expires,
+        };
+
+        self.org_invites
+            .write()
+            .await
+            .insert(code.to_string(), invite.clone());
+
+        Ok(invite)
+    }
+
+    async fn org_invite_consume(&self, code: &str) -> Result<Option<MyOrgInvite>, Self::Error> {
+        Ok(self.org_invites.write().await.remove(code))
     }
 
 }

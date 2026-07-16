@@ -58,6 +58,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         #[cfg(feature = "mfa")]
         let method = self.mfa_wrap_method(method, user_id).await?;
 
+        // A pending invite joins its org first, so the private-org hook below
+        // sees the membership and stands down.
+        #[cfg(feature = "organizations")]
+        self.org_apply_invite(user_id).await?;
+
         // SaaS mode: users without any org membership get a private org they
         // own. Hooked here (rather than at each user-creation site) since it
         // is idempotent and self-heals users predating the feature.

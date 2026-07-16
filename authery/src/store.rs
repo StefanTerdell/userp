@@ -26,6 +26,8 @@ pub trait AutheryStore: Send + Sync {
     type Organization: Organization<Id = Self::OrgId>;
     #[cfg(feature = "organizations")]
     type OrgMember: OrgMember<UserId = Self::UserId, OrgId = Self::OrgId>;
+    #[cfg(feature = "organizations")]
+    type OrgInvite: crate::models::org::OrgInvite<OrgId = Self::OrgId>;
     #[cfg(all(feature = "organizations", feature = "oauth"))]
     type OrgOidcProvider: crate::models::org::OrgOidcProvider<OrgId = Self::OrgId>;
     #[cfg(feature = "email")]
@@ -135,6 +137,22 @@ pub trait AutheryStore: Send + Sync {
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<Self::OrgMember>, Self::Error>> + Send;
+
+    /// Persist an invite under its (unique, unguessable) code.
+    #[cfg(feature = "organizations")]
+    fn org_invite_create(
+        &self,
+        org_id: &Self::OrgId,
+        code: &str,
+        roles: Vec<String>,
+        expires: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Self::OrgInvite, Self::Error>> + Send;
+    /// Fetch AND delete the invite with this code - invites are single-use.
+    #[cfg(feature = "organizations")]
+    fn org_invite_consume(
+        &self,
+        code: &str,
+    ) -> impl Future<Output = Result<Option<Self::OrgInvite>, Self::Error>> + Send;
 
     /// Create or replace (by name) an org-attached OIDC provider.
     #[cfg(all(feature = "organizations", feature = "oauth"))]

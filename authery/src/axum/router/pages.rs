@@ -9,6 +9,9 @@ pub struct NextMessageErrorQuery {
     pub next: Option<String>,
     pub message: Option<String>,
     pub error: Option<String>,
+    /// An org invite code to apply once a signup/login flow completes.
+    #[cfg(feature = "organizations")]
+    pub invite: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -20,18 +23,26 @@ pub struct AddressMessageSentErrorQuery {
 }
 
 pub async fn get_login<St>(
-    auth: AxumAuthery<St>,
-    Query(NextMessageErrorQuery {
-        next,
-        message,
-        error,
-        ..
-    }): Query<NextMessageErrorQuery>,
+    #[cfg_attr(not(feature = "organizations"), allow(unused_mut))] mut auth: AxumAuthery<St>,
+    Query(query): Query<NextMessageErrorQuery>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
+    let NextMessageErrorQuery {
+        next,
+        message,
+        error,
+        ..
+    } = &query;
+    let (next, message, error) = (next.clone(), message.clone(), error.clone());
+
+    #[cfg(feature = "organizations")]
+    if let Some(invite) = query.invite.as_deref() {
+        auth.org_set_invite_cookie(invite);
+    }
+
     Ok(if auth.logged_in().await? {
         Redirect::to(&auth.routes.pages.post_login).into_response()
     } else {
@@ -41,19 +52,24 @@ where
 }
 
 pub async fn get_signup<St>(
-    auth: AxumAuthery<St>,
-    Query(NextMessageErrorQuery {
-        error,
-        message,
-        next,
-        ..
-    }): Query<NextMessageErrorQuery>,
+    #[cfg_attr(not(feature = "organizations"), allow(unused_mut))] mut auth: AxumAuthery<St>,
+    Query(query): Query<NextMessageErrorQuery>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let view = SignupTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
+    #[cfg(feature = "organizations")]
+    if let Some(invite) = query.invite.as_deref() {
+        auth.org_set_invite_cookie(invite);
+    }
+
+    let view = SignupTemplate::with(
+        &auth,
+        query.next.as_deref(),
+        query.message.as_deref(),
+        query.error.as_deref(),
+    );
     Ok(Html(auth.pages.render_signup(&view)).into_response())
 }
 
@@ -61,12 +77,13 @@ where
 /// login rules and extended with its own SSO providers.
 #[cfg(all(feature = "organizations", feature = "oauth"))]
 pub async fn get_org_login<St>(
-    auth: AxumAuthery<St>,
+    mut auth: AxumAuthery<St>,
     axum::extract::Path(org_slug): axum::extract::Path<String>,
     Query(NextMessageErrorQuery {
         next,
         message,
         error,
+        invite,
         ..
     }): Query<NextMessageErrorQuery>,
 ) -> Result<impl IntoResponse, St::Error>
@@ -76,6 +93,10 @@ where
 {
     use crate::models::org::Organization;
     use axum::http::StatusCode;
+
+    if let Some(invite) = invite.as_deref() {
+        auth.org_set_invite_cookie(invite);
+    }
 
     let Some(org) = auth.store.org_get_by_slug(&org_slug).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());

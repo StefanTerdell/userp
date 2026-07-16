@@ -109,12 +109,37 @@ impl authery::models::org::OrgMember for TestMember {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TestInvite {
+    org_id: Uuid,
+    code: String,
+    roles: Vec<String>,
+    expires: DateTime<Utc>,
+}
+
+impl authery::models::org::OrgInvite for TestInvite {
+    type OrgId = Uuid;
+    fn get_org_id(&self) -> Uuid {
+        self.org_id
+    }
+    fn get_code(&self) -> &str {
+        &self.code
+    }
+    fn get_roles(&self) -> Vec<String> {
+        self.roles.clone()
+    }
+    fn get_expires(&self) -> DateTime<Utc> {
+        self.expires
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct TestStore {
     users: Arc<Mutex<HashMap<Uuid, TestUser>>>,
     sessions: Arc<Mutex<HashMap<Uuid, TestSession>>>,
     orgs: Arc<Mutex<HashMap<Uuid, TestOrg>>>,
     members: Arc<Mutex<Vec<TestMember>>>,
+    invites: Arc<Mutex<HashMap<String, TestInvite>>>,
 }
 
 impl AutheryStore for TestStore {
@@ -126,6 +151,7 @@ impl AutheryStore for TestStore {
     type LoginSession = TestSession;
     type Organization = TestOrg;
     type OrgMember = TestMember;
+    type OrgInvite = TestInvite;
 
     async fn get_user(&self, user_id: &Uuid) -> Result<Option<TestUser>, Infallible> {
         Ok(self.users.lock().unwrap().get(user_id).cloned())
@@ -323,6 +349,30 @@ impl AutheryStore for TestStore {
             .collect())
     }
 
+    async fn org_invite_create(
+        &self,
+        org_id: &Uuid,
+        code: &str,
+        roles: Vec<String>,
+        expires: DateTime<Utc>,
+    ) -> Result<TestInvite, Infallible> {
+        let invite = TestInvite {
+            org_id: *org_id,
+            code: code.to_string(),
+            roles,
+            expires,
+        };
+        self.invites
+            .lock()
+            .unwrap()
+            .insert(code.to_string(), invite.clone());
+        Ok(invite)
+    }
+
+    async fn org_invite_consume(&self, code: &str) -> Result<Option<TestInvite>, Infallible> {
+        Ok(self.invites.lock().unwrap().remove(code))
+    }
+
     async fn org_get_user_memberships(&self, user_id: &Uuid) -> Result<Vec<TestMember>, Infallible> {
         Ok(self
             .members
@@ -481,6 +531,40 @@ async fn role_inheritance_flows_into_sub_orgs() {
         .await
         .unwrap();
     assert_eq!(roles, vec!["auditor".to_string()]);
+}
+
+#[tokio::test]
+async fn invite_joins_org_and_suppresses_private_org() {
+    use authery::models::org::OrgInvite;
+
+    let store = TestStore::default();
+    let owner_id = new_user(&store);
+    let invitee_id = new_user(&store);
+
+    let owner_auth = login(auth(store.clone(), true), owner_id, LoginMethod::Password).await;
+    let org = owner_auth.org_create("ACME", "acme").await.unwrap();
+
+    let invite = owner_auth
+        .org_invite_create(&org.get_id(), vec!["dev".into()], Duration::hours(1))
+        .await
+        .unwrap();
+
+    // The invitee logs in holding the invite cookie (private orgs enabled).
+    let mut invitee_auth = auth(store.clone(), true);
+    invitee_auth.org_set_invite_cookie(invite.get_code());
+    let _invitee_auth = login(invitee_auth, invitee_id, LoginMethod::Password).await;
+
+    let memberships = store.org_get_user_memberships(&invitee_id).await.unwrap();
+    assert_eq!(memberships.len(), 1, "joined via invite, no private org");
+    assert_eq!(memberships[0].get_org_id(), org.get_id());
+    assert_eq!(memberships[0].get_roles(), vec!["dev".to_string()]);
+
+    // The invite is single-use.
+    assert!(store
+        .org_invite_consume(invite.get_code())
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]

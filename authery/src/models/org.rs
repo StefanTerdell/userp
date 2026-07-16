@@ -66,6 +66,18 @@ pub trait OrgMember: Send + Sync + Sized {
     fn get_roles(&self) -> Vec<String>;
 }
 
+/// A single-use, expiring invite into an organization. The code is embedded
+/// in a link (`{signup}?invite={code}`); whoever completes any signup or
+/// login flow holding it becomes a member with the invite's roles.
+pub trait OrgInvite: Send + Sync + Sized {
+    type OrgId: Id;
+
+    fn get_org_id(&self) -> Self::OrgId;
+    fn get_code(&self) -> &str;
+    fn get_roles(&self) -> Vec<String>;
+    fn get_expires(&self) -> chrono::DateTime<chrono::Utc>;
+}
+
 /// The configuration of an org-attached OIDC provider, as passed to the store
 /// on creation. SaaS mode: org owners register their own SSO here.
 #[cfg(feature = "oauth")]

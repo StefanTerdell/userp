@@ -12,9 +12,11 @@ const MAX_PASSWORD_ATTEMPTS: u32 = 5;
 const MAX_EMAIL_SENDS: u32 = 3;
 const MAX_OTP_ATTEMPTS: u32 = 5;
 
+type Window = (DateTime<Utc>, u32);
+
 #[derive(Debug, Default, Clone)]
 pub struct FixedWindowRateLimiter {
-    windows: Arc<Mutex<HashMap<String, (DateTime<Utc>, u32)>>>,
+    windows: Arc<Mutex<HashMap<String, Window>>>,
 }
 
 impl FixedWindowRateLimiter {
