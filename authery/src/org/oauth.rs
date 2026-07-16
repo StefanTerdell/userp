@@ -47,35 +47,49 @@ fn build_provider<P: OrgOidcProvider>(config: &P) -> anyhow::Result<Arc<dyn OAut
     )?))
 }
 
-/// Roles for a member logging in through this provider: the provider's
-/// default roles plus every mapping row whose claim equals - or is an array
-/// containing - the expected value.
+/// Whether a mapping row matches the validated claims. Claim paths may be
+/// dotted to reach into nested objects, e.g. Keycloak's `realm_access.roles`.
+fn claim_matches(claims: &Value, claim: &str, value: &str) -> bool {
+    let claim_value = claim
+        .split('.')
+        .fold(claims, |current, segment| &current[segment]);
+
+    match claim_value {
+        Value::String(s) => s == value,
+        // Scalars match their canonical string rendering, so
+        // ("email_verified", "true", ...) works on a boolean claim.
+        Value::Bool(b) => b.to_string() == value,
+        Value::Number(n) => n.to_string() == value,
+        Value::Array(items) => items.iter().any(|i| i.as_str() == Some(value)),
+        _ => false,
+    }
+}
+
+/// App roles for a member logging in through this provider: the provider's
+/// default roles plus every matched claim-role mapping row.
 fn map_claim_roles<P: OrgOidcProvider>(config: &P, claims: &Value) -> Vec<String> {
     let mut roles = config.get_default_roles();
 
     for (claim, value, role) in config.get_claim_role_mapping() {
-        // Claim paths may be dotted to reach into nested objects, e.g.
-        // Keycloak's `realm_access.roles`.
-        let claim_value = claim
-            .split('.')
-            .fold(claims, |current, segment| &current[segment]);
-
-        let matched = match claim_value {
-            Value::String(s) => *s == value,
-            // Scalars match their canonical string rendering, so
-            // ("email_verified", "true", ...) works on a boolean claim.
-            Value::Bool(b) => b.to_string() == value,
-            Value::Number(n) => n.to_string() == value,
-            Value::Array(items) => items.iter().any(|i| i.as_str() == Some(value.as_str())),
-            _ => false,
-        };
-
-        if matched && !roles.contains(&role) {
+        if claim_matches(claims, &claim, &value) && !roles.contains(&role) {
             roles.push(role);
         }
     }
 
     roles
+}
+
+/// The highest privilege granted by the matched claim-privilege mapping rows.
+fn map_claim_privilege<P: OrgOidcProvider>(
+    config: &P,
+    claims: &Value,
+) -> Option<crate::models::org::OrgPrivilege> {
+    config
+        .get_claim_privilege_mapping()
+        .into_iter()
+        .filter(|(claim, value, _)| claim_matches(claims, claim, value))
+        .map(|(_, _, privilege)| privilege)
+        .max()
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
@@ -86,7 +100,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         org_id: &S::OrgId,
         provider: NewOrgOidcProvider,
     ) -> Result<S::OrgOidcProvider, OrgError<S::Error>> {
-        self.org_require_owner(org_id).await?;
+        self.org_require(org_id, crate::models::org::OrgPrivilege::Owner).await?;
 
         Ok(self.store.org_oidc_upsert(org_id, provider).await?)
     }
@@ -97,7 +111,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         org_id: &S::OrgId,
         name: &str,
     ) -> Result<(), OrgError<S::Error>> {
-        self.org_require_owner(org_id).await?;
+        self.org_require(org_id, crate::models::org::OrgPrivilege::Owner).await?;
 
         Ok(self.store.org_oidc_delete(org_id, name).await?)
     }
@@ -217,8 +231,24 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let roles = map_claim_roles(&config, &unmatched_token.provider_user_raw);
 
+        // Roles are IdP-authoritative and replaced on every login. The
+        // privilege only ever upgrades: a mapped privilege is granted, but an
+        // absent mapping must not strip an owner who happens to log in
+        // through their own SSO.
+        let existing_privilege = self
+            .store
+            .org_get_member(&org_id, &user.get_id())
+            .await
+            .map_err(OAuthLoginCallbackError::Store)?
+            .and_then(|m| {
+                use crate::models::org::OrgMember;
+                m.get_privilege()
+            });
+        let privilege = existing_privilege
+            .max(map_claim_privilege(&config, &unmatched_token.provider_user_raw));
+
         self.store
-            .org_upsert_member(&org_id, &user.get_id(), roles)
+            .org_upsert_member(&org_id, &user.get_id(), privilege, roles)
             .await
             .map_err(OAuthLoginCallbackError::Store)?;
 

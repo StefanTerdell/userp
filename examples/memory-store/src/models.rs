@@ -150,6 +150,7 @@ pub struct MyOrganization {
     pub name: String,
     pub login_rules: OrgLoginRules,
     pub role_inheritance: Vec<(String, String)>,
+    pub privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
 }
 
 impl Organization for MyOrganization {
@@ -178,12 +179,17 @@ impl Organization for MyOrganization {
     fn get_role_inheritance(&self) -> Vec<(String, String)> {
         self.role_inheritance.clone()
     }
+
+    fn get_privilege_inheritance(&self) -> Vec<(OrgPrivilege, OrgPrivilege)> {
+        self.privilege_inheritance.clone()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct MyOrgMember {
     pub user_id: Uuid,
     pub org_id: Uuid,
+    pub privilege: Option<OrgPrivilege>,
     pub roles: Vec<String>,
 }
 
@@ -197,6 +203,10 @@ impl OrgMember for MyOrgMember {
 
     fn get_org_id(&self) -> Uuid {
         self.org_id
+    }
+
+    fn get_privilege(&self) -> Option<OrgPrivilege> {
+        self.privilege
     }
 
     fn get_roles(&self) -> Vec<String> {
@@ -260,12 +270,17 @@ impl authery::models::org::OrgOidcProvider for MyOrgOidcProvider {
     fn get_claim_role_mapping(&self) -> Vec<(String, String, String)> {
         self.config.claim_role_mapping.clone()
     }
+
+    fn get_claim_privilege_mapping(&self) -> Vec<(String, String, OrgPrivilege)> {
+        self.config.claim_privilege_mapping.clone()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct MyOrgInvite {
     pub org_id: Uuid,
     pub code: String,
+    pub privilege: Option<OrgPrivilege>,
     pub roles: Vec<String>,
     pub expires: DateTime<Utc>,
 }
@@ -279,6 +294,10 @@ impl OrgInvite for MyOrgInvite {
 
     fn get_code(&self) -> &str {
         &self.code
+    }
+
+    fn get_privilege(&self) -> Option<OrgPrivilege> {
+        self.privilege
     }
 
     fn get_roles(&self) -> Vec<String> {

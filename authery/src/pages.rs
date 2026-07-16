@@ -554,7 +554,9 @@ pub struct OtpTemplate<'a> {
 pub struct OrgsTemplateItem {
     pub slug: String,
     pub name: String,
-    /// Effective roles, comma-joined for display.
+    /// The member's privilege as display text; empty when none.
+    pub privilege: String,
+    /// App roles, comma-joined for display.
     pub roles: String,
     pub page_route: String,
 }
@@ -574,7 +576,9 @@ pub struct OrgsTemplate<'a> {
 #[cfg(feature = "organizations")]
 pub struct OrgTemplateMember {
     pub user_id: String,
-    /// Comma-joined for display.
+    /// The member's privilege as display text; empty when none.
+    pub privilege: String,
+    /// App roles, comma-joined for display.
     pub roles: String,
 }
 
@@ -592,8 +596,8 @@ pub struct OrgTemplateProvider {
     pub issuer: String,
 }
 
-/// The management page for one organization. Owner-only sections (settings,
-/// invites, providers) render when `is_owner`.
+/// The management page for one organization. Sections render by tier:
+/// members and invites for managers, settings/providers/deletion for owners.
 #[cfg(feature = "organizations")]
 #[derive(Template)]
 #[template(path = "org.html")]
@@ -603,11 +607,17 @@ pub struct OrgTemplate<'a> {
     pub slug: &'a str,
     pub name: &'a str,
     pub is_owner: bool,
-    /// The viewer's effective roles, comma-joined.
+    /// True for owners too - the privilege ladder is cumulative.
+    pub is_manager: bool,
+    /// The viewer's effective privilege as display text; empty when none.
+    pub privilege: String,
+    /// The viewer's effective app roles, comma-joined.
     pub roles: String,
     pub rules: crate::models::org::OrgLoginRules,
     /// `parent_role=role_here` lines for the settings textarea.
     pub role_inheritance: String,
+    /// `parent_privilege=privilege_here` lines for the settings textarea.
+    pub privilege_inheritance: String,
     pub members: Vec<OrgTemplateMember>,
     pub children: Vec<OrgTemplateChild>,
     /// Org SSO providers; empty when the oauth feature is off.

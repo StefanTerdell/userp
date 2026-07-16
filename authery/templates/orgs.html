@@ -24,7 +24,10 @@
     <div class="session-item">
       <div>
         <strong><a href="{{ org.page_route }}">{{ org.name }}</a></strong>
-        <p class="text-muted">/{{ org.slug }} — roles: {{ org.roles }}</p>
+        <p class="text-muted">/{{ org.slug }}
+          {% if !org.privilege.is_empty() %} — privilege: {{ org.privilege }}{% endif %}
+          {% if !org.roles.is_empty() %} — roles: {{ org.roles }}{% endif %}
+        </p>
       </div>
     </div>
     {% endfor %}

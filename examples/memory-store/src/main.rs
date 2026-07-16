@@ -120,6 +120,7 @@ async fn main() {
                     "true".into(),
                     "verified".into(),
                 )],
+                claim_privilege_mapping: Vec::new(),
             },
         )
         .await

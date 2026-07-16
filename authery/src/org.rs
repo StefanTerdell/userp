@@ -1,9 +1,15 @@
 //! Organizations: live sub-configurations of the auth stack.
 //!
-//! An organization tree carries memberships with app-defined string roles.
-//! Only [`ORG_OWNER_ROLE`] is interpreted by authery: owners manage the org.
-//! Role inheritance maps a member's roles in a parent org onto roles in a
-//! sub-org without a membership row there.
+//! Memberships carry two separate axes (see [`crate::models::org`]):
+//! a typed [`OrgPrivilege`] gating authery's own management surface, and
+//! app-defined role strings that authery stores and transports but never
+//! interprets. Inheritance maps both axes from parent orgs onto sub-orgs,
+//! each through its own typed mapping.
+//!
+//! Management is tiered: [`OrgPrivilege::Owner`] controls everything,
+//! [`OrgPrivilege::Manager`] handles day-to-day members and invites but can
+//! neither grant privileges, touch privileged members, nor reach settings,
+//! providers or deletion.
 //!
 //! Access is enforced through [`CoreAuthery::org_session`]: it returns the
 //! current session only when the user is an (effective) member AND the
@@ -16,15 +22,15 @@ pub mod oauth;
 use crate::{
     core::CoreAuthery,
     models::{
-        org::{OrgLoginRules, OrgMember, Organization, ORG_OWNER_ROLE},
+        org::{OrgLoginRules, OrgMember, OrgPrivilege, Organization},
         AutheryCookies, LoginMethod, LoginSession, User,
     },
     store::AutheryStore,
 };
 use thiserror::Error;
 
-/// Maximum organization tree depth walked when resolving inherited roles;
-/// also guards against parent cycles in a buggy store.
+/// Maximum organization tree depth walked when resolving inherited roles and
+/// privileges; also guards against parent cycles in a buggy store.
 const MAX_ORG_DEPTH: usize = 32;
 
 /// Cookie holding a pending invite code while the user completes a signup or
@@ -40,14 +46,35 @@ pub struct OrgConfig {
     pub create_private_org_on_signup: bool,
 }
 
+/// A member's effective standing in an organization: their direct membership
+/// combined with whatever the ancestor chain's inheritance mappings grant.
+#[derive(Debug, Clone, Default)]
+pub struct OrgMembership {
+    pub privilege: Option<OrgPrivilege>,
+    /// App-defined roles; authery attaches no meaning to them.
+    pub roles: Vec<String>,
+}
+
+impl OrgMembership {
+    /// Whether this constitutes membership at all.
+    pub fn is_member(&self) -> bool {
+        self.privilege.is_some() || !self.roles.is_empty()
+    }
+
+    /// Whether the membership carries at least this privilege.
+    pub fn has_privilege(&self, min: OrgPrivilege) -> bool {
+        self.privilege.is_some_and(|p| p >= min)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum OrgError<StoreError: std::error::Error> {
     #[error("Not logged in")]
     NotLoggedIn,
     #[error("Organization not found")]
     NotFound,
-    #[error("Requires the '{ORG_OWNER_ROLE}' role in this organization")]
-    NotOwner,
+    #[error("Requires the '{0}' privilege in this organization")]
+    MissingPrivilege(OrgPrivilege),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -65,13 +92,18 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let org = self.store.org_create(name, slug, None).await?;
         self.store
-            .org_upsert_member(&org.get_id(), &user.get_id(), vec![ORG_OWNER_ROLE.into()])
+            .org_upsert_member(
+                &org.get_id(),
+                &user.get_id(),
+                Some(OrgPrivilege::Owner),
+                Vec::new(),
+            )
             .await?;
 
         Ok(org)
     }
 
-    /// Create a sub-organization. Requires the owner role (direct or
+    /// Create a sub-organization. Requires the owner privilege (direct or
     /// inherited) in the parent; the creator becomes an owner of the child.
     pub async fn org_create_sub(
         &self,
@@ -79,57 +111,82 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         name: &str,
         slug: &str,
     ) -> Result<S::Organization, OrgError<S::Error>> {
-        let user_id = self.org_require_owner(parent_id).await?;
+        let user_id = self.org_require(parent_id, OrgPrivilege::Owner).await?;
 
         let org = self.store.org_create(name, slug, Some(parent_id)).await?;
         self.store
-            .org_upsert_member(&org.get_id(), &user_id, vec![ORG_OWNER_ROLE.into()])
+            .org_upsert_member(&org.get_id(), &user_id, Some(OrgPrivilege::Owner), Vec::new())
             .await?;
 
         Ok(org)
     }
 
-    /// Update an organization's settings. Requires the owner role.
+    /// Update an organization's settings. Requires the owner privilege.
     pub async fn org_update(
         &self,
         org_id: &S::OrgId,
         name: &str,
         login_rules: OrgLoginRules,
         role_inheritance: Vec<(String, String)>,
+        privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
     ) -> Result<(), OrgError<S::Error>> {
-        self.org_require_owner(org_id).await?;
+        self.org_require(org_id, OrgPrivilege::Owner).await?;
 
         self.store
-            .org_update(org_id, name, login_rules, role_inheritance)
+            .org_update(
+                org_id,
+                name,
+                login_rules,
+                role_inheritance,
+                privilege_inheritance,
+            )
             .await?;
 
         Ok(())
     }
 
-    /// Delete an organization. Requires the owner role.
+    /// Delete an organization. Requires the owner privilege.
     pub async fn org_delete(&self, org_id: &S::OrgId) -> Result<(), OrgError<S::Error>> {
-        self.org_require_owner(org_id).await?;
+        self.org_require(org_id, OrgPrivilege::Owner).await?;
 
         self.store.org_delete(org_id).await?;
 
         Ok(())
     }
 
-    /// Add a member or replace an existing member's roles. Requires the owner
-    /// role.
+    /// Add a member or replace an existing member's privilege and roles.
+    /// Requires the manager privilege; granting a privilege, or touching a
+    /// member who holds one, requires owner (so managers can neither escalate
+    /// themselves nor demote/strip the privileged).
     pub async fn org_upsert_member(
         &self,
         org_id: &S::OrgId,
         user_id: &S::UserId,
+        privilege: Option<OrgPrivilege>,
         roles: Vec<String>,
     ) -> Result<S::OrgMember, OrgError<S::Error>> {
-        self.org_require_owner(org_id).await?;
+        let target_privileged = self
+            .store
+            .org_get_member(org_id, user_id)
+            .await?
+            .and_then(|m| m.get_privilege())
+            .is_some();
 
-        Ok(self.store.org_upsert_member(org_id, user_id, roles).await?)
+        let required = if privilege.is_some() || target_privileged {
+            OrgPrivilege::Owner
+        } else {
+            OrgPrivilege::Manager
+        };
+        self.org_require(org_id, required).await?;
+
+        Ok(self
+            .store
+            .org_upsert_member(org_id, user_id, privilege, roles)
+            .await?)
     }
 
-    /// Remove a member. Requires the owner role (members may also remove
-    /// themselves).
+    /// Remove a member. Members may remove themselves; otherwise the manager
+    /// privilege is required, or owner if the target holds a privilege.
     pub async fn org_remove_member(
         &self,
         org_id: &S::OrgId,
@@ -141,7 +198,19 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         if acting != *user_id {
-            self.org_require_owner(org_id).await?;
+            let target_privileged = self
+                .store
+                .org_get_member(org_id, user_id)
+                .await?
+                .and_then(|m| m.get_privilege())
+                .is_some();
+
+            let required = if target_privileged {
+                OrgPrivilege::Owner
+            } else {
+                OrgPrivilege::Manager
+            };
+            self.org_require(org_id, required).await?;
         }
 
         self.store.org_remove_member(org_id, user_id).await?;
@@ -149,14 +218,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         Ok(())
     }
 
-    /// The user's effective roles in the organization: their direct roles
-    /// plus roles inherited from ancestors via each level's role-inheritance
-    /// mapping.
-    pub async fn org_effective_roles(
+    /// The user's effective membership in the organization: their direct
+    /// privilege and roles, combined with whatever the ancestor chain grants
+    /// through each level's role- and privilege-inheritance mappings.
+    pub async fn org_effective_membership(
         &self,
         org_id: &S::OrgId,
         user_id: &S::UserId,
-    ) -> Result<Vec<String>, OrgError<S::Error>> {
+    ) -> Result<OrgMembership, OrgError<S::Error>> {
         // Collect the chain from this org up to the root.
         let mut chain = Vec::new();
         let mut cursor = Some(org_id.clone());
@@ -173,29 +242,39 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             chain.push(org);
         }
 
-        // Fold back down from the root: effective roles at each level are the
-        // direct membership roles plus the parent's effective roles mapped
-        // through this level's inheritance pairs.
-        let mut effective: Vec<String> = Vec::new();
+        // Fold back down from the root: each level combines the direct
+        // membership with the parent's effective standing mapped through this
+        // level's inheritance pairs.
+        let mut effective = OrgMembership::default();
 
         for org in chain.iter().rev() {
-            let direct = self
-                .store
-                .org_get_member(&org.get_id(), user_id)
-                .await?
-                .map(|m| m.get_roles())
-                .unwrap_or_default();
+            let direct = self.store.org_get_member(&org.get_id(), user_id).await?;
 
-            let inherited = org
+            let inherited_privilege = org
+                .get_privilege_inheritance()
+                .into_iter()
+                .filter(|(parent_privilege, _)| {
+                    effective.privilege.is_some_and(|p| p >= *parent_privilege)
+                })
+                .map(|(_, privilege_here)| privilege_here)
+                .max();
+
+            let inherited_roles: Vec<String> = org
                 .get_role_inheritance()
                 .into_iter()
-                .filter(|(parent_role, _)| effective.contains(parent_role))
-                .map(|(_, role_here)| role_here);
+                .filter(|(parent_role, _)| effective.roles.contains(parent_role))
+                .map(|(_, role_here)| role_here)
+                .collect();
 
-            let mut next: Vec<String> = direct;
-            for role in inherited {
-                if !next.contains(&role) {
-                    next.push(role);
+            let mut next = OrgMembership {
+                privilege: direct.as_ref().and_then(|m| m.get_privilege()),
+                roles: direct.map(|m| m.get_roles()).unwrap_or_default(),
+            };
+
+            next.privilege = next.privilege.max(inherited_privilege);
+            for role in inherited_roles {
+                if !next.roles.contains(&role) {
+                    next.roles.push(role);
                 }
             }
 
@@ -205,13 +284,39 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         Ok(effective)
     }
 
+    /// The user's effective app roles in the organization. See
+    /// [`CoreAuthery::org_effective_membership`].
+    pub async fn org_effective_roles(
+        &self,
+        org_id: &S::OrgId,
+        user_id: &S::UserId,
+    ) -> Result<Vec<String>, OrgError<S::Error>> {
+        Ok(self
+            .org_effective_membership(org_id, user_id)
+            .await?
+            .roles)
+    }
+
+    /// The user's effective privilege in the organization. See
+    /// [`CoreAuthery::org_effective_membership`].
+    pub async fn org_effective_privilege(
+        &self,
+        org_id: &S::OrgId,
+        user_id: &S::UserId,
+    ) -> Result<Option<OrgPrivilege>, OrgError<S::Error>> {
+        Ok(self
+            .org_effective_membership(org_id, user_id)
+            .await?
+            .privilege)
+    }
+
     /// The current session, if its user is an effective member of the
     /// organization and the login method satisfies the org's login rules.
-    /// Returns the session together with the user's effective roles.
+    /// Returns the session together with the user's effective membership.
     pub async fn org_session(
         &self,
         org_id: &S::OrgId,
-    ) -> Result<Option<(S::LoginSession, Vec<String>)>, OrgError<S::Error>> {
+    ) -> Result<Option<(S::LoginSession, OrgMembership)>, OrgError<S::Error>> {
         let Some(session) = self.session().await? else {
             return Ok(None);
         };
@@ -224,33 +329,41 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Ok(None);
         }
 
-        let roles = self
-            .org_effective_roles(org_id, &session.get_user_id())
+        let membership = self
+            .org_effective_membership(org_id, &session.get_user_id())
             .await?;
 
-        if roles.is_empty() {
+        if !membership.is_member() {
             return Ok(None);
         }
 
-        Ok(Some((session, roles)))
+        Ok(Some((session, membership)))
     }
 
-    /// Create a single-use invite into the organization, carrying the roles
-    /// the joiner will receive. Requires the owner role. Returns the invite;
-    /// embed its code in a link like `{signup_page}?invite={code}`.
+    /// Create a single-use invite into the organization, carrying the
+    /// privilege and roles the joiner will receive. Role-only invites require
+    /// the manager privilege; privilege-carrying invites require owner.
+    /// Returns the invite; embed its code in a link like
+    /// `{signup_page}?invite={code}`.
     pub async fn org_invite_create(
         &self,
         org_id: &S::OrgId,
+        privilege: Option<OrgPrivilege>,
         roles: Vec<String>,
         lifetime: chrono::Duration,
     ) -> Result<S::OrgInvite, OrgError<S::Error>> {
-        self.org_require_owner(org_id).await?;
+        let required = if privilege.is_some() {
+            OrgPrivilege::Owner
+        } else {
+            OrgPrivilege::Manager
+        };
+        self.org_require(org_id, required).await?;
 
         let code = uuid::Uuid::new_v4().to_string().replace('-', "");
 
         Ok(self
             .store
-            .org_invite_create(org_id, &code, roles, chrono::Utc::now() + lifetime)
+            .org_invite_create(org_id, &code, privilege, roles, chrono::Utc::now() + lifetime)
             .await?)
     }
 
@@ -282,7 +395,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
 
         self.store
-            .org_upsert_member(&invite.get_org_id(), user_id, invite.get_roles())
+            .org_upsert_member(
+                &invite.get_org_id(),
+                user_id,
+                invite.get_privilege(),
+                invite.get_roles(),
+            )
             .await?;
 
         Ok(())
@@ -310,29 +428,30 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let slug = format!("user-{user_id}");
         let org = self.store.org_create("Private", &slug, None).await?;
         self.store
-            .org_upsert_member(&org.get_id(), user_id, vec![ORG_OWNER_ROLE.into()])
+            .org_upsert_member(&org.get_id(), user_id, Some(OrgPrivilege::Owner), Vec::new())
             .await?;
 
         Ok(())
     }
 
-    /// The acting user's id, if they hold the owner role (directly or
-    /// inherited) in the organization.
-    pub(crate) async fn org_require_owner(
+    /// The acting user's id, if they hold at least this privilege (directly
+    /// or inherited) in the organization.
+    pub(crate) async fn org_require(
         &self,
         org_id: &S::OrgId,
+        min: OrgPrivilege,
     ) -> Result<S::UserId, OrgError<S::Error>> {
         let Some((user, _session)) = self.user_session().await? else {
             return Err(OrgError::NotLoggedIn);
         };
 
         let user_id = user.get_id();
-        let roles = self.org_effective_roles(org_id, &user_id).await?;
+        let membership = self.org_effective_membership(org_id, &user_id).await?;
 
-        if roles.iter().any(|r| r == ORG_OWNER_ROLE) {
+        if membership.has_privilege(min) {
             Ok(user_id)
         } else {
-            Err(OrgError::NotOwner)
+            Err(OrgError::MissingPrivilege(min))
         }
     }
 }

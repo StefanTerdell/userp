@@ -59,9 +59,9 @@ pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginSession, User};
 #[cfg(feature = "mfa")]
 pub use crate::mfa::{MfaError, MfaFactors, MfaPolicy};
 #[cfg(feature = "organizations")]
-pub use crate::models::org::{OrgInvite, OrgLoginRules, OrgMember, Organization, ORG_OWNER_ROLE};
+pub use crate::models::org::{OrgInvite, OrgLoginRules, OrgMember, OrgPrivilege, Organization};
 #[cfg(feature = "organizations")]
-pub use crate::org::{OrgConfig, OrgError};
+pub use crate::org::{OrgConfig, OrgError, OrgMembership};
 #[cfg(feature = "mfa")]
 pub use crate::routes::mfa::MfaRoutes;
 pub use crate::ratelimit::{NoRateLimit, RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};

@@ -96,6 +96,10 @@ pub trait AutheryStore: Send + Sync {
         name: &str,
         login_rules: crate::models::org::OrgLoginRules,
         role_inheritance: Vec<(String, String)>,
+        privilege_inheritance: Vec<(
+            crate::models::org::OrgPrivilege,
+            crate::models::org::OrgPrivilege,
+        )>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Delete an organization and its memberships. Sub-organizations are the
     /// store's concern (cascade or reject).
@@ -105,13 +109,14 @@ pub trait AutheryStore: Send + Sync {
         org_id: &Self::OrgId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    /// Add a user to an organization with the given roles, or replace their
-    /// roles if already a member.
+    /// Add a user to an organization, or replace their privilege and roles if
+    /// already a member.
     #[cfg(feature = "organizations")]
     fn org_upsert_member(
         &self,
         org_id: &Self::OrgId,
         user_id: &Self::UserId,
+        privilege: Option<crate::models::org::OrgPrivilege>,
         roles: Vec<String>,
     ) -> impl Future<Output = Result<Self::OrgMember, Self::Error>> + Send;
     #[cfg(feature = "organizations")]
@@ -144,6 +149,7 @@ pub trait AutheryStore: Send + Sync {
         &self,
         org_id: &Self::OrgId,
         code: &str,
+        privilege: Option<crate::models::org::OrgPrivilege>,
         roles: Vec<String>,
         expires: DateTime<Utc>,
     ) -> impl Future<Output = Result<Self::OrgInvite, Self::Error>> + Send;

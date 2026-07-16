@@ -2,7 +2,7 @@
 //!   cargo test -p authery --test org --features organizations,password
 #![cfg(all(feature = "organizations", feature = "password"))]
 
-use authery::models::org::{OrgLoginRules, OrgMember as _, Organization as _, ORG_OWNER_ROLE};
+use authery::models::org::{OrgLoginRules, OrgMember as _, OrgPrivilege, Organization as _};
 use authery::models::{AutheryCookies, LoginMethod, LoginSession, User};
 use authery::org::{OrgConfig, OrgError};
 use authery::prelude::PasswordConfig;
@@ -64,6 +64,7 @@ struct TestOrg {
     name: String,
     rules: OrgLoginRules,
     inheritance: Vec<(String, String)>,
+    privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
 }
 
 impl authery::models::org::Organization for TestOrg {
@@ -86,12 +87,16 @@ impl authery::models::org::Organization for TestOrg {
     fn get_role_inheritance(&self) -> Vec<(String, String)> {
         self.inheritance.clone()
     }
+    fn get_privilege_inheritance(&self) -> Vec<(OrgPrivilege, OrgPrivilege)> {
+        self.privilege_inheritance.clone()
+    }
 }
 
 #[derive(Debug, Clone)]
 struct TestMember {
     user_id: Uuid,
     org_id: Uuid,
+    privilege: Option<OrgPrivilege>,
     roles: Vec<String>,
 }
 
@@ -104,6 +109,9 @@ impl authery::models::org::OrgMember for TestMember {
     fn get_org_id(&self) -> Uuid {
         self.org_id
     }
+    fn get_privilege(&self) -> Option<OrgPrivilege> {
+        self.privilege
+    }
     fn get_roles(&self) -> Vec<String> {
         self.roles.clone()
     }
@@ -113,6 +121,7 @@ impl authery::models::org::OrgMember for TestMember {
 struct TestInvite {
     org_id: Uuid,
     code: String,
+    privilege: Option<OrgPrivilege>,
     roles: Vec<String>,
     expires: DateTime<Utc>,
 }
@@ -124,6 +133,9 @@ impl authery::models::org::OrgInvite for TestInvite {
     }
     fn get_code(&self) -> &str {
         &self.code
+    }
+    fn get_privilege(&self) -> Option<OrgPrivilege> {
+        self.privilege
     }
     fn get_roles(&self) -> Vec<String> {
         self.roles.clone()
@@ -248,6 +260,7 @@ impl AutheryStore for TestStore {
             name: name.to_string(),
             rules: OrgLoginRules::default(),
             inheritance: Vec::new(),
+            privilege_inheritance: Vec::new(),
         };
         self.orgs.lock().unwrap().insert(org.id, org.clone());
         Ok(org)
@@ -284,11 +297,13 @@ impl AutheryStore for TestStore {
         name: &str,
         login_rules: OrgLoginRules,
         role_inheritance: Vec<(String, String)>,
+        privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
     ) -> Result<(), Infallible> {
         if let Some(org) = self.orgs.lock().unwrap().get_mut(org_id) {
             org.name = name.to_string();
             org.rules = login_rules;
             org.inheritance = role_inheritance;
+            org.privilege_inheritance = privilege_inheritance;
         }
         Ok(())
     }
@@ -303,6 +318,7 @@ impl AutheryStore for TestStore {
         &self,
         org_id: &Uuid,
         user_id: &Uuid,
+        privilege: Option<OrgPrivilege>,
         roles: Vec<String>,
     ) -> Result<TestMember, Infallible> {
         let mut members = self.members.lock().unwrap();
@@ -310,6 +326,7 @@ impl AutheryStore for TestStore {
         let member = TestMember {
             user_id: *user_id,
             org_id: *org_id,
+            privilege,
             roles,
         };
         members.push(member.clone());
@@ -353,12 +370,14 @@ impl AutheryStore for TestStore {
         &self,
         org_id: &Uuid,
         code: &str,
+        privilege: Option<OrgPrivilege>,
         roles: Vec<String>,
         expires: DateTime<Utc>,
     ) -> Result<TestInvite, Infallible> {
         let invite = TestInvite {
             org_id: *org_id,
             code: code.to_string(),
+            privilege,
             roles,
             expires,
         };
@@ -445,7 +464,8 @@ async fn private_org_created_on_first_login() {
 
     let memberships = store.org_get_user_memberships(&user_id).await.unwrap();
     assert_eq!(memberships.len(), 1, "private org membership created");
-    assert_eq!(memberships[0].get_roles(), vec![ORG_OWNER_ROLE.to_string()]);
+    assert_eq!(memberships[0].get_privilege(), Some(OrgPrivilege::Owner));
+    assert!(memberships[0].get_roles().is_empty(), "no app roles granted");
 
     // A second login must not create another org.
     let auth = login(auth, user_id, LoginMethod::Password).await;
@@ -480,11 +500,11 @@ async fn org_management_requires_owner() {
 
     // The creator can manage.
     owner_auth
-        .org_upsert_member(&org.get_id(), &outsider_id, vec!["member".into()])
+        .org_upsert_member(&org.get_id(), &outsider_id, None, vec!["member".into()])
         .await
         .unwrap();
 
-    // A non-owner member cannot.
+    // An unprivileged member cannot.
     let member_auth = login(
         auth(store.clone(), false),
         outsider_id,
@@ -492,10 +512,15 @@ async fn org_management_requires_owner() {
     )
     .await;
     let err = member_auth
-        .org_upsert_member(&org.get_id(), &outsider_id, vec![ORG_OWNER_ROLE.into()])
+        .org_upsert_member(
+            &org.get_id(),
+            &outsider_id,
+            Some(OrgPrivilege::Owner),
+            Vec::new(),
+        )
         .await
         .unwrap_err();
-    assert!(matches!(err, OrgError::NotOwner));
+    assert!(matches!(err, OrgError::MissingPrivilege(_)));
 }
 
 #[tokio::test]
@@ -510,14 +535,25 @@ async fn role_inheritance_flows_into_sub_orgs() {
         .await
         .unwrap();
 
-    // Map the parent's owner role onto "auditor" in the child and drop the
-    // creator's direct membership so only inheritance remains.
+    // Give the owner an app role in the parent, map it onto "auditor" in
+    // the child, map the parent's Owner privilege onto Manager, and drop the
+    // creator's direct child membership so only inheritance remains.
+    owner_auth
+        .org_upsert_member(
+            &parent.get_id(),
+            &owner_id,
+            Some(OrgPrivilege::Owner),
+            vec!["hq".into()],
+        )
+        .await
+        .unwrap();
     owner_auth
         .org_update(
             &child.get_id(),
             "ACME R&D",
             OrgLoginRules::default(),
-            vec![(ORG_OWNER_ROLE.into(), "auditor".into())],
+            vec![("hq".into(), "auditor".into())],
+            vec![(OrgPrivilege::Owner, OrgPrivilege::Manager)],
         )
         .await
         .unwrap();
@@ -526,11 +562,16 @@ async fn role_inheritance_flows_into_sub_orgs() {
         .await
         .unwrap();
 
-    let roles = owner_auth
-        .org_effective_roles(&child.get_id(), &owner_id)
+    let membership = owner_auth
+        .org_effective_membership(&child.get_id(), &owner_id)
         .await
         .unwrap();
-    assert_eq!(roles, vec!["auditor".to_string()]);
+    assert_eq!(membership.roles, vec!["auditor".to_string()]);
+    assert_eq!(
+        membership.privilege,
+        Some(OrgPrivilege::Manager),
+        "parent Owner maps to Manager here, not Owner"
+    );
 }
 
 #[tokio::test]
@@ -545,7 +586,7 @@ async fn invite_joins_org_and_suppresses_private_org() {
     let org = owner_auth.org_create("ACME", "acme").await.unwrap();
 
     let invite = owner_auth
-        .org_invite_create(&org.get_id(), vec!["dev".into()], Duration::hours(1))
+        .org_invite_create(&org.get_id(), None, vec!["dev".into()], Duration::hours(1))
         .await
         .unwrap();
 
@@ -602,6 +643,7 @@ async fn org_session_enforces_login_rules_and_membership() {
                 ..OrgLoginRules::default()
             },
             Vec::new(),
+            Vec::new(),
         )
         .await
         .unwrap();
@@ -617,8 +659,96 @@ async fn org_session_enforces_login_rules_and_membership() {
                 ..OrgLoginRules::default()
             },
             Vec::new(),
+            Vec::new(),
         )
         .await
         .unwrap();
     assert!(owner_auth.org_session(&org.get_id()).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn manager_tier_cannot_escalate() {
+    let store = TestStore::default();
+    let owner_id = new_user(&store);
+    let manager_id = new_user(&store);
+    let member_id = new_user(&store);
+
+    let owner_auth = login(auth(store.clone(), false), owner_id, LoginMethod::Password).await;
+    let org = owner_auth.org_create("ACME", "acme").await.unwrap();
+    owner_auth
+        .org_upsert_member(
+            &org.get_id(),
+            &manager_id,
+            Some(OrgPrivilege::Manager),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+
+    let manager_auth = login(
+        auth(store.clone(), false),
+        manager_id,
+        LoginMethod::Password,
+    )
+    .await;
+
+    // Managers handle day-to-day membership...
+    manager_auth
+        .org_upsert_member(&org.get_id(), &member_id, None, vec!["dev".into()])
+        .await
+        .unwrap();
+    manager_auth
+        .org_invite_create(&org.get_id(), None, vec!["dev".into()], Duration::hours(1))
+        .await
+        .unwrap();
+
+    // ...but cannot grant privileges (not even to themselves),
+    assert!(matches!(
+        manager_auth
+            .org_upsert_member(
+                &org.get_id(),
+                &manager_id,
+                Some(OrgPrivilege::Owner),
+                Vec::new()
+            )
+            .await
+            .unwrap_err(),
+        OrgError::MissingPrivilege(OrgPrivilege::Owner)
+    ));
+
+    // ...cannot touch or remove privileged members,
+    assert!(matches!(
+        manager_auth
+            .org_upsert_member(&org.get_id(), &owner_id, None, vec!["demoted".into()])
+            .await
+            .unwrap_err(),
+        OrgError::MissingPrivilege(OrgPrivilege::Owner)
+    ));
+    assert!(matches!(
+        manager_auth
+            .org_remove_member(&org.get_id(), &owner_id)
+            .await
+            .unwrap_err(),
+        OrgError::MissingPrivilege(OrgPrivilege::Owner)
+    ));
+
+    // ...cannot create privilege-carrying invites,
+    assert!(matches!(
+        manager_auth
+            .org_invite_create(
+                &org.get_id(),
+                Some(OrgPrivilege::Manager),
+                Vec::new(),
+                Duration::hours(1)
+            )
+            .await
+            .unwrap_err(),
+        OrgError::MissingPrivilege(OrgPrivilege::Owner)
+    ));
+
+    // ...and cannot reach owner-only surfaces.
+    assert!(matches!(
+        manager_auth.org_delete(&org.get_id()).await.unwrap_err(),
+        OrgError::MissingPrivilege(OrgPrivilege::Owner)
+    ));
 }

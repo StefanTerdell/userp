@@ -9,7 +9,7 @@ use axum::{
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use authery::{
-    models::org::{NewOrgOidcProvider, OrgLoginRules},
+    models::org::{NewOrgOidcProvider, OrgLoginRules, OrgPrivilege},
     prelude::*,
     reexports::{
         chrono::{DateTime, Utc},
@@ -626,6 +626,7 @@ impl AutheryStore for MemoryStore {
             name: name.to_string(),
             login_rules: OrgLoginRules::default(),
             role_inheritance: Vec::new(),
+            privilege_inheritance: Vec::new(),
         };
 
         orgs.insert(org.id, org.clone());
@@ -664,11 +665,13 @@ impl AutheryStore for MemoryStore {
         name: &str,
         login_rules: OrgLoginRules,
         role_inheritance: Vec<(String, String)>,
+        privilege_inheritance: Vec<(OrgPrivilege, OrgPrivilege)>,
     ) -> Result<(), Self::Error> {
         if let Some(org) = self.orgs.write().await.get_mut(org_id) {
             org.name = name.to_string();
             org.login_rules = login_rules;
             org.role_inheritance = role_inheritance;
+            org.privilege_inheritance = privilege_inheritance;
         }
 
         Ok(())
@@ -692,6 +695,7 @@ impl AutheryStore for MemoryStore {
         &self,
         org_id: &Uuid,
         user_id: &Uuid,
+        privilege: Option<OrgPrivilege>,
         roles: Vec<String>,
     ) -> Result<MyOrgMember, Self::Error> {
         let mut members = self.org_members.write().await;
@@ -701,6 +705,7 @@ impl AutheryStore for MemoryStore {
         let member = MyOrgMember {
             user_id: *user_id,
             org_id: *org_id,
+            privilege,
             roles,
         };
 
@@ -815,12 +820,14 @@ impl AutheryStore for MemoryStore {
         &self,
         org_id: &Uuid,
         code: &str,
+        privilege: Option<OrgPrivilege>,
         roles: Vec<String>,
         expires: DateTime<Utc>,
     ) -> Result<MyOrgInvite, Self::Error> {
         let invite = MyOrgInvite {
             org_id: *org_id,
             code: code.to_string(),
+            privilege,
             roles,
             expires,
         };

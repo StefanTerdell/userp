@@ -1,6 +1,6 @@
 use crate::{
     axum::AxumAuthery,
-    models::org::{OrgLoginRules, OrgMember, Organization},
+    models::org::{OrgLoginRules, OrgMember, OrgPrivilege, Organization},
     models::User,
     org::OrgError,
     store::AutheryStore,
@@ -24,6 +24,11 @@ fn split_csv(input: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// Parse a privilege form value; empty/"none" means no privilege.
+fn parse_privilege(input: Option<&str>) -> Option<OrgPrivilege> {
+    input.and_then(|s| s.parse().ok())
 }
 
 /// Redirect to the org page with an outcome message or error.
@@ -59,7 +64,6 @@ pub(crate) use pages_handlers::{get_org, get_orgs};
 mod pages_handlers {
     use super::*;
     use crate::axum::router::pages::NextMessageErrorQuery;
-    use crate::models::org::ORG_OWNER_ROLE;
     use crate::pages::{
         OrgTemplate, OrgTemplateChild, OrgTemplateMember, OrgTemplateProvider, OrgsTemplate,
         OrgsTemplateItem,
@@ -92,6 +96,10 @@ mod pages_handlers {
                 page_route: slugged(&auth.routes.org.org, org.get_slug()),
                 slug: org.get_slug().to_string(),
                 name: org.get_name().to_string(),
+                privilege: membership
+                    .get_privilege()
+                    .map(|p| p.to_string())
+                    .unwrap_or_default(),
                 roles: membership.get_roles().join(", "),
             });
         }
@@ -124,13 +132,16 @@ mod pages_handlers {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
 
-        let roles = match auth.org_effective_roles(&org.get_id(), &user.get_id()).await {
-            Ok(roles) => roles,
+        let membership = match auth
+            .org_effective_membership(&org.get_id(), &user.get_id())
+            .await
+        {
+            Ok(membership) => membership,
             Err(OrgError::Store(err)) => return Err(err),
-            Err(_) => Vec::new(),
+            Err(_) => Default::default(),
         };
 
-        if roles.is_empty() {
+        if !membership.is_member() {
             return Ok(StatusCode::NOT_FOUND.into_response());
         }
 
@@ -141,6 +152,10 @@ mod pages_handlers {
             .into_iter()
             .map(|m| OrgTemplateMember {
                 user_id: m.get_user_id().to_string(),
+                privilege: m
+                    .get_privilege()
+                    .map(|p| p.to_string())
+                    .unwrap_or_default(),
                 roles: m.get_roles().join(", "),
             })
             .collect();
@@ -182,15 +197,28 @@ mod pages_handlers {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let privilege_inheritance = org
+            .get_privilege_inheritance()
+            .into_iter()
+            .map(|(parent, here)| format!("{parent}={here}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         let view = OrgTemplate {
             message: query.message.as_deref(),
             error: query.error.as_deref(),
             slug: &slug,
             name: org.get_name(),
-            is_owner: roles.iter().any(|r| r == ORG_OWNER_ROLE),
-            roles: roles.join(", "),
+            is_owner: membership.has_privilege(OrgPrivilege::Owner),
+            is_manager: membership.has_privilege(OrgPrivilege::Manager),
+            privilege: membership
+                .privilege
+                .map(|p| p.to_string())
+                .unwrap_or_default(),
+            roles: membership.roles.join(", "),
             rules: org.get_login_rules(),
             role_inheritance,
+            privilege_inheritance,
             members,
             children,
             providers,
@@ -271,6 +299,8 @@ pub(crate) struct OrgUpdateForm {
     pub allow_email: Option<String>,
     #[serde(default)]
     pub role_inheritance: String,
+    #[serde(default)]
+    pub privilege_inheritance: String,
 }
 
 pub(crate) async fn post_org_update<St>(
@@ -302,8 +332,23 @@ where
         .filter(|(a, b)| !a.is_empty() && !b.is_empty())
         .collect();
 
+    let privilege_inheritance = form
+        .privilege_inheritance
+        .lines()
+        .filter_map(|line| {
+            let (a, b) = line.split_once('=')?;
+            Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+        })
+        .collect();
+
     let result = auth
-        .org_update(&org.get_id(), &form.name, rules, role_inheritance)
+        .org_update(
+            &org.get_id(),
+            &form.name,
+            rules,
+            role_inheritance,
+            privilege_inheritance,
+        )
         .await;
     org_action_response::<St>(&auth.routes, &slug, result, "Settings saved")
 }
@@ -334,6 +379,7 @@ where
 #[derive(Deserialize)]
 pub(crate) struct MemberForm {
     pub user_id: String,
+    pub privilege: Option<String>,
     #[serde(default)]
     pub roles: String,
 }
@@ -356,7 +402,12 @@ where
     };
 
     let result = auth
-        .org_upsert_member(&org.get_id(), &user_id, split_csv(&form.roles))
+        .org_upsert_member(
+            &org.get_id(),
+            &user_id,
+            parse_privilege(form.privilege.as_deref()),
+            split_csv(&form.roles),
+        )
         .await
         .map(|_| ());
     org_action_response::<St>(&auth.routes, &slug, result, "Member saved")
@@ -385,6 +436,7 @@ where
 
 #[derive(Deserialize)]
 pub(crate) struct InviteForm {
+    pub privilege: Option<String>,
     #[serde(default)]
     pub roles: String,
     pub hours: i64,
@@ -409,6 +461,7 @@ where
     match auth
         .org_invite_create(
             &org.get_id(),
+            parse_privilege(form.privilege.as_deref()),
             split_csv(&form.roles),
             Duration::hours(form.hours.max(1)),
         )
@@ -452,6 +505,8 @@ mod provider_handlers {
         pub default_roles: String,
         #[serde(default)]
         pub claim_role_mapping: String,
+        #[serde(default)]
+        pub claim_privilege_mapping: String,
         pub allow_login: Option<String>,
     }
 
@@ -478,6 +533,19 @@ mod provider_handlers {
             .filter(|(a, b, c)| !a.is_empty() && !b.is_empty() && !c.is_empty())
             .collect();
 
+        let claim_privilege_mapping = form
+            .claim_privilege_mapping
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(3, '=').map(str::trim);
+                Some((
+                    parts.next()?.to_string(),
+                    parts.next()?.to_string(),
+                    parts.next()?.parse().ok()?,
+                ))
+            })
+            .collect();
+
         let provider = NewOrgOidcProvider {
             name: form.name,
             display_name: form.display_name,
@@ -494,6 +562,7 @@ mod provider_handlers {
             allow_login: form.allow_login.is_some(),
             default_roles: split_csv(&form.default_roles),
             claim_role_mapping,
+            claim_privilege_mapping,
         };
 
         let result = auth
