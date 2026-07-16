@@ -7,6 +7,7 @@
 //! then checks that authery's validation accepts it and rejects tampered or
 //! wrong-audience/issuer tokens. If Keycloak is not reachable the test skips
 //! (returns early) rather than failing, so `cargo test` stays green offline.
+#![cfg(feature = "oauth")]
 
 use authery::oauth::client::validate_oidc_id_token;
 use authery::reexports::jsonwebtoken::jwk::JwkSet;
