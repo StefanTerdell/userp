@@ -6,6 +6,8 @@ pub mod email;
 pub mod oauth;
 #[cfg(feature = "otp")]
 pub mod otp;
+#[cfg(feature = "webauthn")]
+pub mod webauthn;
 #[cfg(feature = "pages")]
 pub mod pages;
 #[cfg(feature = "password")]
@@ -388,6 +390,38 @@ pub trait AxumRouter {
                     self.routes().password.signup_password.as_str(),
                     post(password::post_signup_password::<St>),
                 );
+        }
+
+        #[cfg(feature = "webauthn")]
+        {
+            router = router
+                .route(
+                    self.routes().webauthn.login_webauthn_start.as_str(),
+                    post(webauthn::post_login_webauthn_start::<St>),
+                )
+                .route(
+                    self.routes().webauthn.login_webauthn_finish.as_str(),
+                    post(webauthn::post_login_webauthn_finish::<St>),
+                )
+                .route(
+                    self.routes().webauthn.user_webauthn_register_start.as_str(),
+                    post(webauthn::post_user_webauthn_register_start::<St>),
+                )
+                .route(
+                    self.routes()
+                        .webauthn
+                        .user_webauthn_register_finish
+                        .as_str(),
+                    post(webauthn::post_user_webauthn_register_finish::<St>),
+                );
+
+            #[cfg(feature = "user")]
+            {
+                router = router.route(
+                    self.routes().webauthn.user_webauthn_delete.as_str(),
+                    post(webauthn::post_user_webauthn_delete::<St>),
+                );
+            }
         }
 
         #[cfg(feature = "email")]

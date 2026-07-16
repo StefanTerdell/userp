@@ -31,6 +31,8 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub email: EmailConfig,
     #[cfg(feature = "oauth")]
     pub oauth: OAuthConfig,
+    #[cfg(feature = "webauthn")]
+    pub webauthn: crate::webauthn::WebauthnConfig,
     #[cfg(feature = "pages")]
     pub pages: std::sync::Arc<dyn crate::pages::Pages>,
 }

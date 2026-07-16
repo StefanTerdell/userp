@@ -54,7 +54,7 @@ async fn main() {
                 from: req_var("SMTP_FROM"),
             },
         ),
-        OAuthConfig::new(base_url)
+        OAuthConfig::new(base_url.clone())
             .with_client(SpotifyOAuthProvider::new(
                 req_var("SPOTIFY_CLIENT_ID"),
                 req_var("SPOTIFY_CLIENT_SECRET"),
@@ -71,6 +71,7 @@ async fn main() {
                 req_var("GOOGLE_CLIENT_ID"),
                 req_var("GOOGLE_CLIENT_SECRET"),
             )),
+        WebauthnConfig::new(base_url, "Authery example").expect("valid webauthn config"),
     )
     .expect("valid auth config")
     .with_https_only(false)

@@ -31,6 +31,9 @@
     {% if oauth.is_some() %}
     <button id="oauth-tab-button" class="tab-button" onclick="openTab('oauth')">OAuth Logins</button>
     {% endif %}
+    {% if webauthn.is_some() %}
+    <button id="passkeys-tab-button" class="tab-button" onclick="openTab('passkeys')">Passkeys</button>
+    {% endif %}
     <button id="danger-tab-button" class="tab-button" onclick="openTab('danger')">Danger Zone</button>
   </div>
 
@@ -179,6 +182,87 @@
       {% endfor %}
     </div>
   </div>
+  {% endif %}
+
+  {% if let Some(webauthn) = webauthn %}
+  <div id="passkeys" class="tab">
+    <div class="section">
+      <h2>Passkeys</h2>
+      {% for cred_id in webauthn.credential_ids %}
+      <div class="session-item">
+        <div>
+          <strong><code>{{ cred_id }}</code></strong>
+        </div>
+        <form action="{{ webauthn.delete_action_route }}" method="post" class="form">
+          <input type="hidden" value="{{ cred_id }}" name="credential_id" />
+          <button type="submit">Delete</button>
+        </form>
+      </div>
+      {% endfor %}
+      <button type="button" id="add-passkey-button">Add a passkey</button>
+      <div class="error" id="add-passkey-error" role="alert" style="display: none;"></div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      function fromB64url(s) {
+        s = s.replace(/-/g, '+').replace(/_/g, '/');
+        return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
+      }
+      function toB64url(b) {
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      }
+      function fail(e) {
+        var el = document.getElementById('add-passkey-error');
+        el.textContent = 'Adding passkey failed: ' + e;
+        el.style.display = 'block';
+      }
+      var displayName = 'user';
+      {% if let Some(email_info) = email %}
+      {% if let Some(first) = email_info.emails.first() %}
+      displayName = '{{ first.address }}';
+      {% endif %}
+      {% endif %}
+      document.getElementById('add-passkey-button').addEventListener('click', async function () {
+        try {
+          var res = await fetch('{{ webauthn.register_start_route }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name: displayName })
+          });
+          var ccr = await res.json();
+          if (!res.ok) { return fail(ccr.error || res.status); }
+          var pk = ccr.publicKey;
+          pk.challenge = fromB64url(pk.challenge);
+          pk.user.id = fromB64url(pk.user.id);
+          if (pk.excludeCredentials) {
+            pk.excludeCredentials = pk.excludeCredentials.map(function (c) {
+              c.id = fromB64url(c.id); return c;
+            });
+          }
+          var cred = await navigator.credentials.create({ publicKey: pk });
+          var body = {
+            id: cred.id,
+            rawId: toB64url(cred.rawId),
+            type: cred.type,
+            extensions: cred.getClientExtensionResults(),
+            response: {
+              attestationObject: toB64url(cred.response.attestationObject),
+              clientDataJSON: toB64url(cred.response.clientDataJSON)
+            }
+          };
+          var fin = await fetch('{{ webauthn.register_finish_route }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          if (fin.ok) { window.location.reload(); }
+          else { var out = await fin.json(); fail(out.error || fin.status); }
+        } catch (e) { fail(e); }
+      });
+    })();
+  </script>
   {% endif %}
 
   <div id="danger" class="tab">

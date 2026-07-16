@@ -11,6 +11,7 @@ use authery::{
         chrono::{DateTime, Utc},
         thiserror,
         uuid::Uuid,
+        webauthn_rs::prelude::Passkey,
     },
 };
 
@@ -20,6 +21,8 @@ pub struct MemoryStore {
     users: Arc<RwLock<HashMap<Uuid, MyUser>>>,
     challenges: Arc<RwLock<HashMap<String, MyEmailChallenge>>>,
     oauth_tokens: Arc<RwLock<HashMap<Uuid, MyOAuthToken>>>,
+    /// Passkeys keyed by raw credential id, with their owning user.
+    passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,6 +51,74 @@ impl AutheryStore for MemoryStore {
     type UserId = Uuid;
     type SessionId = Uuid;
     type OAuthTokenId = Uuid;
+
+    async fn webauthn_create_credential(
+        &self,
+        user_id: &Uuid,
+        passkey: Passkey,
+    ) -> Result<(), Self::Error> {
+        let mut passkeys = self.passkeys.write().await;
+
+        passkeys.insert(passkey.cred_id().to_vec(), (*user_id, passkey));
+
+        Ok(())
+    }
+
+    async fn webauthn_get_credentials(&self, user_id: &Uuid) -> Result<Vec<Passkey>, Self::Error> {
+        let passkeys = self.passkeys.read().await;
+
+        Ok(passkeys
+            .values()
+            .filter(|(id, _)| id == user_id)
+            .map(|(_, p)| p.clone())
+            .collect())
+    }
+
+    async fn webauthn_get_credential_by_credential_id(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<(Uuid, Passkey)>, Self::Error> {
+        let passkeys = self.passkeys.read().await;
+
+        Ok(passkeys.get(credential_id).cloned())
+    }
+
+    async fn webauthn_update_credential(
+        &self,
+        user_id: &Uuid,
+        passkey: Passkey,
+    ) -> Result<(), Self::Error> {
+        let mut passkeys = self.passkeys.write().await;
+
+        match passkeys.get(passkey.cred_id().as_slice()) {
+            Some((owner, _)) if owner == user_id => {
+                passkeys.insert(passkey.cred_id().to_vec(), (*user_id, passkey));
+                Ok(())
+            }
+            Some(_) => Err(MemoryStoreError::WrongUserId),
+            None => Err(MemoryStoreError::TokenNotFound(format!(
+                "{:x?}",
+                passkey.cred_id()
+            ))),
+        }
+    }
+
+    async fn webauthn_delete_credential(
+        &self,
+        user_id: &Uuid,
+        credential_id: &[u8],
+    ) -> Result<(), Self::Error> {
+        let mut passkeys = self.passkeys.write().await;
+
+        match passkeys.get(credential_id) {
+            Some((owner, _)) if owner == user_id => {
+                passkeys.remove(credential_id);
+                Ok(())
+            }
+            Some(_) => Err(MemoryStoreError::WrongUserId),
+            None => Ok(()),
+        }
+    }
 
     async fn get_session(
         &self,

@@ -7,6 +7,8 @@ use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
 use crate::ratelimit::{NoRateLimit, RateLimiter};
+#[cfg(feature = "webauthn")]
+use crate::webauthn::WebauthnConfig;
 use crate::{models::Allow, routes::Routes};
 use chrono::Duration;
 use std::sync::Arc;
@@ -44,6 +46,8 @@ pub struct AutheryConfig {
     pub email: EmailConfig,
     #[cfg(feature = "oauth")]
     pub oauth: OAuthConfig,
+    #[cfg(feature = "webauthn")]
+    pub webauthn: WebauthnConfig,
     /// The renderer for the built-in pages. Defaults to the bundled Askama
     /// templates; override with [`AutheryConfig::with_pages`].
     #[cfg(feature = "pages")]
@@ -57,6 +61,7 @@ impl AutheryConfig {
         #[cfg(feature = "password")] pass: PasswordConfig,
         #[cfg(feature = "email")] email: EmailConfig,
         #[cfg(feature = "oauth")] oauth: OAuthConfig,
+        #[cfg(feature = "webauthn")] webauthn: WebauthnConfig,
     ) -> Result<Self, AutheryConfigError> {
         if key.len() < MIN_KEY_LEN {
             return Err(AutheryConfigError::KeyTooShort(key.len()));
@@ -77,6 +82,8 @@ impl AutheryConfig {
             email,
             #[cfg(feature = "oauth")]
             oauth,
+            #[cfg(feature = "webauthn")]
+            webauthn,
             #[cfg(feature = "pages")]
             pages: Arc::new(AskamaPages),
         })

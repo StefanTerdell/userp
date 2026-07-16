@@ -49,6 +49,47 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<Self::LoginSession>, Self::Error>> + Send;
 
+    // webauthn store
+    //
+    // Passkeys are stored as opaque `webauthn_rs::prelude::Passkey` blobs
+    // (serde-serializable) keyed by their credential id and owning user.
+    /// Persist a newly registered passkey for the user.
+    #[cfg(feature = "webauthn")]
+    fn webauthn_create_credential(
+        &self,
+        user_id: &Self::UserId,
+        passkey: webauthn_rs::prelude::Passkey,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    /// All of the user's passkeys (used to exclude re-registration and for
+    /// listing on the account page).
+    #[cfg(feature = "webauthn")]
+    fn webauthn_get_credentials(
+        &self,
+        user_id: &Self::UserId,
+    ) -> impl Future<Output = Result<Vec<webauthn_rs::prelude::Passkey>, Self::Error>> + Send;
+    /// Look up a passkey - and the user owning it - by raw credential id.
+    #[cfg(feature = "webauthn")]
+    fn webauthn_get_credential_by_credential_id(
+        &self,
+        credential_id: &[u8],
+    ) -> impl Future<Output = Result<Option<(Self::UserId, webauthn_rs::prelude::Passkey)>, Self::Error>>
+           + Send;
+    /// Replace the stored passkey blob (called after logins to persist
+    /// counter updates and backup-state changes).
+    #[cfg(feature = "webauthn")]
+    fn webauthn_update_credential(
+        &self,
+        user_id: &Self::UserId,
+        passkey: webauthn_rs::prelude::Passkey,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    /// Delete a passkey owned by the user.
+    #[cfg(all(feature = "webauthn", feature = "user"))]
+    fn webauthn_delete_credential(
+        &self,
+        user_id: &Self::UserId,
+        credential_id: &[u8],
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
     // password store
     #[cfg(feature = "password")]
     fn password_get_user_by_password_id(

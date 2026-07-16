@@ -57,4 +57,8 @@ pub use crate::models::oauth::*;
 pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginSession, User};
 
 pub use crate::ratelimit::{NoRateLimit, RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};
+#[cfg(feature = "webauthn")]
+pub use crate::routes::webauthn::WebauthnRoutes;
+#[cfg(feature = "webauthn")]
+pub use crate::webauthn::{WebauthnConfig, WebauthnLoginError, WebauthnRegisterError};
 pub use crate::{config::*, constants::*, core::*, store::*, Authery};

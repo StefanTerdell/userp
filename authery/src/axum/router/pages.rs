@@ -128,6 +128,14 @@ where
         let emails = auth.store.get_user_emails(&user.get_id()).await?;
         #[cfg(feature = "oauth")]
         let oauth_tokens = auth.store.get_user_oauth_tokens(&user.get_id()).await?;
+        #[cfg(feature = "webauthn")]
+        let passkey_credential_ids = auth
+            .store
+            .webauthn_get_credentials(&user.get_id())
+            .await?
+            .iter()
+            .map(|p| p.cred_id().iter().map(|b| format!("{b:02x}")).collect())
+            .collect();
 
         let view = UserTemplate::with(
             &auth,
@@ -140,6 +148,8 @@ where
             &emails,
             #[cfg(feature = "oauth")]
             &oauth_tokens,
+            #[cfg(feature = "webauthn")]
+            passkey_credential_ids,
         );
         Html(auth.pages.render_user(&view)).into_response()
     } else {

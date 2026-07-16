@@ -26,6 +26,13 @@ url = { version = "2.5.8", optional = true }
 password-auth = { version = "1.0.0", optional = true }
 tokio = { version = "1.52.3", features = ["rt"], optional = true }
 
+# webauthn
+webauthn-rs = { version = "0.5.5", features = [
+  "danger-allow-state-serialisation",
+  "conditional-ui",
+], optional = true }
+webauthn-rs-proto = { version = "0.5.5", optional = true }
+
 # oauth
 anyhow = { version = "1.0.103", optional = true }
 jsonwebtoken = { version = "10.4.0", default-features = false, features = [
@@ -50,6 +57,12 @@ default = ["user", "email", "password", "oauth"]
 user = []
 email = ["dep:lettre", "dep:url"]
 otp = ["email"]
+webauthn = [
+  "dep:webauthn-rs",
+  "dep:webauthn-rs-proto",
+  "dep:url",
+  "dep:serde_json",
+]
 password = ["dep:password-auth", "dep:tokio"]
 oauth = [
   "dep:oauth2",

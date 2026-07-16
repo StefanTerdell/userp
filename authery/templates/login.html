@@ -100,6 +100,67 @@
   </div>
   {% endif %}
 
+  {% if let Some(webauthn) = webauthn %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  <div class="webauthn-login">
+    <button type="button" id="passkey-login-button" class="social-button">Sign in with a passkey</button>
+    <div class="error" id="passkey-login-error" role="alert" style="display: none;"></div>
+  </div>
+  <script>
+    (function () {
+      function fromB64url(s) {
+        s = s.replace(/-/g, '+').replace(/_/g, '/');
+        return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
+      }
+      function toB64url(b) {
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      }
+      function fail(e) {
+        var el = document.getElementById('passkey-login-error');
+        el.textContent = 'Passkey login failed: ' + e;
+        el.style.display = 'block';
+      }
+      document.getElementById('passkey-login-button').addEventListener('click', async function () {
+        try {
+          var res = await fetch('{{ webauthn.start_route }}', { method: 'POST' });
+          var rcr = await res.json();
+          if (!res.ok) { return fail(rcr.error || res.status); }
+          var pk = rcr.publicKey;
+          pk.challenge = fromB64url(pk.challenge);
+          if (pk.allowCredentials) {
+            pk.allowCredentials = pk.allowCredentials.map(function (c) {
+              c.id = fromB64url(c.id); return c;
+            });
+          }
+          var cred = await navigator.credentials.get({ publicKey: pk });
+          var body = {
+            id: cred.id,
+            rawId: toB64url(cred.rawId),
+            type: cred.type,
+            extensions: cred.getClientExtensionResults(),
+            response: {
+              authenticatorData: toB64url(cred.response.authenticatorData),
+              clientDataJSON: toB64url(cred.response.clientDataJSON),
+              signature: toB64url(cred.response.signature),
+              userHandle: cred.response.userHandle ? toB64url(cred.response.userHandle) : null
+            }
+          };
+          var fin = await fetch('{{ webauthn.finish_route }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          var out = await fin.json();
+          if (fin.ok) { window.location = out.next || '/'; } else { fail(out.error || fin.status); }
+        } catch (e) { fail(e); }
+      });
+    })();
+  </script>
+  {% endif %}
+
   <div class="links">
     <a href="{{ signup_route }}">Don't have an account? Sign up</a>
   </div>

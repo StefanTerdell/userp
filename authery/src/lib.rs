@@ -6,6 +6,8 @@ pub mod core;
 pub mod models;
 pub mod prelude;
 pub mod ratelimit;
+#[cfg(feature = "webauthn")]
+pub mod webauthn;
 pub mod reexports;
 pub mod routes;
 pub mod store;

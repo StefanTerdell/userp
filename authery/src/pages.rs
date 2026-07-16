@@ -136,6 +136,7 @@ pub struct UserTemplate<'a> {
     pub password: Option<UserTemplatePasswordInfo<'a>>,
     pub email: Option<UserTemplateEmailInfo<'a>>,
     pub oauth: Option<UserTemplateOAuthInfo<'a>>,
+    pub webauthn: Option<UserTemplateWebauthnInfo<'a>>,
 }
 
 #[cfg(feature = "user")]
@@ -152,6 +153,7 @@ impl UserTemplate<'_> {
         error: Option<&'a str>,
         #[cfg(feature = "email")] emails: &'a [S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &'a [S::OAuthToken],
+        #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
     ) -> UserTemplate<'a> {
         UserTemplate {
             message,
@@ -208,6 +210,15 @@ impl UserTemplate<'_> {
             },
             #[cfg(not(feature = "oauth"))]
             oauth: None,
+            #[cfg(feature = "webauthn")]
+            webauthn: Some(UserTemplateWebauthnInfo {
+                credential_ids: passkey_credential_ids,
+                register_start_route: &auth.routes.webauthn.user_webauthn_register_start,
+                register_finish_route: &auth.routes.webauthn.user_webauthn_register_finish,
+                delete_action_route: &auth.routes.webauthn.user_webauthn_delete,
+            }),
+            #[cfg(not(feature = "webauthn"))]
+            webauthn: None,
         }
     }
 
@@ -222,6 +233,7 @@ impl UserTemplate<'_> {
         error: Option<&str>,
         #[cfg(feature = "email")] emails: &[S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
+        #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
     ) -> Result<String, askama::Error> {
         Self::with(
             auth,
@@ -234,6 +246,8 @@ impl UserTemplate<'_> {
             emails,
             #[cfg(feature = "oauth")]
             oauth_tokens,
+            #[cfg(feature = "webauthn")]
+            passkey_credential_ids,
         )
         .render()
     }
@@ -252,6 +266,20 @@ pub struct TemplateOtpInfo<'a> {
     pub action_route: &'a str,
 }
 
+pub struct TemplateWebauthnInfo<'a> {
+    pub start_route: &'a str,
+    pub finish_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateWebauthnInfo<'a> {
+    /// Hex-encoded credential ids of the user's registered passkeys.
+    pub credential_ids: Vec<String>,
+    pub register_start_route: &'a str,
+    pub register_finish_route: &'a str,
+    pub delete_action_route: &'a str,
+}
+
 pub struct TemplatePasswordInfo<'a> {
     pub action_route: &'a str,
     pub reset_route: Option<&'a str>,
@@ -266,6 +294,7 @@ pub struct LoginTemplate<'a> {
     pub password: Option<TemplatePasswordInfo<'a>>,
     pub email: Option<TemplateEmailInfo<'a>>,
     pub otp: Option<TemplateOtpInfo<'a>>,
+    pub webauthn: Option<TemplateWebauthnInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub signup_route: &'a str,
 }
@@ -309,6 +338,13 @@ impl LoginTemplate<'_> {
             }),
             #[cfg(not(feature = "otp"))]
             otp: None,
+            #[cfg(feature = "webauthn")]
+            webauthn: Some(TemplateWebauthnInfo {
+                start_route: &auth.routes.webauthn.login_webauthn_start,
+                finish_route: &auth.routes.webauthn.login_webauthn_finish,
+            }),
+            #[cfg(not(feature = "webauthn"))]
+            webauthn: None,
             #[cfg(feature = "oauth")]
             oauth: ({
                 if oauth_login_providers.is_empty() {

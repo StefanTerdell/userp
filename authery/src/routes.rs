@@ -19,6 +19,10 @@ use oauth::*;
 pub mod password;
 #[cfg(feature = "password")]
 use password::*;
+#[cfg(feature = "webauthn")]
+pub mod webauthn;
+#[cfg(feature = "webauthn")]
+use webauthn::*;
 use serde::{Deserialize, Serialize};
 
 use std::fmt::Display;
@@ -40,6 +44,9 @@ pub struct Routes<T = String> {
     #[cfg(feature = "user")]
     /// Contains routes used to control the user account and associated entities
     pub user: UserActionRoutes<T>,
+    #[cfg(feature = "webauthn")]
+    /// Contains the JSON endpoints for the webauthn (passkey) ceremonies
+    pub webauthn: WebauthnRoutes<T>,
     /// Post - deletes the current UserLogin session and redirects the user to pages.post_logout
     pub logout: T,
     /// Get - returns 200 if the current session is still present on the server. Returns 401 if not.
@@ -58,6 +65,8 @@ impl Default for Routes<&'static str> {
             password: PasswordActionRoutes::default(),
             #[cfg(feature = "user")]
             user: UserActionRoutes::default(),
+            #[cfg(feature = "webauthn")]
+            webauthn: WebauthnRoutes::default(),
             user_verify_session: "/verify-session",
             logout: "/logout",
         }
@@ -88,6 +97,8 @@ impl<'a> From<&'a Routes<String>> for Routes<&'a str> {
             password: value.password.as_ref().into(),
             #[cfg(feature = "user")]
             user: value.user.as_ref().into(),
+            #[cfg(feature = "webauthn")]
+            webauthn: value.webauthn.as_ref().into(),
             user_verify_session: &value.user_verify_session,
             logout: &value.logout,
         }
@@ -107,6 +118,8 @@ impl<T: Display> Routes<T> {
             password: self.password.with_prefix(&prefix),
             #[cfg(feature = "user")]
             user: self.user.with_prefix(&prefix),
+            #[cfg(feature = "webauthn")]
+            webauthn: self.webauthn.with_prefix(&prefix),
             user_verify_session: format!("{prefix}{}", self.user_verify_session),
             logout: format!("{prefix}{}", self.logout),
         }

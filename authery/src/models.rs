@@ -75,6 +75,12 @@ pub enum LoginMethod {
         /// The email-address the code was sent to
         address: String,
     },
+    #[cfg(feature = "webauthn")]
+    /// The login session was created with a passkey/authenticator
+    Webauthn {
+        /// The hex-encoded credential id of the passkey used
+        credential_id: String,
+    },
     #[cfg(feature = "oauth")]
     /// The login session was created using the Oauth method
     OAuth {
