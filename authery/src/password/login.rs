@@ -1,3 +1,4 @@
+use crate::ratelimit::{RateLimitOp, RateLimited};
 use crate::{
     core::CoreAuthery,
     models::{User, AutheryCookies},
@@ -13,6 +14,8 @@ pub enum PasswordLoginError<T: std::error::Error> {
     #[error("Wrong email or password")]
     WrongPassword,
     #[error(transparent)]
+    RateLimited(RateLimited),
+    #[error(transparent)]
     StoreError(#[from] T),
 }
 
@@ -26,6 +29,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         if self.pass.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
             return Err(PasswordLoginError::NotAllowed);
         };
+
+        self.rate_limiter
+            .check(RateLimitOp::PasswordAttempt { password_id })
+            .await
+            .map_err(PasswordLoginError::RateLimited)?;
 
         let allow_signup = self
             .pass

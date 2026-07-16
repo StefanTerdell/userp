@@ -83,6 +83,8 @@ impl SmtpSettings {
 #[derive(Debug, Error)]
 pub enum SendEmailChallengeError<StoreError: std::error::Error> {
     #[error(transparent)]
+    RateLimited(crate::ratelimit::RateLimited),
+    #[error(transparent)]
     Url(url::ParseError),
     #[error(transparent)]
     Address(lettre::address::AddressError),
@@ -102,6 +104,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         message: String,
         next: Option<String>,
     ) -> Result<(), SendEmailChallengeError<S::Error>> {
+        self.rate_limiter
+            .check(crate::ratelimit::RateLimitOp::EmailSend { address: &address })
+            .await
+            .map_err(SendEmailChallengeError::RateLimited)?;
+
         let code = Uuid::new_v4().to_string().replace('-', "");
 
         let challenge = self

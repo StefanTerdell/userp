@@ -53,6 +53,7 @@ where
             allow_signup: config.allow_signup,
             allow_login: config.allow_login,
             session_lifetime: config.session_lifetime,
+            rate_limiter: config.rate_limiter,
             routes: config.routes,
             cookies,
             store,

@@ -21,6 +21,7 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub allow_signup: Allow,
     pub allow_login: Allow,
     pub session_lifetime: Duration,
+    pub rate_limiter: std::sync::Arc<dyn crate::ratelimit::RateLimiter>,
     pub cookies: C,
     pub store: S,
     #[cfg(feature = "password")]

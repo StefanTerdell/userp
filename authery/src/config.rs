@@ -6,9 +6,9 @@ use crate::oauth::OAuthConfig;
 use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
+use crate::ratelimit::{NoRateLimit, RateLimiter};
 use crate::{models::Allow, routes::Routes};
 use chrono::Duration;
-#[cfg(feature = "pages")]
 use std::sync::Arc;
 
 /// The minimum length, in bytes, of the cookie-encryption key. `axum-extra`'s
@@ -30,6 +30,9 @@ pub struct AutheryConfig {
     /// Absolute lifetime of a login session. Sessions older than this are
     /// treated as logged-out and evicted. Defaults to 30 days.
     pub session_lifetime: Duration,
+    /// Consulted before abusable operations (password attempts, email sends).
+    /// Defaults to no limiting; see [`crate::ratelimit`].
+    pub rate_limiter: Arc<dyn RateLimiter>,
     pub routes: Routes<String>,
     #[cfg(feature = "password")]
     pub pass: PasswordConfig,
@@ -61,6 +64,7 @@ impl AutheryConfig {
             allow_signup: Allow::OnSelf,
             allow_login: Allow::OnSelf,
             session_lifetime: Duration::days(30),
+            rate_limiter: Arc::new(NoRateLimit),
             routes: routes.into(),
             #[cfg(feature = "password")]
             pass,
@@ -89,6 +93,12 @@ impl AutheryConfig {
     /// Set the absolute session lifetime.
     pub fn with_session_lifetime(mut self, session_lifetime: Duration) -> Self {
         self.session_lifetime = session_lifetime;
+        self
+    }
+
+    /// Install a [`RateLimiter`] consulted before abusable operations.
+    pub fn with_rate_limiter(mut self, rate_limiter: impl RateLimiter + 'static) -> Self {
+        self.rate_limiter = Arc::new(rate_limiter);
         self
     }
 

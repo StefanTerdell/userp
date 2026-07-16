@@ -69,7 +69,9 @@ where
         }
         Err(err) => match err {
             PasswordLoginError::StoreError(err) => Err(err),
-            PasswordLoginError::NotAllowed | PasswordLoginError::WrongPassword => {
+            PasswordLoginError::NotAllowed
+            | PasswordLoginError::WrongPassword
+            | PasswordLoginError::RateLimited(_) => {
                 let next = format!(
                     "{login_route}?error={}",
                     urlencoding::encode(&err.to_string())

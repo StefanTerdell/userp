@@ -1,7 +1,9 @@
 mod models;
+mod ratelimit;
 mod store;
 mod templates;
 
+use self::ratelimit::FixedWindowRateLimiter;
 use self::store::MemoryStore;
 use self::templates::{IndexTemplate, ProtectedTemplate};
 
@@ -74,7 +76,8 @@ async fn main() {
             )),
     )
     .expect("valid auth config")
-    .with_https_only(false);
+    .with_https_only(false)
+    .with_rate_limiter(FixedWindowRateLimiter::default());
 
     let auth_router = auth.router::<MemoryStore, AppState>();
 
