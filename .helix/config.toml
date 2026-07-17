@@ -1,11 +1,12 @@
 [editor]
+# Each example app is its own cargo workspace, so rust-analyzer resolves
+# exactly the features that app enables (a single shared workspace would
+# unify features across all apps and break e.g. password-only's view).
 workspace-lsp-roots = [
-  "examples"
-  # "examples/email-otp",
-  # "examples/full",
-  # "examples/memory-store",
-  # "examples/multi-tenant",
-  # "examples/password-only",
-  # "examples/postgres-store",
-  # "examples/target",
+  "examples/email-otp",
+  "examples/full",
+  "examples/memory-store",
+  "examples/multi-tenant",
+  "examples/password-only",
+  "examples/postgres-store",
 ]
