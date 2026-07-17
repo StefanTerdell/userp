@@ -22,7 +22,7 @@
     <input type="hidden" name="number" value="{{ number }}" />
     <div class="form-group">
       <label for="code">Code</label>
-      <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code"
+      <input type="text" id="code" name="code" {% if let Some(mode) = code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code"
         required autofocus>
     </div>
     <button type="submit">Continue</button>

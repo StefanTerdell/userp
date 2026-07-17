@@ -285,7 +285,7 @@ mod otp_factor {
                 .await
                 .map_err(MfaOtpError::RateLimited)?;
 
-            let digits = crate::codes::generate_code();
+            let digits = self.email.code_generator.generate();
             let key = challenge_key(&address, &digits);
 
             self.store
@@ -580,7 +580,7 @@ mod sms_factor {
                 .await
                 .map_err(MfaSmsError::RateLimited)?;
 
-            let digits = crate::codes::generate_code();
+            let digits = self.sms.code_generator.generate();
             let key = challenge_key(&number, &digits);
 
             self.store

@@ -22,8 +22,6 @@ use crate::{
 use chrono::Utc;
 use thiserror::Error;
 
-use crate::codes::generate_code;
-
 fn challenge_key(address: &str, code: &str) -> String {
     format!("otp:{address}:{code}")
 }
@@ -101,7 +99,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(SendEmailChallengeError::RateLimited)?;
 
-        let digits = generate_code();
+        let digits = self.email.code_generator.generate();
         // Store the code namespaced per address; mail only the digits.
         let key = challenge_key(&address, &digits);
 

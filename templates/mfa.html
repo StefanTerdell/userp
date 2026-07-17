@@ -122,7 +122,7 @@
     <form action="{{ sms.action_route }}" method="post" id="mfa-sms-form">
       <div class="form-group">
         <label for="sms-code">Texted code</label>
-        <input type="text" id="sms-code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
+        <input type="text" id="sms-code" name="code" {% if let Some(mode) = sms.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = sms.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = sms.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code">
       </div>
       <button type="submit">Verify</button>
       {% if let Some(next) = next %}
@@ -150,8 +150,8 @@
     <form action="{{ otp.action_route }}" method="post" id="mfa-otp-form">
       <div class="form-group">
         <label for="code">Code</label>
-        <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code"
-          required>
+        <input type="text" id="code" name="code" {% if let Some(mode) = otp.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = otp.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = otp.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code"
+        required>
       </div>
       <button type="submit">Verify</button>
       {% if let Some(next) = next %}

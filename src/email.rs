@@ -28,6 +28,10 @@ pub struct EmailConfig {
     pub challenge_lifetime: Duration,
     pub base_url: Url,
     pub smtp: SmtpSettings,
+    /// Generates the one-time codes for the `otp` flows (and the emailed MFA
+    /// factor). Defaults to six digits; see [`crate::codes`].
+    #[cfg(feature = "otp")]
+    pub code_generator: std::sync::Arc<dyn crate::codes::CodeGenerator>,
 }
 
 impl EmailConfig {
@@ -38,7 +42,19 @@ impl EmailConfig {
             challenge_lifetime: Duration::minutes(5),
             base_url,
             smtp,
+            #[cfg(feature = "otp")]
+            code_generator: std::sync::Arc::new(crate::codes::NumericCode::default()),
         }
+    }
+
+    /// Replace the one-time-code generator; see [`crate::codes`].
+    #[cfg(feature = "otp")]
+    pub fn with_code_generator(
+        mut self,
+        code_generator: impl crate::codes::CodeGenerator + 'static,
+    ) -> Self {
+        self.code_generator = std::sync::Arc::new(code_generator);
+        self
     }
 
     pub fn with_allow_signup(mut self, allow_signup: Allow) -> Self {

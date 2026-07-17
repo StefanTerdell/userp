@@ -184,9 +184,15 @@
 //! smtp://localhost:1025                                 plain, for Mailhog etc.
 //! ```
 //!
-//! The `otp` feature sends six-digit codes instead of links - same challenge
-//! store, different UX. Codes are CSPRNG-generated, namespaced per address,
-//! single-use, short-lived and rate-limited through your `RateLimiter`.
+//! The `otp` feature sends one-time codes instead of links - same challenge
+//! store, different UX. Codes are namespaced per address, single-use,
+//! short-lived and rate-limited through your `RateLimiter`. The generator is
+//! pluggable per channel (`CodeGenerator` via
+//! `with_code_generator` on `EmailConfig`/`SmsConfig`); the default is
+//! CSPRNG-backed six digits, and the bundled code-entry inputs adapt to a
+//! custom generator through its input-mode and length hints. Remember that
+//! any typeable code is guessable: the load-bearing control is the rate
+//! limiter, not code length.
 //!
 //! ## OAuth2 & OIDC (`oauth`)
 //!
@@ -374,8 +380,8 @@
 
 #![cfg_attr(not(feature = "default"), allow(unused))]
 
-#[cfg(any(feature = "otp", feature = "sms", feature = "mfa"))]
-pub(crate) mod codes;
+#[cfg(any(feature = "otp", feature = "sms"))]
+pub mod codes;
 pub mod config;
 pub mod constants;
 pub mod core;

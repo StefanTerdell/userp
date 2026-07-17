@@ -58,6 +58,8 @@ pub use crate::models::email::*;
 pub use crate::models::oauth::*;
 pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginMethodRules, LoginSession, User};
 
+#[cfg(any(feature = "otp", feature = "sms"))]
+pub use crate::codes::{CodeGenerator, NumericCode};
 #[cfg(feature = "mfa")]
 pub use crate::mfa::{MfaError, MfaFactors, MfaPolicy};
 #[cfg(feature = "sms")]

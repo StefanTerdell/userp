@@ -511,6 +511,7 @@ pub struct MfaOtpTemplateInfo<'a> {
     pub action_route: &'a str,
     /// A masked rendering of the address the code goes to, e.g. `s***@x.com`.
     pub address_hint: String,
+    pub code_input: CodeInputHints,
 }
 
 #[cfg(feature = "mfa")]
@@ -518,6 +519,7 @@ pub struct MfaSmsTemplateInfo<'a> {
     pub action_route: &'a str,
     /// A masked rendering of the number the code goes to, e.g. `+46***89`.
     pub number_hint: String,
+    pub code_input: CodeInputHints,
 }
 
 #[cfg(feature = "mfa")]
@@ -543,6 +545,34 @@ pub struct MfaTemplate<'a> {
     pub webauthn: Option<MfaWebauthnTemplateInfo<'a>>,
 }
 
+/// How the bundled pages should render a code input, derived from the
+/// channel's [`CodeGenerator`](crate::codes::CodeGenerator) hints.
+#[cfg(any(feature = "otp", feature = "sms"))]
+pub struct CodeInputHints {
+    pub input_mode: Option<String>,
+    pub max_length: Option<u8>,
+    pub pattern: Option<String>,
+}
+
+#[cfg(any(feature = "otp", feature = "sms"))]
+impl CodeInputHints {
+    pub fn from_generator(generator: &dyn crate::codes::CodeGenerator) -> Self {
+        let input_mode = generator.html_input_mode().map(str::to_string);
+        let max_length = generator.code_length();
+        let pattern = match (input_mode.as_deref(), max_length) {
+            (Some("numeric"), Some(len)) => Some(format!("[0-9]{{{len}}}")),
+            (Some("numeric"), None) => Some("[0-9]*".to_string()),
+            _ => None,
+        };
+
+        Self {
+            input_mode,
+            max_length,
+            pattern,
+        }
+    }
+}
+
 /// The SMS code entry page, mirroring [`OtpTemplate`] for phone numbers.
 #[cfg(feature = "sms")]
 #[derive(Template)]
@@ -553,6 +583,7 @@ pub struct SmsTemplate<'a> {
     pub next: Option<&'a str>,
     pub message: Option<&'a str>,
     pub error: Option<&'a str>,
+    pub code_input: CodeInputHints,
 }
 
 /// The one-time-code entry page: the user has been sent a code and types it
@@ -566,6 +597,7 @@ pub struct OtpTemplate<'a> {
     pub next: Option<&'a str>,
     pub message: Option<&'a str>,
     pub error: Option<&'a str>,
+    pub code_input: CodeInputHints,
 }
 
 /// Renders the built-in pages to HTML. Implement this and register it with

@@ -96,6 +96,9 @@ where
             .map(|address| crate::pages::MfaOtpTemplateInfo {
                 action_route: &auth.routes.mfa.login_mfa_otp,
                 address_hint: mask_address(&address),
+                code_input: crate::pages::CodeInputHints::from_generator(
+                    auth.email.code_generator.as_ref(),
+                ),
             }),
         #[cfg(not(feature = "otp"))]
         otp: None,
@@ -105,6 +108,9 @@ where
             .map(|number| crate::pages::MfaSmsTemplateInfo {
                 action_route: &auth.routes.mfa.login_mfa_sms,
                 number_hint: mask_number(&number),
+                code_input: crate::pages::CodeInputHints::from_generator(
+                    auth.sms.code_generator.as_ref(),
+                ),
             }),
         #[cfg(not(feature = "sms"))]
         sms: None,
@@ -172,6 +178,7 @@ where
         next: query.next.as_deref(),
         message: query.message.as_deref(),
         error: query.error.as_deref(),
+        code_input: crate::pages::CodeInputHints::from_generator(auth.sms.code_generator.as_ref()),
     };
     Ok(Html(auth.pages.render_sms(&view)))
 }
@@ -193,6 +200,7 @@ where
         next: query.next.as_deref(),
         message: query.message.as_deref(),
         error: query.error.as_deref(),
+        code_input: crate::pages::CodeInputHints::from_generator(auth.sms.code_generator.as_ref()),
     };
     Ok(Html(auth.pages.render_sms(&view)))
 }
@@ -223,6 +231,9 @@ where
         next: query.next.as_deref(),
         message: query.message.as_deref(),
         error: query.error.as_deref(),
+        code_input: crate::pages::CodeInputHints::from_generator(
+            auth.email.code_generator.as_ref(),
+        ),
     };
     Ok(Html(auth.pages.render_otp(&view)))
 }
@@ -244,6 +255,9 @@ where
         next: query.next.as_deref(),
         message: query.message.as_deref(),
         error: query.error.as_deref(),
+        code_input: crate::pages::CodeInputHints::from_generator(
+            auth.email.code_generator.as_ref(),
+        ),
     };
     Ok(Html(auth.pages.render_otp(&view)))
 }

@@ -14,7 +14,6 @@
 
 pub mod providers;
 
-use crate::codes::generate_code;
 use crate::{
     core::CoreAuthery,
     models::{Allow, AutheryCookies, LoginMethod, User, email::EmailChallenge, sms::UserPhone},
@@ -46,6 +45,9 @@ pub struct SmsConfig {
     pub allow_login: Option<Allow>,
     pub allow_signup: Option<Allow>,
     pub challenge_lifetime: Duration,
+    /// Generates the one-time codes for the `sms` flows (and the texted MFA
+    /// factor). Defaults to six digits; see [`crate::codes`].
+    pub code_generator: Arc<dyn crate::codes::CodeGenerator>,
 }
 
 impl SmsConfig {
@@ -55,7 +57,17 @@ impl SmsConfig {
             allow_login: None,
             allow_signup: None,
             challenge_lifetime: Duration::minutes(5),
+            code_generator: Arc::new(crate::codes::NumericCode::default()),
         }
+    }
+
+    /// Replace the one-time-code generator; see [`crate::codes`].
+    pub fn with_code_generator(
+        mut self,
+        code_generator: impl crate::codes::CodeGenerator + 'static,
+    ) -> Self {
+        self.code_generator = Arc::new(code_generator);
+        self
     }
 
     pub fn with_allow_login(mut self, allow_login: Allow) -> Self {
@@ -143,7 +155,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(SmsInitError::RateLimited)?;
 
-        let digits = generate_code();
+        let digits = self.sms.code_generator.generate();
         let key = challenge_key(&number, &digits);
 
         let challenge = self
