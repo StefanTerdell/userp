@@ -236,12 +236,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         code: &str,
     ) -> Result<u64, TotpError<S::Error>> {
         let user_id_str = user_id.to_string();
-        self.rate_limiter
-            .check(RateLimitOp::TotpAttempt {
-                user_id: &user_id_str,
-            })
-            .await
-            .map_err(TotpError::RateLimited)?;
+        self.check_rate(RateLimitOp::TotpAttempt {
+            user_id: &user_id_str,
+        })
+        .await
+        .map_err(TotpError::RateLimited)?;
 
         // The account label only affects the otpauth URL, not verification.
         let totp = build_totp::<S::Error>(&credential.secret, &self.totp.issuer, "verify")?;
@@ -257,12 +256,20 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         });
 
         let Some(step) = matched_step else {
+            self.emit(crate::events::AuthEvent::CodeRejected {
+                channel: crate::events::CodeChannel::Totp,
+                identifier: user_id_str,
+            });
             return Err(TotpError::WrongCode);
         };
 
         // Replay guard (RFC 6238 §5.2): each step's code is single-use, and
         // steps only move forward.
         if credential.last_used_step.is_some_and(|last| step <= last) {
+            self.emit(crate::events::AuthEvent::CodeRejected {
+                channel: crate::events::CodeChannel::Totp,
+                identifier: user_id_str,
+            });
             return Err(TotpError::WrongCode);
         }
 

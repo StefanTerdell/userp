@@ -650,6 +650,7 @@ impl AuthBuilder {
             session_lifetime: self.session_lifetime,
             max_concurrent_sessions: self.max_concurrent_sessions,
             rate_limiter: self.rate_limiter,
+            events: Arc::new(authery::events::TracingEvents),
             bearer_token: None,
             cookies: TestCookies::default(),
             store: self.store,

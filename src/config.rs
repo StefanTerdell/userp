@@ -57,6 +57,10 @@ pub struct AutheryConfig {
     /// Consulted before abusable operations (password attempts, email sends).
     /// Defaults to no limiting; see [`crate::ratelimit`].
     pub rate_limiter: Arc<dyn RateLimiter>,
+    /// Receives auth events (failed logins, rejected codes, rate-limit
+    /// hits) that your store never sees. Defaults to logging through
+    /// `tracing`; see [`crate::events`].
+    pub events: Arc<dyn crate::events::AuthEventHandler>,
     pub routes: Routes<String>,
     #[cfg(feature = "password")]
     pub pass: PasswordConfig,
@@ -109,6 +113,7 @@ impl AutheryConfig {
             bearer_auth: false,
             bearer_token_prefix: None,
             rate_limiter: Arc::new(NoRateLimit),
+            events: Arc::new(crate::events::TracingEvents),
             routes: routes.into(),
             #[cfg(feature = "password")]
             pass,
@@ -165,6 +170,15 @@ impl AutheryConfig {
     /// [`AutheryConfig::bearer_auth`].
     pub fn with_bearer_auth(mut self, bearer_auth: bool) -> Self {
         self.bearer_auth = bearer_auth;
+        self
+    }
+
+    /// Replace the auth-event handler; see [`crate::events`].
+    pub fn with_event_handler(
+        mut self,
+        events: impl crate::events::AuthEventHandler + 'static,
+    ) -> Self {
+        self.events = Arc::new(events);
         self
     }
 

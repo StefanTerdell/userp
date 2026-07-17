@@ -330,6 +330,15 @@
 //! };
 //! ```
 //!
+//! # Observability
+//!
+//! Authery logs every auth-relevant event through `tracing` out of the
+//! box: successful logins at `info`; failed passwords, rejected codes,
+//! failed OAuth callbacks and rate-limit hits at `warn`. To do more than
+//! log (alert, count, lock accounts), implement the one-method
+//! `AuthEventHandler` and register it with `.with_event_handler(...)` -
+//! these are exactly the failures your store never sees.
+//!
 //! # Rate limiting
 //!
 //! Authery calls your [`RateLimiter`](ratelimit::RateLimiter) before
@@ -406,6 +415,7 @@ pub mod codes;
 pub mod config;
 pub mod constants;
 pub mod core;
+pub mod events;
 #[cfg(feature = "mfa")]
 pub mod mfa;
 pub mod models;

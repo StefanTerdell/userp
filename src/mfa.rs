@@ -288,8 +288,7 @@ mod otp_factor {
         pub async fn mfa_otp_init(&self) -> Result<String, MfaOtpError<S::Error>> {
             let (_pending, address) = self.mfa_otp_target().await?;
 
-            self.rate_limiter
-                .check(RateLimitOp::EmailSend { address: &address })
+            self.check_rate(RateLimitOp::EmailSend { address: &address })
                 .await
                 .map_err(MfaOtpError::RateLimited)?;
 
@@ -319,8 +318,7 @@ mod otp_factor {
         pub async fn mfa_otp_verify(self, code: &str) -> Result<Self, MfaOtpError<S::Error>> {
             let (pending, address) = self.mfa_otp_target().await?;
 
-            self.rate_limiter
-                .check(RateLimitOp::OtpAttempt { address: &address })
+            self.check_rate(RateLimitOp::OtpAttempt { address: &address })
                 .await
                 .map_err(MfaOtpError::RateLimited)?;
 
@@ -330,10 +328,18 @@ mod otp_factor {
                 .await
                 .map_err(MfaOtpError::Store)?
             else {
+                self.emit(crate::events::AuthEvent::CodeRejected {
+                    channel: crate::events::CodeChannel::MfaEmail,
+                    identifier: address.clone(),
+                });
                 return Err(MfaOtpError::WrongCode);
             };
 
             if challenge.get_expires() < Utc::now() {
+                self.emit(crate::events::AuthEvent::CodeRejected {
+                    channel: crate::events::CodeChannel::MfaEmail,
+                    identifier: address,
+                });
                 return Err(MfaOtpError::WrongCode);
             }
 
@@ -580,8 +586,7 @@ mod sms_factor {
         pub async fn mfa_sms_init(&self) -> Result<String, MfaSmsError<S::Error>> {
             let (_pending, number) = self.mfa_sms_target().await?;
 
-            self.rate_limiter
-                .check(RateLimitOp::SmsSend { number: &number })
+            self.check_rate(RateLimitOp::SmsSend { number: &number })
                 .await
                 .map_err(MfaSmsError::RateLimited)?;
 
@@ -611,8 +616,7 @@ mod sms_factor {
         pub async fn mfa_sms_verify(self, code: &str) -> Result<Self, MfaSmsError<S::Error>> {
             let (pending, number) = self.mfa_sms_target().await?;
 
-            self.rate_limiter
-                .check(RateLimitOp::SmsAttempt { number: &number })
+            self.check_rate(RateLimitOp::SmsAttempt { number: &number })
                 .await
                 .map_err(MfaSmsError::RateLimited)?;
 
@@ -622,10 +626,18 @@ mod sms_factor {
                 .await
                 .map_err(MfaSmsError::Store)?
             else {
+                self.emit(crate::events::AuthEvent::CodeRejected {
+                    channel: crate::events::CodeChannel::MfaSms,
+                    identifier: number.clone(),
+                });
                 return Err(MfaSmsError::WrongCode);
             };
 
             if challenge.get_expires() < Utc::now() {
+                self.emit(crate::events::AuthEvent::CodeRejected {
+                    channel: crate::events::CodeChannel::MfaSms,
+                    identifier: number,
+                });
                 return Err(MfaSmsError::WrongCode);
             }
 
@@ -777,12 +789,11 @@ mod recovery {
 
             let user_id = pending.get_user_id();
 
-            self.rate_limiter
-                .check(RateLimitOp::RecoveryAttempt {
-                    user_id: &user_id.to_string(),
-                })
-                .await
-                .map_err(MfaRecoveryError::RateLimited)?;
+            self.check_rate(RateLimitOp::RecoveryAttempt {
+                user_id: &user_id.to_string(),
+            })
+            .await
+            .map_err(MfaRecoveryError::RateLimited)?;
 
             let consumed = self
                 .store
@@ -791,6 +802,10 @@ mod recovery {
                 .map_err(MfaRecoveryError::Store)?;
 
             if !consumed {
+                self.emit(crate::events::AuthEvent::CodeRejected {
+                    channel: crate::events::CodeChannel::RecoveryCode,
+                    identifier: user_id.to_string(),
+                });
                 return Err(MfaRecoveryError::WrongCode);
             }
 

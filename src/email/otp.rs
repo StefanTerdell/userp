@@ -51,6 +51,13 @@ pub enum OtpVerifyError<StoreError: std::error::Error> {
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    fn emit_otp_code_rejected(&self, address: &str) {
+        self.emit(crate::events::AuthEvent::CodeRejected {
+            channel: crate::events::CodeChannel::EmailOtp,
+            identifier: address.to_string(),
+        });
+    }
+
     /// Send a login code to the address. The generic error message on the
     /// verify side means this deliberately does not reveal whether a user
     /// exists.
@@ -94,8 +101,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: String,
         next: Option<String>,
     ) -> Result<(), SendEmailChallengeError<S::Error>> {
-        self.rate_limiter
-            .check(RateLimitOp::EmailSend { address: &address })
+        self.check_rate(RateLimitOp::EmailSend { address: &address })
             .await
             .map_err(SendEmailChallengeError::RateLimited)?;
 
@@ -206,8 +212,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: &str,
         code: &str,
     ) -> Result<S::EmailChallenge, OtpVerifyError<S::Error>> {
-        self.rate_limiter
-            .check(RateLimitOp::OtpAttempt { address })
+        self.check_rate(RateLimitOp::OtpAttempt { address })
             .await
             .map_err(OtpVerifyError::RateLimited)?;
 
@@ -216,10 +221,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .consume_challenge(challenge_key(address, code))
             .await?
         else {
+            self.emit_otp_code_rejected(address);
             return Err(OtpVerifyError::WrongCode);
         };
 
         if challenge.get_expires() < Utc::now() {
+            self.emit_otp_code_rejected(address);
             return Err(OtpVerifyError::WrongCode);
         }
 

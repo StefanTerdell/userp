@@ -23,6 +23,8 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub session_lifetime: Duration,
     pub max_concurrent_sessions: Option<usize>,
     pub rate_limiter: std::sync::Arc<dyn crate::ratelimit::RateLimiter>,
+    /// Receives auth events; see [`crate::events`].
+    pub events: std::sync::Arc<dyn crate::events::AuthEventHandler>,
     /// A bearer token presented by the client (the transport layer populates
     /// this from the Authorization header when bearer auth is enabled). When
     /// present it takes precedence over the session cookie.
@@ -48,6 +50,51 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    /// Hand an event to the registered handler; see [`crate::events`].
+    pub(crate) fn emit(&self, event: crate::events::AuthEvent) {
+        self.events.on_event(event);
+    }
+
+    /// Consult the rate limiter and emit an event when it blocks.
+    pub(crate) async fn check_rate(
+        &self,
+        op: crate::ratelimit::RateLimitOp<'_>,
+    ) -> Result<(), crate::ratelimit::RateLimited> {
+        use crate::ratelimit::RateLimitOp;
+
+        #[allow(unreachable_patterns)]
+        let (operation, identifier): (&'static str, String) = match &op {
+            #[cfg(feature = "password")]
+            RateLimitOp::PasswordAttempt { password_id } => {
+                ("password_attempt", password_id.to_string())
+            }
+            #[cfg(feature = "email")]
+            RateLimitOp::EmailSend { address } => ("email_send", address.to_string()),
+            #[cfg(feature = "otp")]
+            RateLimitOp::OtpAttempt { address } => ("otp_attempt", address.to_string()),
+            #[cfg(feature = "totp")]
+            RateLimitOp::TotpAttempt { user_id } => ("totp_attempt", user_id.to_string()),
+            #[cfg(feature = "mfa")]
+            RateLimitOp::RecoveryAttempt { user_id } => ("recovery_attempt", user_id.to_string()),
+            #[cfg(feature = "sms")]
+            RateLimitOp::SmsSend { number } => ("sms_send", number.to_string()),
+            #[cfg(feature = "sms")]
+            RateLimitOp::SmsAttempt { number } => ("sms_attempt", number.to_string()),
+            _ => ("other", String::new()),
+        };
+
+        let result = self.rate_limiter.check(op).await;
+
+        if result.is_err() {
+            self.emit(crate::events::AuthEvent::RateLimited {
+                operation,
+                identifier,
+            });
+        }
+
+        result
+    }
+
     /// Create a login session for the user. The built-in flows call this
     /// after verifying their credentials; it is public so apps with custom
     /// authentication methods can mint sessions through the same path
@@ -66,6 +113,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let expires = Utc::now() + self.session_lifetime;
         let session = self.store.create_session(user_id, method, expires).await?;
+
+        self.emit(crate::events::AuthEvent::LoginSucceeded {
+            user_id: user_id.to_string(),
+            method: session.get_method(),
+        });
 
         if let Some(max) = self.max_concurrent_sessions {
             self.enforce_session_cap(user_id, max).await?;

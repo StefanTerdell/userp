@@ -359,7 +359,15 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         code: AuthorizationCode,
         state: CsrfToken,
     ) -> Result<(Self, Option<String>), OAuthGenericCallbackError<S::Error>> {
-        let (unmatched_token, flow, provider) = self.oauth_callback_inner(code, state).await?;
+        let (unmatched_token, flow, provider) = match self.oauth_callback_inner(code, state).await {
+            Ok(parts) => parts,
+            Err(err) => {
+                self.emit(crate::events::AuthEvent::OAuthCallbackFailed {
+                    error: err.to_string(),
+                });
+                return Err(err.into());
+            }
+        };
 
         Ok(match &flow {
             OAuthFlow::LogIn { .. } => {

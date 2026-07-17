@@ -210,8 +210,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         kind: EmailLinkKind,
         next: Option<String>,
     ) -> Result<(), SendEmailChallengeError<S::Error>> {
-        self.rate_limiter
-            .check(crate::ratelimit::RateLimitOp::EmailSend { address: &address })
+        self.check_rate(crate::ratelimit::RateLimitOp::EmailSend { address: &address })
             .await
             .map_err(SendEmailChallengeError::RateLimited)?;
 

@@ -30,8 +30,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(PasswordLoginError::NotAllowed);
         };
 
-        self.rate_limiter
-            .check(RateLimitOp::PasswordAttempt { password_id })
+        self.check_rate(RateLimitOp::PasswordAttempt { password_id })
             .await
             .map_err(PasswordLoginError::RateLimited)?;
 
@@ -74,7 +73,19 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 self.pass.hasher.generate_hash(password.to_string()).await;
                 Err(PasswordLoginError::WrongPassword)
             }
-        }?;
+        };
+
+        let user = match user {
+            Ok(user) => user,
+            Err(err) => {
+                if matches!(err, PasswordLoginError::WrongPassword) {
+                    self.emit(crate::events::AuthEvent::PasswordRejected {
+                        password_id: password_id.to_string(),
+                    });
+                }
+                return Err(err);
+            }
+        };
 
         Ok(self.log_in(LoginMethod::Password, &user.get_id()).await?)
     }

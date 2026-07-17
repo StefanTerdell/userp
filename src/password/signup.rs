@@ -38,8 +38,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(PasswordSignupError::NotAllowed);
         }
 
-        self.rate_limiter
-            .check(RateLimitOp::PasswordAttempt { password_id })
+        self.check_rate(RateLimitOp::PasswordAttempt { password_id })
             .await
             .map_err(PasswordSignupError::RateLimited)?;
 

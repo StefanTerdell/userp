@@ -149,6 +149,13 @@ pub enum SmsVerifyError<StoreError: std::error::Error> {
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    fn emit_sms_code_rejected(&self, number: &str) {
+        self.emit(crate::events::AuthEvent::CodeRejected {
+            channel: crate::events::CodeChannel::Sms,
+            identifier: number.to_string(),
+        });
+    }
+
     /// Send a login code to the number.
     pub async fn sms_login_init(
         &self,
@@ -180,8 +187,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: String,
         next: Option<String>,
     ) -> Result<(), SmsInitError<S::Error>> {
-        self.rate_limiter
-            .check(RateLimitOp::SmsSend { number: &number })
+        self.check_rate(RateLimitOp::SmsSend { number: &number })
             .await
             .map_err(SmsInitError::RateLimited)?;
 
@@ -280,8 +286,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: &str,
         code: &str,
     ) -> Result<S::EmailChallenge, SmsVerifyError<S::Error>> {
-        self.rate_limiter
-            .check(RateLimitOp::SmsAttempt { number })
+        self.check_rate(RateLimitOp::SmsAttempt { number })
             .await
             .map_err(SmsVerifyError::RateLimited)?;
 
@@ -290,10 +295,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .consume_challenge(challenge_key(number, code))
             .await?
         else {
+            self.emit_sms_code_rejected(number);
             return Err(SmsVerifyError::WrongCode);
         };
 
         if challenge.get_expires() < Utc::now() {
+            self.emit_sms_code_rejected(number);
             return Err(SmsVerifyError::WrongCode);
         }
 

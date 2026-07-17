@@ -16,6 +16,7 @@ all-features = true
 
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
+tracing = "0.1.40"
 thiserror = "2.0.18"
 uuid = { version = "1.23.5", features = ["serde", "v4"] }
 # Session expiry is a core concern, so chrono is always on.

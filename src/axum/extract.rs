@@ -69,6 +69,7 @@ where
             session_lifetime: config.session_lifetime,
             max_concurrent_sessions: config.max_concurrent_sessions,
             rate_limiter: config.rate_limiter,
+            events: config.events,
             bearer_token,
             routes: config.routes,
             cookies,
