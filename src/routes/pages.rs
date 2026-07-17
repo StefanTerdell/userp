@@ -40,7 +40,7 @@ impl Default for PageRoutes {
             #[cfg(feature = "user")]
             home: "/",
             #[cfg(all(feature = "password", feature = "email"))]
-            password_send_reset: "/password/send-reset",
+            password_send_reset: "/password/reset/send",
             #[cfg(all(feature = "password", feature = "email"))]
             password_reset: "/password/reset",
         }

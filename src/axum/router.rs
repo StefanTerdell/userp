@@ -255,19 +255,19 @@ pub trait AxumRouter {
             {
                 router = router
                     .route(
-                        self.routes().oauth.actions.login_oauth.as_str(),
+                        self.routes().oauth.login_oauth.as_str(),
                         post(oauth::post_login_oauth::<St>),
                     )
                     .route(
-                        self.routes().oauth.actions.signup_oauth.as_str(),
+                        self.routes().oauth.signup_oauth.as_str(),
                         post(oauth::post_signup_oauth::<St>),
                     )
                     .route(
-                        self.routes().oauth.actions.user_oauth_link.as_str(),
+                        self.routes().oauth.user_oauth_link.as_str(),
                         post(oauth::post_user_oauth_link::<St>),
                     )
                     .route(
-                        self.routes().oauth.actions.user_oauth_refresh.as_str(),
+                        self.routes().oauth.user_oauth_refresh.as_str(),
                         post(oauth::post_user_oauth_refresh::<St>),
                     );
             }

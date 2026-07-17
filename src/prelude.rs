@@ -5,7 +5,7 @@ pub use crate::routes::Routes;
 #[cfg(feature = "email")]
 pub use crate::routes::email::*;
 #[cfg(feature = "oauth")]
-pub use crate::routes::oauth::{OAuthRoutes, actions::*};
+pub use crate::routes::oauth::OAuthRoutes;
 pub use crate::routes::pages::*;
 #[cfg(feature = "password")]
 pub use crate::routes::password::*;

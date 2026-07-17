@@ -48,9 +48,9 @@ impl Default for EmailActionRoutes {
             #[cfg(feature = "password")]
             password_reset: "/password/reset",
             #[cfg(feature = "password")]
-            password_reset_callback: "/password/reset-callback",
+            password_reset_callback: "/password/reset/callback",
             #[cfg(feature = "password")]
-            password_send_reset: "/password/send-reset",
+            password_send_reset: "/password/reset/send",
         }
     }
 }

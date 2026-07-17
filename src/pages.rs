@@ -211,8 +211,8 @@ impl UserTemplate<'_> {
                         })
                         .collect(),
                     delete_action_route: &auth.routes.user.user_oauth_delete,
-                    refresh_action_route: &auth.routes.oauth.actions.user_oauth_refresh,
-                    link_action_route: &auth.routes.oauth.actions.user_oauth_link,
+                    refresh_action_route: &auth.routes.oauth.user_oauth_refresh,
+                    link_action_route: &auth.routes.oauth.user_oauth_link,
                     user_page_route: &auth.routes.pages.user,
                 })
             },
@@ -385,7 +385,7 @@ impl LoginTemplate<'_> {
                             .into_iter()
                             .map(|p| p.into())
                             .collect(),
-                        action_route: &auth.routes.oauth.actions.login_oauth,
+                        action_route: &auth.routes.oauth.login_oauth,
                     })
                 }
             }),
@@ -473,7 +473,7 @@ impl SignupTemplate<'_> {
                             .into_iter()
                             .map(|p| p.into())
                             .collect(),
-                        action_route: &auth.routes.oauth.actions.signup_oauth,
+                        action_route: &auth.routes.oauth.signup_oauth,
                     })
                 }
             }),

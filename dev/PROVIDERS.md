@@ -10,7 +10,7 @@ Redirect/callback URL to register with every provider — there is exactly one
 (the single callback dispatches login/signup/link/refresh from the encrypted
 state cookie):
 
-    http://localhost:3000/oauth
+    http://localhost:3000/oauth/callback
 
 | Provider  | Env var prefix | Console | Notes |
 |-----------|----------------|---------|-------|

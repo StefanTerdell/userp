@@ -216,10 +216,11 @@ another provider to the logged-in account) and **refresh** (server-side,
 ownership-checked token refresh). Access and refresh tokens live in your
 store, so your app can use them for API integrations.
 
-Every flow returns to a single callback route (default `/oauth`) - the
-flow type, provider and PKCE/nonce material ride the encrypted state
-cookie, so no per-provider or per-flow path segments are needed. Register
-`{base_url}/oauth` as the redirect URI with each provider.
+Every flow returns to a single callback route (default
+`/oauth/callback`): the flow type, provider and PKCE/nonce material ride
+the encrypted state cookie, so no per-provider or per-flow path segments
+are needed. Register `{base_url}/oauth/callback` as the redirect URI with
+each provider.
 
 Providers don't have to be fixed at startup - see *Multi-tenancy* below.
 
@@ -310,7 +311,7 @@ let routes = Routes::default().with_prefix("/auth");
 // ...or override specific paths:
 let routes = Routes {
     oauth: OAuthRoutes {
-        callback: "/oauth/callback",
+        callback: "/auth/callback",
         ..Default::default()
     },
     pages: PageRoutes {
