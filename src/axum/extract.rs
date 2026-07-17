@@ -35,12 +35,26 @@ where
         // the jar and shared it via request extensions; use that so mutations
         // survive to the response without the handler returning the auth service.
         // Otherwise fall back to an owned jar written via IntoResponseParts.
-        let jar = match parts.extensions.get::<SharedCookieJar>() {
-            Some(shared) => JarHandle::Shared(shared.clone()),
-            None => JarHandle::Owned(PrivateCookieJar::from_headers(
-                &parts.headers,
-                Key::from(config.key.as_bytes()),
-            )),
+        let (jar, fallbacks) = match parts.extensions.get::<SharedCookieJar>() {
+            Some(shared) => (JarHandle::Shared(shared.clone()), shared.fallbacks.clone()),
+            None => (
+                JarHandle::Owned(PrivateCookieJar::from_headers(
+                    &parts.headers,
+                    Key::from(config.key.as_bytes()),
+                )),
+                std::sync::Arc::new(
+                    config
+                        .previous_keys
+                        .iter()
+                        .map(|key| {
+                            PrivateCookieJar::from_headers(
+                                &parts.headers,
+                                Key::from(key.as_bytes()),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
         };
 
         let bearer_token = config
@@ -59,6 +73,7 @@ where
 
         let cookies = AxumAutheryCookies {
             jar,
+            fallbacks,
             https_only: config.https_only,
         };
         let store = St::from_ref(state);
@@ -68,6 +83,7 @@ where
             allow_login: config.allow_login,
             session_lifetime: config.session_lifetime,
             max_concurrent_sessions: config.max_concurrent_sessions,
+            idle_timeout: config.idle_timeout,
             rate_limiter: config.rate_limiter,
             events: config.events,
             bearer_token,

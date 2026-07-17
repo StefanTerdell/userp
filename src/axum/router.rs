@@ -49,26 +49,36 @@ pub fn with_cookie_layer<S>(
     key: Key,
     expose_auth_token: bool,
     auth_token_prefix: Option<String>,
+    previous_keys: Vec<Key>,
 ) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
+    let previous_keys = Arc::new(previous_keys);
     router.layer(from_fn(move |mut req: Request, next: Next| {
         let key = key.clone();
         let auth_token_prefix = auth_token_prefix.clone();
+        let previous_keys = previous_keys.clone();
         async move {
             let jar = PrivateCookieJar::from_headers(req.headers(), key);
             let session_before = jar
                 .get(crate::constants::SESSION_ID_KEY)
                 .map(|c| c.value().to_string());
-            let shared = SharedCookieJar(Arc::new(Mutex::new(jar)));
+            let fallbacks: Vec<PrivateCookieJar> = previous_keys
+                .iter()
+                .map(|key| PrivateCookieJar::from_headers(req.headers(), key.clone()))
+                .collect();
+            let shared = SharedCookieJar {
+                jar: Arc::new(Mutex::new(jar)),
+                fallbacks: Arc::new(fallbacks),
+            };
             req.extensions_mut().insert(shared.clone());
 
             let wants_json = wants_json(req.headers());
 
             let res = next.run(req).await;
 
-            let jar = shared.0.lock().unwrap().clone();
+            let jar = shared.jar.lock().unwrap().clone();
             let session_after = jar
                 .get(crate::constants::SESSION_ID_KEY)
                 .map(|c| c.value().to_string());
@@ -203,6 +213,12 @@ pub trait AxumRouter {
     /// [`crate::config::AutheryConfig::bearer_token_prefix`].
     fn bearer_token_prefix(&self) -> Option<String> {
         None
+    }
+
+    /// Previous cookie keys accepted during rotation; see
+    /// [`crate::config::AutheryConfig::previous_keys`].
+    fn previous_cookie_keys(&self) -> Vec<Key> {
+        Vec::new()
     }
 
     fn router<St, S>(&self) -> Router<S>
@@ -538,6 +554,7 @@ pub trait AxumRouter {
             self.cookie_key(),
             self.bearer_auth(),
             self.bearer_token_prefix(),
+            self.previous_cookie_keys(),
         )
     }
 }
@@ -557,6 +574,13 @@ impl AxumRouter for AutheryConfig {
 
     fn bearer_token_prefix(&self) -> Option<String> {
         self.bearer_token_prefix.clone()
+    }
+
+    fn previous_cookie_keys(&self) -> Vec<Key> {
+        self.previous_keys
+            .iter()
+            .map(|key| Key::from(key.as_bytes()))
+            .collect()
     }
 }
 

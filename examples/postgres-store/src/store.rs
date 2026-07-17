@@ -112,7 +112,7 @@ impl AutheryStore for PgStore {
     ) -> Result<PgSession, PgStoreError> {
         Ok(sqlx::query_as(
             "INSERT INTO sessions (id, user_id, method, expires) VALUES ($1, $2, $3, $4)
-             RETURNING id, user_id, method, expires",
+             RETURNING id, user_id, method, expires, last_seen",
         )
         .bind(Uuid::new_v4())
         .bind(user_id)
@@ -122,13 +122,28 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    async fn touch_session(
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        seen_at: DateTime<Utc>,
+    ) -> Result<(), PgStoreError> {
+        sqlx::query("UPDATE sessions SET last_seen = $3 WHERE id = $1 AND user_id = $2")
+            .bind(session_id)
+            .bind(user_id)
+            .bind(seen_at)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn get_session(&self, session_id: &Uuid) -> Result<Option<PgSession>, PgStoreError> {
-        Ok(
-            sqlx::query_as("SELECT id, user_id, method, expires FROM sessions WHERE id = $1")
-                .bind(session_id)
-                .fetch_optional(&self.pool)
-                .await?,
+        Ok(sqlx::query_as(
+            "SELECT id, user_id, method, expires, last_seen FROM sessions WHERE id = $1",
         )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await?)
     }
 
     async fn delete_session(&self, user_id: &Uuid, session_id: &Uuid) -> Result<(), PgStoreError> {
@@ -141,12 +156,12 @@ impl AutheryStore for PgStore {
     }
 
     async fn get_user_sessions(&self, user_id: &Uuid) -> Result<Vec<PgSession>, PgStoreError> {
-        Ok(
-            sqlx::query_as("SELECT id, user_id, method, expires FROM sessions WHERE user_id = $1")
-                .bind(user_id)
-                .fetch_all(&self.pool)
-                .await?,
+        Ok(sqlx::query_as(
+            "SELECT id, user_id, method, expires, last_seen FROM sessions WHERE user_id = $1",
         )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?)
     }
 
     // --- mfa store ---

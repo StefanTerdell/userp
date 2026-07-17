@@ -24,12 +24,15 @@ CREATE TABLE IF NOT EXISTS user_phones (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id      uuid PRIMARY KEY,
-    user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    id        uuid PRIMARY KEY,
+    user_id   uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     -- LoginMethod is serde-serializable; persist it opaquely.
-    method  jsonb NOT NULL,
-    expires timestamptz NOT NULL
+    method    jsonb NOT NULL,
+    expires   timestamptz NOT NULL,
+    -- For the optional idle timeout.
+    last_seen timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen timestamptz NOT NULL DEFAULT now();
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id);
 
 -- Email and SMS challenges share this table; authery namespaces the codes.

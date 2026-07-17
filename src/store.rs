@@ -48,6 +48,20 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
         session_id: &Self::SessionId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    /// Record session activity for the idle timeout. Called at most once per
+    /// minute per session, and only when an idle timeout is configured. The
+    /// default is a no-op - implement it (and `LoginSession::get_last_seen`)
+    /// to enable idle timeouts.
+    fn touch_session(
+        &self,
+        user_id: &Self::UserId,
+        session_id: &Self::SessionId,
+        seen_at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let _ = (user_id, session_id, seen_at);
+        async { Ok(()) }
+    }
+
     fn get_user_sessions(
         &self,
         user_id: &Self::UserId,

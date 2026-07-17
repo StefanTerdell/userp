@@ -96,6 +96,7 @@ pub struct PgSession {
     pub user_id: Uuid,
     pub method: Json<LoginMethod>,
     pub expires: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
 }
 
 impl LoginSession for PgSession {
@@ -116,6 +117,10 @@ impl LoginSession for PgSession {
 
     fn get_expires(&self) -> DateTime<Utc> {
         self.expires
+    }
+
+    fn get_last_seen(&self) -> Option<DateTime<Utc>> {
+        Some(self.last_seen)
     }
 }
 

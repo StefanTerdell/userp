@@ -173,6 +173,18 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    async fn touch_session(
+        &self,
+        _user_id: &Uuid,
+        session_id: &Uuid,
+        seen_at: DateTime<Utc>,
+    ) -> Result<(), MemoryStoreError> {
+        if let Some(session) = self.sessions.write().await.get_mut(session_id) {
+            session.last_seen = Some(seen_at);
+        }
+        Ok(())
+    }
+
     async fn get_session(
         &self,
         session_id: &Uuid,
@@ -205,6 +217,7 @@ impl AutheryStore for MemoryStore {
             user_id: *user_id,
             method,
             expires,
+            last_seen: Some(Utc::now()),
         };
 
         let mut sessions = self.sessions.write().await;

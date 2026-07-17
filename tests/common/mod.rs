@@ -116,6 +116,7 @@ pub struct TestSession {
     pub user_id: Uuid,
     pub method: LoginMethod,
     pub expires: DateTime<Utc>,
+    pub last_seen: Option<DateTime<Utc>>,
 }
 
 impl LoginSession for TestSession {
@@ -132,6 +133,9 @@ impl LoginSession for TestSession {
     }
     fn get_expires(&self) -> DateTime<Utc> {
         self.expires
+    }
+    fn get_last_seen(&self) -> Option<DateTime<Utc>> {
+        self.last_seen
     }
 }
 
@@ -229,12 +233,25 @@ impl AutheryStore for TestStore {
             user_id: *user_id,
             method,
             expires,
+            last_seen: Some(Utc::now()),
         };
         self.sessions
             .lock()
             .unwrap()
             .insert(session.id, session.clone());
         Ok(session)
+    }
+
+    async fn touch_session(
+        &self,
+        _user_id: &Uuid,
+        session_id: &Uuid,
+        seen_at: DateTime<Utc>,
+    ) -> Result<(), Infallible> {
+        if let Some(session) = self.sessions.lock().unwrap().get_mut(session_id) {
+            session.last_seen = Some(seen_at);
+        }
+        Ok(())
     }
 
     async fn get_session(&self, session_id: &Uuid) -> Result<Option<TestSession>, Infallible> {
@@ -620,6 +637,7 @@ pub struct AuthBuilder {
     pub store: TestStore,
     pub session_lifetime: Duration,
     pub max_concurrent_sessions: Option<usize>,
+    pub idle_timeout: Option<Duration>,
     pub rate_limiter: Arc<dyn RateLimiter>,
     pub mfa_policy: authery::mfa::MfaPolicy,
     #[cfg(feature = "sms")]
@@ -632,6 +650,7 @@ impl AuthBuilder {
             store,
             session_lifetime: Duration::days(1),
             max_concurrent_sessions: None,
+            idle_timeout: None,
             rate_limiter: Arc::new(NoRateLimit),
             #[cfg(feature = "sms")]
             sms_sender: TestSmsSender::default(),
@@ -649,6 +668,7 @@ impl AuthBuilder {
             allow_login: authery::models::Allow::OnSelf,
             session_lifetime: self.session_lifetime,
             max_concurrent_sessions: self.max_concurrent_sessions,
+            idle_timeout: self.idle_timeout,
             rate_limiter: self.rate_limiter,
             events: Arc::new(authery::events::TracingEvents),
             bearer_token: None,

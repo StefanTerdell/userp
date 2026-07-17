@@ -42,12 +42,21 @@ pub struct AutheryConfig {
     /// the user's oldest sessions are deleted. `None` (the default) is
     /// unlimited.
     pub max_concurrent_sessions: Option<usize>,
+    /// Sessions unused for this long are treated as logged-out and evicted,
+    /// independent of the absolute `session_lifetime`. Requires the store to
+    /// track activity: `LoginSession::get_last_seen` + `touch_session`.
+    /// `None` (the default) disables idle expiry.
+    pub idle_timeout: Option<Duration>,
     /// Accept `Authorization: Bearer {session_id}` as an alternative to the
     /// session cookie, and expose fresh session ids to clients via an
     /// `X-Auth-Token` response header on login. For API and mobile clients;
     /// off by default. Tokens are opaque session ids: server-side, revocable,
     /// and subject to the same expiry and caps as cookie sessions.
     pub bearer_auth: bool,
+    /// Previous cookie-encryption keys, accepted (read-only) during a key
+    /// rotation: cookies sealed with an old key still decrypt, and re-encrypt
+    /// with the current key on next write. Writes always use `key`.
+    pub previous_keys: Vec<String>,
     /// A fixed prefix prepended to bearer tokens on the wire (e.g. `myapp_`),
     /// so tokens are recognizable to humans and secret scanners. Applied to
     /// the `X-Auth-Token` header and required (and stripped) when reading
@@ -110,6 +119,8 @@ impl AutheryConfig {
             allow_login: Allow::OnSelf,
             session_lifetime: Duration::days(30),
             max_concurrent_sessions: None,
+            idle_timeout: None,
+            previous_keys: Vec::new(),
             bearer_auth: false,
             bearer_token_prefix: None,
             rate_limiter: Arc::new(NoRateLimit),
@@ -148,6 +159,26 @@ impl AutheryConfig {
     }
 
     /// Set the absolute session lifetime.
+    /// Accept previous cookie keys during rotation; see
+    /// [`AutheryConfig::previous_keys`]. Keys under 64 bytes are rejected.
+    pub fn with_previous_keys(
+        mut self,
+        keys: impl IntoIterator<Item = String>,
+    ) -> Result<Self, AutheryConfigError> {
+        let keys: Vec<String> = keys.into_iter().collect();
+        if let Some(short) = keys.iter().find(|k| k.len() < MIN_KEY_LEN) {
+            return Err(AutheryConfigError::KeyTooShort(short.len()));
+        }
+        self.previous_keys = keys;
+        Ok(self)
+    }
+
+    /// Enable idle expiry; see [`AutheryConfig::idle_timeout`].
+    pub fn with_idle_timeout(mut self, idle_timeout: Duration) -> Self {
+        self.idle_timeout = Some(idle_timeout);
+        self
+    }
+
     pub fn with_session_lifetime(mut self, session_lifetime: Duration) -> Self {
         self.session_lifetime = session_lifetime;
         self

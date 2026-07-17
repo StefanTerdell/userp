@@ -214,6 +214,15 @@ pub trait LoginSession: Send + Sync + Sized {
     /// so earliest expiry means oldest session).
     fn get_expires(&self) -> chrono::DateTime<chrono::Utc>;
 
+    /// When this session was last used, for the optional idle timeout
+    /// ([`with_idle_timeout`](crate::config::AutheryConfig::with_idle_timeout)).
+    /// The default `None` means the store doesn't track activity and idle
+    /// timeouts never fire - implement this (and the store's
+    /// `touch_session`) to enable them.
+    fn get_last_seen(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        None
+    }
+
     /// Whether this session has passed its expiry. The core treats an expired
     /// session as logged-out and evicts it from the store on next use.
     fn is_expired(&self) -> bool {

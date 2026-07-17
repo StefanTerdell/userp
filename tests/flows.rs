@@ -14,7 +14,7 @@ use authery::mfa::MfaPolicy;
 use authery::models::{LoginMethod, LoginMethodRules, LoginSession};
 use authery::password::login::PasswordLoginError;
 use authery::ratelimit::{RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};
-use authery::reexports::chrono::Duration;
+use authery::reexports::chrono::{Duration, Utc};
 use common::{AuthBuilder, TestStore, auth};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -67,6 +67,48 @@ async fn expired_sessions_are_logged_out_and_evicted() {
         .await
         .unwrap();
 
+    assert!(logged_in.session().await.unwrap().is_none());
+    assert_eq!(store.session_count(user_id), 0, "evicted from the store");
+}
+
+/// With an idle timeout, unused sessions die before their absolute expiry,
+/// and active ones get their last-seen refreshed (throttled).
+#[tokio::test]
+async fn idle_timeout_evicts_and_touches() {
+    let store = TestStore::default();
+    let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+
+    let mut builder = AuthBuilder::new(store.clone());
+    builder.idle_timeout = Some(Duration::hours(1));
+    let logged_in = builder
+        .build()
+        .password_login("alice@x.com", "hunter2")
+        .await
+        .unwrap();
+
+    let session_id = logged_in.session().await.unwrap().expect("fresh").get_id();
+
+    // 5 minutes idle: still logged in, and the touch refreshes last_seen.
+    let stale = Utc::now() - Duration::minutes(5);
+    store
+        .sessions
+        .lock()
+        .unwrap()
+        .get_mut(&session_id)
+        .unwrap()
+        .last_seen = Some(stale);
+    assert!(logged_in.session().await.unwrap().is_some());
+    let touched = store.sessions.lock().unwrap()[&session_id].last_seen;
+    assert!(touched.unwrap() > stale, "touch refreshed last_seen");
+
+    // 2 hours idle: logged out and evicted.
+    store
+        .sessions
+        .lock()
+        .unwrap()
+        .get_mut(&session_id)
+        .unwrap()
+        .last_seen = Some(Utc::now() - Duration::hours(2));
     assert!(logged_in.session().await.unwrap().is_none());
     assert_eq!(store.session_count(user_id), 0, "evicted from the store");
 }

@@ -94,6 +94,7 @@ pub struct MyLoginSession {
     pub user_id: Uuid,
     pub method: LoginMethod,
     pub expires: DateTime<Utc>,
+    pub last_seen: Option<DateTime<Utc>>,
 }
 
 impl LoginSession for MyLoginSession {
@@ -114,6 +115,10 @@ impl LoginSession for MyLoginSession {
 
     fn get_expires(&self) -> DateTime<Utc> {
         self.expires
+    }
+
+    fn get_last_seen(&self) -> Option<DateTime<Utc>> {
+        self.last_seen
     }
 }
 

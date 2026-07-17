@@ -22,6 +22,7 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub allow_login: Allow,
     pub session_lifetime: Duration,
     pub max_concurrent_sessions: Option<usize>,
+    pub idle_timeout: Option<Duration>,
     pub rate_limiter: std::sync::Arc<dyn crate::ratelimit::RateLimiter>,
     /// Receives auth events; see [`crate::events`].
     pub events: std::sync::Arc<dyn crate::events::AuthEventHandler>,
@@ -217,6 +218,25 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 .delete_session(&session.get_user_id(), &session.get_id())
                 .await?;
             return Ok(None);
+        }
+
+        // The idle timeout works the same way, when the store tracks
+        // activity. Touches are throttled to once a minute.
+        if let Some(idle_timeout) = self.idle_timeout
+            && let Some(last_seen) = session.get_last_seen()
+        {
+            let now = Utc::now();
+            if now - last_seen > idle_timeout {
+                self.store
+                    .delete_session(&session.get_user_id(), &session.get_id())
+                    .await?;
+                return Ok(None);
+            }
+            if now - last_seen > Duration::seconds(60) {
+                self.store
+                    .touch_session(&session.get_user_id(), &session.get_id(), now)
+                    .await?;
+            }
         }
 
         Ok(Some(session).filter(Self::is_login_session))

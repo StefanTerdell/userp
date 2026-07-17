@@ -304,9 +304,17 @@ keeps the token, and sends it as `Authorization: Bearer` from then on.
 ## Sessions & bearer tokens
 
 Sessions live in your store with CSPRNG ids, absolute expiry
-(`with_session_lifetime`, default 30 days, server-side eviction) and an
+(`with_session_lifetime`, default 30 days, server-side eviction), an
 optional per-user concurrency cap (`with_max_concurrent_sessions`, oldest
-evicted first). Logout is POST-only.
+evicted first), and an optional idle timeout (`with_idle_timeout` -
+requires the store to track activity via `LoginSession::get_last_seen`
+and `touch_session`; touches are throttled to once a minute). Logout is
+POST-only.
+
+Rotating the cookie-encryption key doesn't have to be a mass logout:
+`.with_previous_keys([old_key])` accepts cookies sealed under previous
+keys during a grace window and re-encrypts them with the current key on
+the next response. Writes always use the current key.
 
 For API and mobile clients, `.with_bearer_auth(true)` accepts
 `Authorization: Bearer {token}` as an alternative to the session cookie
