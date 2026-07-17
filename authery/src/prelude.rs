@@ -50,6 +50,8 @@ pub use crate::oauth::{
 #[cfg(feature = "pages")]
 pub use crate::pages::*;
 
+#[cfg(feature = "totp")]
+pub use crate::models::TotpCredential;
 #[cfg(feature = "email")]
 pub use crate::models::email::*;
 #[cfg(feature = "oauth")]
@@ -63,6 +65,8 @@ pub use crate::ratelimit::{NoRateLimit, RateLimitFuture, RateLimitOp, RateLimite
 pub use crate::routes::mfa::MfaRoutes;
 #[cfg(feature = "webauthn")]
 pub use crate::routes::webauthn::WebauthnRoutes;
+#[cfg(feature = "totp")]
+pub use crate::totp::{TotpConfig, TotpEnrollment, TotpError};
 #[cfg(feature = "webauthn")]
 pub use crate::webauthn::{WebauthnConfig, WebauthnLoginError, WebauthnRegisterError};
 pub use crate::{Authery, config::*, constants::*, core::*, store::*};

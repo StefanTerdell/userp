@@ -159,6 +159,27 @@ pub trait AxumRouter {
                 );
             }
 
+            #[cfg(feature = "totp")]
+            {
+                router = router
+                    .route(
+                        self.routes().user.user_totp_confirm.as_str(),
+                        post(user::post_user_totp_confirm::<St>),
+                    )
+                    .route(
+                        self.routes().user.user_totp_disable.as_str(),
+                        post(user::post_user_totp_disable::<St>),
+                    );
+
+                #[cfg(feature = "pages")]
+                {
+                    router = router.route(
+                        self.routes().user.user_totp_enroll.as_str(),
+                        post(user::post_user_totp_enroll::<St>),
+                    );
+                }
+            }
+
             #[cfg(feature = "email")]
             {
                 router = router
@@ -441,6 +462,14 @@ pub trait AxumRouter {
                 router = router.route(
                     self.routes().mfa.login_mfa_otp.as_str(),
                     post(mfa::post_login_mfa_otp::<St>),
+                );
+            }
+
+            #[cfg(feature = "totp")]
+            {
+                router = router.route(
+                    self.routes().mfa.login_mfa_totp.as_str(),
+                    post(mfa::post_login_mfa_totp::<St>),
                 );
             }
 

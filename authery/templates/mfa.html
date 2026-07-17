@@ -82,10 +82,32 @@
   </script>
   {% endif %}
 
-  {% if webauthn.is_some() && otp.is_some() %}
+  {% if webauthn.is_some() && (totp.is_some() || otp.is_some()) %}
   <div class="or-divider">
     <span>or</span>
   </div>
+  {% endif %}
+
+  {% if let Some(totp_route) = totp %}
+  <div class="totp-login">
+    <form action="{{ totp_route }}" method="post" id="mfa-totp-form">
+      <div class="form-group">
+        <label for="totp-code">Code from your authenticator app</label>
+        <input type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*"
+          autocomplete="one-time-code" required>
+      </div>
+      <button type="submit">Verify</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+  </div>
+
+  {% if otp.is_some() %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if let Some(otp) = otp %}

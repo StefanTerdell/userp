@@ -99,6 +99,12 @@ where
             }),
         #[cfg(not(feature = "otp"))]
         otp: None,
+        #[cfg(feature = "totp")]
+        totp: factors
+            .totp
+            .then_some(auth.routes.mfa.login_mfa_totp.as_str()),
+        #[cfg(not(feature = "totp"))]
+        totp: None,
         #[cfg(feature = "webauthn")]
         webauthn: factors
             .webauthn
@@ -204,6 +210,8 @@ where
             .iter()
             .map(|p| p.cred_id().iter().map(|b| format!("{b:02x}")).collect())
             .collect();
+        #[cfg(feature = "totp")]
+        let totp_enabled = auth.totp_enabled(&user.get_id()).await?;
 
         let view = UserTemplate::with(
             &auth,
@@ -218,6 +226,8 @@ where
             &oauth_tokens,
             #[cfg(feature = "webauthn")]
             passkey_credential_ids,
+            #[cfg(feature = "totp")]
+            totp_enabled,
         );
         Html(auth.pages.render_user(&view)).into_response()
     } else {

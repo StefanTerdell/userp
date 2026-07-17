@@ -79,13 +79,15 @@ impl MfaPolicy {
 pub struct MfaFactors {
     /// The user has at least one passkey registered.
     pub webauthn: bool,
+    /// The user has a confirmed authenticator-app enrollment.
+    pub totp: bool,
     /// A code can be mailed to this (verified) address.
     pub otp_address: Option<String>,
 }
 
 impl MfaFactors {
     pub fn any(&self) -> bool {
-        self.webauthn || self.otp_address.is_some()
+        self.webauthn || self.totp || self.otp_address.is_some()
     }
 }
 
@@ -137,6 +139,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 .webauthn_get_credentials(user_id)
                 .await?
                 .is_empty();
+        }
+
+        #[cfg(feature = "totp")]
+        {
+            factors.totp = self.totp_enabled(user_id).await?;
         }
 
         #[cfg(feature = "otp")]
@@ -455,3 +462,44 @@ mod webauthn_factor {
 
 #[cfg(feature = "webauthn")]
 pub use webauthn_factor::MfaWebauthnError;
+
+#[cfg(feature = "totp")]
+mod totp_factor {
+    use super::*;
+    use crate::totp::TotpError;
+
+    #[derive(Debug, Error)]
+    pub enum MfaTotpError<StoreError: std::error::Error> {
+        #[error("No MFA login in progress")]
+        NoPending,
+        #[error(transparent)]
+        Totp(TotpError<StoreError>),
+        #[error(transparent)]
+        Store(StoreError),
+    }
+
+    impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+        /// Verify an authenticator-app code and upgrade the pending session.
+        #[must_use = "Don't forget to return the auth session as part of the response!"]
+        pub async fn mfa_totp_verify(self, code: &str) -> Result<Self, MfaTotpError<S::Error>> {
+            let Some(pending) = self
+                .mfa_pending_session()
+                .await
+                .map_err(MfaTotpError::Store)?
+            else {
+                return Err(MfaTotpError::NoPending);
+            };
+
+            self.totp_verify(&pending.get_user_id(), code)
+                .await
+                .map_err(MfaTotpError::Totp)?;
+
+            self.mfa_upgrade(pending, LoginMethod::Totp)
+                .await
+                .map_err(MfaTotpError::Store)
+        }
+    }
+}
+
+#[cfg(feature = "totp")]
+pub use totp_factor::MfaTotpError;

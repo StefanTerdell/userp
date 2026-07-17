@@ -114,6 +114,8 @@ pub struct TestStore {
     pub users: Arc<Mutex<HashMap<Uuid, TestUser>>>,
     pub sessions: Arc<Mutex<HashMap<Uuid, TestSession>>>,
     pub challenges: Arc<Mutex<HashMap<String, TestChallenge>>>,
+    #[cfg(feature = "totp")]
+    pub totp: Arc<Mutex<HashMap<Uuid, authery::models::TotpCredential>>>,
 }
 
 impl TestStore {
@@ -214,6 +216,30 @@ impl AutheryStore for TestStore {
 
     async fn delete_user(&self, id: &Uuid) -> Result<(), Infallible> {
         self.users.lock().unwrap().remove(id);
+        Ok(())
+    }
+
+    #[cfg(feature = "totp")]
+    async fn totp_get(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Option<authery::models::TotpCredential>, Infallible> {
+        Ok(self.totp.lock().unwrap().get(user_id).cloned())
+    }
+
+    #[cfg(feature = "totp")]
+    async fn totp_upsert(
+        &self,
+        user_id: &Uuid,
+        credential: authery::models::TotpCredential,
+    ) -> Result<(), Infallible> {
+        self.totp.lock().unwrap().insert(*user_id, credential);
+        Ok(())
+    }
+
+    #[cfg(feature = "totp")]
+    async fn totp_delete(&self, user_id: &Uuid) -> Result<(), Infallible> {
+        self.totp.lock().unwrap().remove(user_id);
         Ok(())
     }
 
@@ -459,6 +485,8 @@ impl AuthBuilder {
             cookies: TestCookies::default(),
             store: self.store,
             pass: PasswordConfig::new().with_hasher(PlaintextHasher),
+            #[cfg(feature = "totp")]
+            totp: authery::totp::TotpConfig::new("authery-tests"),
             email: EmailConfig::new(
                 Url::parse("http://localhost:3000").unwrap(),
                 SmtpSettings::new("smtp://localhost:1", "test@example.com"),

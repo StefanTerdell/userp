@@ -136,6 +136,14 @@ pub struct UserTemplate<'a> {
     pub email: Option<UserTemplateEmailInfo<'a>>,
     pub oauth: Option<UserTemplateOAuthInfo<'a>>,
     pub webauthn: Option<UserTemplateWebauthnInfo<'a>>,
+    pub totp: Option<UserTemplateTotpInfo<'a>>,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateTotpInfo<'a> {
+    pub enabled: bool,
+    pub enroll_action_route: &'a str,
+    pub disable_action_route: &'a str,
 }
 
 #[cfg(feature = "user")]
@@ -153,6 +161,7 @@ impl UserTemplate<'_> {
         #[cfg(feature = "email")] emails: &'a [S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &'a [S::OAuthToken],
         #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
+        #[cfg(feature = "totp")] totp_enabled: bool,
     ) -> UserTemplate<'a> {
         UserTemplate {
             message,
@@ -218,6 +227,14 @@ impl UserTemplate<'_> {
             }),
             #[cfg(not(feature = "webauthn"))]
             webauthn: None,
+            #[cfg(feature = "totp")]
+            totp: Some(UserTemplateTotpInfo {
+                enabled: totp_enabled,
+                enroll_action_route: &auth.routes.user.user_totp_enroll,
+                disable_action_route: &auth.routes.user.user_totp_disable,
+            }),
+            #[cfg(not(feature = "totp"))]
+            totp: None,
         }
     }
 
@@ -233,6 +250,7 @@ impl UserTemplate<'_> {
         #[cfg(feature = "email")] emails: &[S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
         #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
+        #[cfg(feature = "totp")] totp_enabled: bool,
     ) -> Result<String, askama::Error> {
         Self::with(
             auth,
@@ -247,6 +265,8 @@ impl UserTemplate<'_> {
             oauth_tokens,
             #[cfg(feature = "webauthn")]
             passkey_credential_ids,
+            #[cfg(feature = "totp")]
+            totp_enabled,
         )
         .render()
     }
@@ -455,6 +475,19 @@ impl SignupTemplate<'_> {
     }
 }
 
+/// The authenticator-app enrollment page: QR code plus confirmation form.
+#[cfg(feature = "totp")]
+#[derive(Template)]
+#[template(path = "totp-enroll.html")]
+pub struct TotpEnrollTemplate<'a> {
+    pub qr_png_base64: &'a str,
+    pub otpauth_url: &'a str,
+    pub secret: &'a str,
+    pub confirm_action_route: &'a str,
+    pub user_page_route: &'a str,
+    pub error: Option<&'a str>,
+}
+
 #[cfg(feature = "mfa")]
 pub struct MfaOtpTemplateInfo<'a> {
     pub action_route: &'a str,
@@ -478,6 +511,8 @@ pub struct MfaTemplate<'a> {
     pub message: Option<&'a str>,
     pub error: Option<&'a str>,
     pub otp: Option<MfaOtpTemplateInfo<'a>>,
+    /// The action route for authenticator-app codes, when the user has one.
+    pub totp: Option<&'a str>,
     pub webauthn: Option<MfaWebauthnTemplateInfo<'a>>,
 }
 
@@ -508,6 +543,8 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
+    #[cfg(feature = "totp")]
+    fn render_totp_enroll(&self, view: &TotpEnrollTemplate<'_>) -> String;
     #[cfg(feature = "user")]
     fn render_user(&self, view: &UserTemplate<'_>) -> String;
     #[cfg(all(feature = "password", feature = "email"))]
@@ -542,6 +579,11 @@ impl Pages for AskamaPages {
 
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "totp")]
+    fn render_totp_enroll(&self, view: &TotpEnrollTemplate<'_>) -> String {
         render_or_err(view)
     }
 

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+  <h1>Set up your authenticator app</h1>
+
+  {% if let Some(error) = error %}
+  <div class="error" role="alert">
+    <strong>Something went wrong: {{ error }}</strong>
+  </div>
+  {% endif %}
+
+  <p>Scan this QR code with your authenticator app (or add the secret
+    manually), then enter a code below to finish.</p>
+
+  <p style="text-align: center;">
+    <img src="data:image/png;base64,{{ qr_png_base64 }}" alt="TOTP QR code" width="240" height="240" />
+  </p>
+
+  <p class="text-muted">Manual entry: <code>{{ secret }}</code></p>
+  <p class="text-muted"><a href="{{ otpauth_url }}">Open in authenticator</a></p>
+
+  <form action="{{ confirm_action_route }}" method="post" id="totp-confirm-form">
+    <div class="form-group">
+      <label for="code">Code from the app</label>
+      <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code"
+        required autofocus>
+    </div>
+    <button type="submit">Confirm and enable</button>
+  </form>
+
+  <div class="links">
+    <a href="{{ user_page_route }}">Cancel</a>
+  </div>
+</div>
+{% endblock %}

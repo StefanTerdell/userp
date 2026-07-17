@@ -9,6 +9,8 @@ use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
 use crate::ratelimit::{NoRateLimit, RateLimiter};
+#[cfg(feature = "totp")]
+use crate::totp::TotpConfig;
 #[cfg(feature = "webauthn")]
 use crate::webauthn::WebauthnConfig;
 use crate::{models::Allow, routes::Routes};
@@ -50,6 +52,8 @@ pub struct AutheryConfig {
     pub oauth: OAuthConfig,
     #[cfg(feature = "webauthn")]
     pub webauthn: WebauthnConfig,
+    #[cfg(feature = "totp")]
+    pub totp: TotpConfig,
     /// Which first factors demand a second one; see [`crate::mfa`]. Defaults
     /// to requiring MFA for password logins when the user has a factor
     /// registered.
@@ -69,6 +73,7 @@ impl AutheryConfig {
         #[cfg(feature = "email")] email: EmailConfig,
         #[cfg(feature = "oauth")] oauth: OAuthConfig,
         #[cfg(feature = "webauthn")] webauthn: WebauthnConfig,
+        #[cfg(feature = "totp")] totp: TotpConfig,
     ) -> Result<Self, AutheryConfigError> {
         if key.len() < MIN_KEY_LEN {
             return Err(AutheryConfigError::KeyTooShort(key.len()));
@@ -91,6 +96,8 @@ impl AutheryConfig {
             oauth,
             #[cfg(feature = "webauthn")]
             webauthn,
+            #[cfg(feature = "totp")]
+            totp,
             #[cfg(feature = "mfa")]
             mfa_policy: MfaPolicy::default(),
             #[cfg(feature = "pages")]

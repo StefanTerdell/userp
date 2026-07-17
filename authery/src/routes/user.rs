@@ -9,6 +9,15 @@ use std::fmt::Display;
 pub struct UserActionRoutes<T = &'static str> {
     /// Post route to delete a user account
     pub user_delete: T,
+    #[cfg(feature = "totp")]
+    /// Post - begins TOTP enrollment; renders the QR/confirm page
+    pub user_totp_enroll: T,
+    #[cfg(feature = "totp")]
+    /// Post - confirms enrollment with a code from the authenticator
+    pub user_totp_confirm: T,
+    #[cfg(feature = "totp")]
+    /// Post - removes the TOTP enrollment
+    pub user_totp_disable: T,
     /// Post route to delete a login session
     pub user_session_delete: T,
     /// Post route to add a user email
@@ -38,6 +47,12 @@ impl Default for UserActionRoutes {
     fn default() -> Self {
         Self {
             user_delete: "/user/delete",
+            #[cfg(feature = "totp")]
+            user_totp_enroll: "/user/totp/enroll",
+            #[cfg(feature = "totp")]
+            user_totp_confirm: "/user/totp/confirm",
+            #[cfg(feature = "totp")]
+            user_totp_disable: "/user/totp/disable",
             user_session_delete: "/user/session/delete",
             #[cfg(feature = "email")]
             user_email_add: "/user/email/add",
@@ -61,6 +76,12 @@ impl<'a> From<&'a UserActionRoutes<String>> for UserActionRoutes<&'a str> {
     fn from(value: &'a UserActionRoutes<String>) -> Self {
         Self {
             user_delete: &value.user_delete,
+            #[cfg(feature = "totp")]
+            user_totp_enroll: &value.user_totp_enroll,
+            #[cfg(feature = "totp")]
+            user_totp_confirm: &value.user_totp_confirm,
+            #[cfg(feature = "totp")]
+            user_totp_disable: &value.user_totp_disable,
             user_session_delete: &value.user_session_delete,
             #[cfg(feature = "email")]
             user_email_add: &value.user_email_add,
@@ -97,6 +118,12 @@ impl<T: Display> UserActionRoutes<T> {
     pub fn with_prefix(self, prefix: impl Display) -> UserActionRoutes<String> {
         UserActionRoutes {
             user_delete: format!("{prefix}{}", self.user_delete),
+            #[cfg(feature = "totp")]
+            user_totp_enroll: format!("{prefix}{}", self.user_totp_enroll),
+            #[cfg(feature = "totp")]
+            user_totp_confirm: format!("{prefix}{}", self.user_totp_confirm),
+            #[cfg(feature = "totp")]
+            user_totp_disable: format!("{prefix}{}", self.user_totp_disable),
             user_session_delete: format!("{prefix}{}", self.user_session_delete),
             #[cfg(feature = "password")]
             user_password_set: format!("{prefix}{}", self.user_password_set),

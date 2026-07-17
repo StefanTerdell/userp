@@ -49,6 +49,28 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<Self::LoginSession>, Self::Error>> + Send;
 
+    // totp store
+    /// The user's TOTP enrollment, if any (confirmed or not).
+    #[cfg(feature = "totp")]
+    fn totp_get(
+        &self,
+        user_id: &Self::UserId,
+    ) -> impl Future<Output = Result<Option<crate::models::TotpCredential>, Self::Error>> + Send;
+    /// Create or replace the user's TOTP enrollment (used for enrollment,
+    /// confirmation, and replay-guard updates).
+    #[cfg(feature = "totp")]
+    fn totp_upsert(
+        &self,
+        user_id: &Self::UserId,
+        credential: crate::models::TotpCredential,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    /// Remove the user's TOTP enrollment.
+    #[cfg(feature = "totp")]
+    fn totp_delete(
+        &self,
+        user_id: &Self::UserId,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
     // webauthn store
     //
     // Passkeys are stored as opaque `webauthn_rs::prelude::Passkey` blobs

@@ -273,3 +273,128 @@ where
 
     Ok(Redirect::to(&format!("{user_route}?message=Session deleted")).into_response())
 }
+
+#[cfg(all(feature = "totp", feature = "pages"))]
+pub(crate) use totp_handlers::post_user_totp_enroll;
+#[cfg(feature = "totp")]
+pub(crate) use totp_handlers::{post_user_totp_confirm, post_user_totp_disable};
+
+#[cfg(feature = "totp")]
+mod totp_handlers {
+    use super::*;
+    use crate::models::User;
+    use crate::models::email::UserEmail;
+    use crate::totp::TotpError;
+    use axum::Form;
+    use serde::Deserialize;
+
+    /// Begin enrollment and render the QR/confirm page directly - the QR
+    /// payload is too large to survive a redirect.
+    #[cfg(feature = "pages")]
+    pub(crate) async fn post_user_totp_enroll<St>(
+        auth: AxumAuthery<St>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        use crate::pages::TotpEnrollTemplate;
+        use axum::response::Html;
+
+        let login_route = auth.routes.pages.login.clone();
+
+        // The authenticator shows this label under the issuer; prefer the
+        // user's email when there is one.
+        let account_label = match auth.user().await? {
+            Some(user) => {
+                #[cfg(feature = "email")]
+                {
+                    auth.store
+                        .get_user_emails(&user.get_id())
+                        .await?
+                        .first()
+                        .map(|e| e.get_address().to_string())
+                        .unwrap_or_else(|| user.get_id().to_string())
+                }
+                #[cfg(not(feature = "email"))]
+                {
+                    user.get_id().to_string()
+                }
+            }
+            None => return Ok(Redirect::to(&login_route).into_response()),
+        };
+
+        match auth.totp_enroll_start(&account_label).await {
+            Ok(enrollment) => {
+                let view = TotpEnrollTemplate {
+                    qr_png_base64: &enrollment.qr_png_base64,
+                    otpauth_url: &enrollment.otpauth_url,
+                    secret: &enrollment.secret,
+                    confirm_action_route: &auth.routes.user.user_totp_confirm,
+                    user_page_route: &auth.routes.pages.user,
+                    error: None,
+                };
+                Ok(Html(auth.pages.render_totp_enroll(&view)).into_response())
+            }
+            Err(TotpError::Store(err)) => Err(err),
+            Err(err) => Ok(Redirect::to(&format!(
+                "{}?error={}",
+                auth.routes.pages.user,
+                urlencoding::encode(&err.to_string())
+            ))
+            .into_response()),
+        }
+    }
+
+    #[derive(Deserialize)]
+    pub struct TotpCodeForm {
+        pub code: String,
+    }
+
+    pub(crate) async fn post_user_totp_confirm<St>(
+        auth: AxumAuthery<St>,
+        Form(TotpCodeForm { code }): Form<TotpCodeForm>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        let user_route = auth.routes.pages.user.clone();
+
+        match auth.totp_enroll_confirm(&code).await {
+            Ok(()) => Ok(
+                Redirect::to(&format!("{user_route}?message=Authenticator app enabled"))
+                    .into_response(),
+            ),
+            Err(TotpError::Store(err)) => Err(err),
+            Err(err) => Ok(Redirect::to(&format!(
+                "{user_route}?error={}",
+                urlencoding::encode(&err.to_string())
+            ))
+            .into_response()),
+        }
+    }
+
+    pub(crate) async fn post_user_totp_disable<St>(
+        auth: AxumAuthery<St>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        let user_route = auth.routes.pages.user.clone();
+
+        match auth.totp_disable().await {
+            Ok(()) => Ok(
+                Redirect::to(&format!("{user_route}?message=Authenticator app disabled"))
+                    .into_response(),
+            ),
+            Err(TotpError::Store(err)) => Err(err),
+            Err(err) => Ok(Redirect::to(&format!(
+                "{user_route}?error={}",
+                urlencoding::encode(&err.to_string())
+            ))
+            .into_response()),
+        }
+    }
+}

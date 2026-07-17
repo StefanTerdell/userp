@@ -29,6 +29,13 @@ url = { version = "2.5.8", optional = true }
 password-auth = { version = "1.0.0", optional = true }
 tokio = { version = "1.52.3", features = ["rt"], optional = true }
 
+# totp
+totp-rs = { version = "5.7.2", features = [
+  "gen_secret",
+  "otpauth",
+  "qr",
+], optional = true }
+
 # webauthn
 webauthn-rs = { version = "0.5.5", features = [
   "danger-allow-state-serialisation",
@@ -61,6 +68,8 @@ user = []
 email = ["dep:lettre", "dep:url"]
 otp = ["email"]
 mfa = []
+totp = ["dep:totp-rs"]
+sms = []
 webauthn = [
   "dep:webauthn-rs",
   "dep:webauthn-rs-proto",
@@ -81,6 +90,7 @@ axum = ["dep:axum", "dep:axum-extra", "dep:urlencoding"]
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
+totp-rs = { version = "5.7.2", features = ["gen_secret", "otpauth"] }
 reqwest = { version = "0.12.8", features = ["json"] }
 serde_json = "1.0.150"
 

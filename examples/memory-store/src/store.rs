@@ -27,6 +27,7 @@ pub struct MemoryStore {
     /// Passkeys keyed by raw credential id, with their owning user.
     #[allow(clippy::type_complexity)]
     passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
+    totp: Arc<RwLock<HashMap<Uuid, TotpCredential>>>,
     /// App-level org tables - authery knows nothing about these.
     pub orgs: Arc<RwLock<HashMap<Uuid, AppOrg>>>,
     pub org_members: Arc<RwLock<Vec<AppOrgMember>>>,
@@ -126,6 +127,26 @@ impl AutheryStore for MemoryStore {
             Some(_) => Err(MemoryStoreError::WrongUserId),
             None => Ok(()),
         }
+    }
+
+    async fn totp_get(&self, user_id: &Uuid) -> Result<Option<TotpCredential>, Self::Error> {
+        Ok(self.totp.read().await.get(user_id).cloned())
+    }
+
+    async fn totp_upsert(
+        &self,
+        user_id: &Uuid,
+        credential: TotpCredential,
+    ) -> Result<(), Self::Error> {
+        self.totp.write().await.insert(*user_id, credential);
+
+        Ok(())
+    }
+
+    async fn totp_delete(&self, user_id: &Uuid) -> Result<(), Self::Error> {
+        self.totp.write().await.remove(user_id);
+
+        Ok(())
     }
 
     async fn get_session(

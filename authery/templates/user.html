@@ -34,6 +34,9 @@
     {% if webauthn.is_some() %}
     <button id="passkeys-tab-button" class="tab-button" onclick="openTab('passkeys')">Passkeys</button>
     {% endif %}
+    {% if totp.is_some() %}
+    <button id="totp-tab-button" class="tab-button" onclick="openTab('totp')">Authenticator</button>
+    {% endif %}
     <button id="danger-tab-button" class="tab-button" onclick="openTab('danger')">Danger Zone</button>
   </div>
 
@@ -263,6 +266,25 @@
       });
     })();
   </script>
+  {% endif %}
+
+  {% if let Some(totp) = totp %}
+  <div id="totp" class="tab">
+    <div class="section">
+      <h2>Authenticator app</h2>
+      {% if totp.enabled %}
+      <p>An authenticator app is enabled as a second factor.</p>
+      <form action="{{ totp.disable_action_route }}" method="post" class="form">
+        <button type="submit">Disable</button>
+      </form>
+      {% else %}
+      <p>Add time-based codes from an authenticator app as a second factor.</p>
+      <form action="{{ totp.enroll_action_route }}" method="post" class="form">
+        <button type="submit">Set up authenticator app</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 
   <div id="danger" class="tab">

@@ -116,6 +116,7 @@ async fn main() {
         ),
         oauth,
         WebauthnConfig::new(base_url, "Authery example").expect("valid webauthn config"),
+        TotpConfig::new("Authery example"),
     )
     .expect("valid auth config")
     .with_https_only(false)

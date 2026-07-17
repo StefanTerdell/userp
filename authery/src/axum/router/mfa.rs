@@ -126,3 +126,52 @@ mod webauthn_factor {
         }
     }
 }
+
+#[cfg(feature = "totp")]
+pub(crate) use totp_factor::post_login_mfa_totp;
+
+#[cfg(feature = "totp")]
+mod totp_factor {
+    use super::*;
+    use crate::mfa::MfaTotpError;
+    use axum::Form;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct MfaTotpForm {
+        pub code: String,
+        pub next: Option<String>,
+    }
+
+    /// Verify an authenticator-app code and complete the login.
+    pub(crate) async fn post_login_mfa_totp<St>(
+        auth: AxumAuthery<St>,
+        Form(MfaTotpForm { code, next }): Form<MfaTotpForm>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        let mfa_route = auth.routes.mfa.login_mfa.clone();
+        let login_route = auth.routes.pages.login.clone();
+
+        match auth.mfa_totp_verify(&code).await {
+            Ok(auth) => {
+                let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
+                Ok((auth, Redirect::to(&next)).into_response())
+            }
+            Err(MfaTotpError::Store(err)) => Err(err),
+            Err(MfaTotpError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
+            Err(err) => {
+                let mut url = format!(
+                    "{mfa_route}?error={}",
+                    urlencoding::encode(&err.to_string())
+                );
+                if let Some(next) = next.as_deref() {
+                    url.push_str(&format!("&next={}", urlencoding::encode(next)));
+                }
+                Ok(Redirect::to(&url).into_response())
+            }
+        }
+    }
+}

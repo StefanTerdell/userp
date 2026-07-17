@@ -37,6 +37,8 @@ pub mod ratelimit;
 pub mod reexports;
 pub mod routes;
 pub mod store;
+#[cfg(feature = "totp")]
+pub mod totp;
 #[cfg(feature = "webauthn")]
 pub mod webauthn;
 

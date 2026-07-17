@@ -313,3 +313,132 @@ fn login_method_rules_judge_first_factor_and_mfa() {
         address: "a@x.com".into()
     }));
 }
+
+#[cfg(feature = "totp")]
+mod totp_tests {
+    use super::*;
+    use totp_rs::{Algorithm, Secret, TOTP};
+
+    fn code_at_offset(secret: &str, step_offset: i64) -> String {
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            Secret::Encoded(secret.to_string()).to_bytes().unwrap(),
+            Some("authery-tests".into()),
+            "test".into(),
+        )
+        .unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let step = (now / 30).checked_add_signed(step_offset).unwrap();
+        totp.generate(step * 30)
+    }
+
+    fn code_for(secret: &str) -> String {
+        code_at_offset(secret, 0)
+    }
+
+    /// Full cycle: enroll while logged in, confirm with a real code, then the
+    /// MFA policy demands TOTP on the next password login and a code
+    /// completes it. The same code must not be accepted twice (replay).
+    #[tokio::test]
+    async fn totp_enroll_confirm_and_mfa_cycle() {
+        let store = TestStore::default();
+
+        // Signup creates an UNVERIFIED email, so TOTP will be the user's only
+        // second factor - the MFA wrap must trigger on it alone.
+        let logged_in = auth(&store)
+            .password_signup("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        let user_id = logged_in
+            .session()
+            .await
+            .unwrap()
+            .expect("signed up")
+            .get_user_id();
+        let enrollment = logged_in.totp_enroll_start("alice@x.com").await.unwrap();
+        assert!(!enrollment.qr_png_base64.is_empty());
+        assert!(enrollment.otpauth_url.starts_with("otpauth://totp/"));
+
+        // Unconfirmed enrollment is not a usable factor yet.
+        assert!(!logged_in.totp_enabled(&user_id).await.unwrap());
+
+        logged_in
+            .totp_enroll_confirm(&code_for(&enrollment.secret))
+            .await
+            .unwrap();
+        assert!(logged_in.totp_enabled(&user_id).await.unwrap());
+
+        // Fresh password login now yields a pending session (policy requires
+        // MFA for passwords, and TOTP is available).
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        assert!(pending.session().await.unwrap().is_none());
+
+        // The confirmation consumed the current time step: replaying the
+        // identical code must fail...
+        let replayed = code_for(&enrollment.secret);
+        match pending.mfa_totp_verify(&replayed).await {
+            Err(authery::mfa::MfaTotpError::Totp(err)) => {
+                assert_eq!(err.to_string(), "Wrong code")
+            }
+            other => panic!("expected replay rejection, got {other:?}"),
+        }
+
+        // ...but the NEXT step's code is valid even within the same
+        // wall-clock window (the replay guard tracks the matched step, and
+        // verification accepts one step of skew).
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        let upgraded = pending
+            .mfa_totp_verify(&code_at_offset(&enrollment.secret, 1))
+            .await
+            .unwrap();
+        let session = upgraded.session().await.unwrap().expect("logged in");
+        let LoginMethod::Mfa { first, second } = session.get_method() else {
+            panic!("expected Mfa session");
+        };
+        assert_eq!(*first, LoginMethod::Password);
+        assert_eq!(*second, LoginMethod::Totp);
+    }
+
+    #[tokio::test]
+    async fn totp_rejects_wrong_codes_and_disable_removes_factor() {
+        let store = TestStore::default();
+        let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+
+        let logged_in = auth(&store)
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        let enrollment = logged_in.totp_enroll_start("alice@x.com").await.unwrap();
+
+        // A wrong code must not confirm the enrollment.
+        assert!(logged_in.totp_enroll_confirm("000000").await.is_err());
+        assert!(!logged_in.totp_enabled(&user_id).await.unwrap());
+
+        logged_in
+            .totp_enroll_confirm(&code_for(&enrollment.secret))
+            .await
+            .unwrap();
+        assert!(logged_in.totp_enabled(&user_id).await.unwrap());
+
+        logged_in.totp_disable().await.unwrap();
+        assert!(!logged_in.totp_enabled(&user_id).await.unwrap());
+    }
+}

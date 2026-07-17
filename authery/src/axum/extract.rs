@@ -66,6 +66,8 @@ where
             oauth: config.oauth,
             #[cfg(feature = "webauthn")]
             webauthn: config.webauthn,
+            #[cfg(feature = "totp")]
+            totp: config.totp,
             #[cfg(feature = "mfa")]
             mfa_policy: config.mfa_policy,
             #[cfg(feature = "pages")]

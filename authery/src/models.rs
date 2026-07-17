@@ -74,6 +74,16 @@ pub enum LoginMethod {
         /// The hex-encoded credential id of the passkey used
         credential_id: String,
     },
+    #[cfg(feature = "totp")]
+    /// An authenticator-app code (TOTP) was used - as an MFA second factor,
+    /// since TOTP is not a standalone login method
+    Totp,
+    #[cfg(feature = "sms")]
+    /// The login session was created with a one-time code sent by SMS
+    Sms {
+        /// The phone number the code was sent to
+        number: String,
+    },
     #[cfg(feature = "mfa")]
     /// A first factor succeeded but the MFA policy demands a second one.
     /// Sessions with this method are NOT logged in - they can only be used to
@@ -171,6 +181,19 @@ impl LoginMethodRules {
             _ => true,
         }
     }
+}
+
+/// A user's TOTP (authenticator-app) enrollment, persisted through the store
+/// as an opaque record. `secret` is the base32 secret; `confirmed` flips once
+/// the user has proven they can produce a code (an unconfirmed enrollment is
+/// never accepted as a factor); `last_used_step` is the RFC 6238 replay
+/// guard - a code from the same or an earlier time step is rejected.
+#[cfg(feature = "totp")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TotpCredential {
+    pub secret: String,
+    pub confirmed: bool,
+    pub last_used_step: Option<u64>,
 }
 
 pub trait LoginSession: Send + Sync + Sized {

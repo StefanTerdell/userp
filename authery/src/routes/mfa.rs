@@ -11,6 +11,9 @@ pub struct MfaRoutes<T = &'static str> {
     /// Post without `code` - mails a code to the pending user's verified address
     /// Post with `code` - verifies it and completes the login
     pub login_mfa_otp: T,
+    #[cfg(feature = "totp")]
+    /// Post - verifies an authenticator-app code and completes the login
+    pub login_mfa_totp: T,
     #[cfg(feature = "webauthn")]
     /// Post - begins the second-factor passkey ceremony (JSON challenge)
     pub login_mfa_webauthn_start: T,
@@ -25,6 +28,8 @@ impl Default for MfaRoutes {
             login_mfa: "/login/mfa",
             #[cfg(feature = "otp")]
             login_mfa_otp: "/login/mfa/otp",
+            #[cfg(feature = "totp")]
+            login_mfa_totp: "/login/mfa/totp",
             #[cfg(feature = "webauthn")]
             login_mfa_webauthn_start: "/login/mfa/webauthn/start",
             #[cfg(feature = "webauthn")]
@@ -39,6 +44,8 @@ impl<'a> From<&'a MfaRoutes<String>> for MfaRoutes<&'a str> {
             login_mfa: &value.login_mfa,
             #[cfg(feature = "otp")]
             login_mfa_otp: &value.login_mfa_otp,
+            #[cfg(feature = "totp")]
+            login_mfa_totp: &value.login_mfa_totp,
             #[cfg(feature = "webauthn")]
             login_mfa_webauthn_start: &value.login_mfa_webauthn_start,
             #[cfg(feature = "webauthn")]
@@ -66,6 +73,8 @@ impl<T: Display> MfaRoutes<T> {
             login_mfa: format!("{prefix}{}", self.login_mfa),
             #[cfg(feature = "otp")]
             login_mfa_otp: format!("{prefix}{}", self.login_mfa_otp),
+            #[cfg(feature = "totp")]
+            login_mfa_totp: format!("{prefix}{}", self.login_mfa_totp),
             #[cfg(feature = "webauthn")]
             login_mfa_webauthn_start: format!("{prefix}{}", self.login_mfa_webauthn_start),
             #[cfg(feature = "webauthn")]

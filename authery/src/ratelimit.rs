@@ -29,6 +29,9 @@ pub enum RateLimitOp<'a> {
     /// Six-digit codes are guessable, so cap attempts tightly (the code is
     /// also single-use and short-lived).
     OtpAttempt { address: &'a str },
+    /// A TOTP (authenticator-app) verification attempt, keyed on the user id
+    /// in its string representation. Same guessability caveat as OtpAttempt.
+    TotpAttempt { user_id: &'a str },
 }
 
 /// Refusal returned by a limiter. `retry_after` is advisory and surfaced to the
