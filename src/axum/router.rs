@@ -4,7 +4,7 @@ pub mod email;
 pub mod mfa;
 #[cfg(feature = "oauth")]
 pub mod oauth;
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 pub mod otp;
 #[cfg(feature = "pages")]
 pub mod pages;
@@ -439,7 +439,7 @@ pub trait AxumRouter {
                 );
             }
 
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             {
                 router = router.route(
                     self.routes().mfa.login_mfa_otp.as_str(),
@@ -497,7 +497,7 @@ pub trait AxumRouter {
                 .route(self.routes().sms.signup_sms.as_str(), signup_sms);
         }
 
-        #[cfg(feature = "otp")]
+        #[cfg(feature = "email")]
         {
             let login_otp = post(otp::post_login_otp::<St>);
             let signup_otp = post(otp::post_signup_otp::<St>);

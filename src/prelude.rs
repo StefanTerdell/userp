@@ -24,7 +24,7 @@ pub use crate::email::reset::*;
 #[cfg(all(feature = "email", feature = "password"))]
 pub use crate::password::PasswordReset;
 
-#[cfg(any(feature = "email", feature = "otp"))]
+#[cfg(feature = "email")]
 pub use crate::email::{EmailConfig, SendEmailChallengeError, SmtpSettings};
 #[cfg(feature = "email")]
 pub use crate::email::{login::*, signup::*, verify::*};
@@ -52,15 +52,15 @@ pub use crate::pages::*;
 
 #[cfg(feature = "totp")]
 pub use crate::models::TotpCredential;
-#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "sms"))]
 pub use crate::models::email::EmailChallenge;
-#[cfg(any(feature = "email", feature = "otp"))]
+#[cfg(feature = "email")]
 pub use crate::models::email::*;
 #[cfg(feature = "oauth")]
 pub use crate::models::oauth::*;
 pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginMethodRules, LoginSession, User};
 
-#[cfg(any(feature = "otp", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "sms"))]
 pub use crate::codes::{CodeGenerator, NumericCode};
 pub use crate::events::{AuthEvent, AuthEventHandler, CodeChannel, TracingEvents};
 #[cfg(feature = "mfa")]

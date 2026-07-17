@@ -49,12 +49,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         email: String,
         next: Option<String>,
     ) -> Result<(), EmailSignupInitError<S::Error>> {
-        if self
-            .email
-            .allow_signup
-            .as_ref()
-            .unwrap_or(&self.allow_signup)
-            == &Allow::Never
+        if !self.email.offer_links
+            || self
+                .email
+                .allow_signup
+                .as_ref()
+                .unwrap_or(&self.allow_signup)
+                == &Allow::Never
         {
             return Err(EmailSignupInitError::NotAllowed);
         }
@@ -74,12 +75,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self,
         code: String,
     ) -> Result<(Self, Option<String>), EmailSignupCallbackError<S::Error>> {
-        if self
-            .email
-            .allow_signup
-            .as_ref()
-            .unwrap_or(&self.allow_signup)
-            == &Allow::Never
+        if !self.email.offer_links
+            || self
+                .email
+                .allow_signup
+                .as_ref()
+                .unwrap_or(&self.allow_signup)
+                == &Allow::Never
         {
             return Err(EmailSignupCallbackError::NotAllowed);
         }

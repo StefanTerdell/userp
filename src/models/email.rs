@@ -1,7 +1,7 @@
 use crate::models::Id;
 use chrono::{DateTime, Utc};
 
-#[cfg(any(feature = "email", feature = "otp"))]
+#[cfg(feature = "email")]
 pub trait UserEmail: Send + Sync {
     type UserId: Id;
 

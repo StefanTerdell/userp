@@ -12,13 +12,14 @@ crate. Everything below is new relative to userp 0.0.x:
 
 ### Added
 
-- Single-crate design with feature flags: `user`, `password`, `email`, `otp`,
+- Single-crate design with feature flags: `user`, `password`, `email`,
   `oauth`, `webauthn`, `totp`, `sms`, `mfa`, `pages`, `axum`.
 - Generic entity ids: every entity is a trait with associated id types.
 - Passkeys (WebAuthn): usernameless login + account-page registration.
 - MFA policy layer with passkey, authenticator-app (TOTP), emailed-code,
   texted-code and single-use recovery-code second factors.
-- Emailed one-time codes (`otp`) and texted codes (`sms`) with five built-in
+- Emailed one-time codes (part of `email`, toggleable by config) and
+  texted codes (`sms`) with five built-in
   SMS gateway senders and a pluggable `SmsSender`/`CodeGenerator`.
 - OIDC id_token validation (JWKS signature, iss/aud/exp/nonce) and PKCE on
   every flow; 11 built-in OAuth providers plus custom/OIDC constructors.

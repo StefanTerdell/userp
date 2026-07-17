@@ -90,7 +90,7 @@ where
             routes: config.routes,
             cookies,
             store,
-            #[cfg(any(feature = "email", feature = "otp"))]
+            #[cfg(feature = "email")]
             email: config.email,
             #[cfg(feature = "password")]
             pass: config.pass,

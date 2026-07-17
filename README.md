@@ -32,7 +32,7 @@ Enable the features you want (see the table below):
 
 ```toml
 [dependencies]
-authery = { version = "0.1", features = ["axum", "pages", "otp", "webauthn", "mfa"] }
+authery = { version = "0.1", features = ["axum", "pages", "webauthn", "mfa"] }
 ```
 
 Implement [`AutheryStore`](https://docs.rs/authery/latest/authery/store/trait.AutheryStore.html) for your storage (see
@@ -118,8 +118,7 @@ response.
 |---|---|---|
 | `user` | Account management: session listing, email/password management, account deletion | user-scoped queries & mutations |
 | `password` | Password login/signup, pluggable hasher | password-id lookup & user creation |
-| `email` | Magic links: login, signup, verification, password reset (with `password`); async SMTP | user-email entities, single-use challenges |
-| `otp` | One-time emailed codes; standalone, or alongside `email` links | user-email entities, challenges (shared with `email`) |
+| `email` | Everything email: magic links, one-time codes, verification, password reset (with `password`); async SMTP. Links and codes can each be withheld by config | user-email entities, single-use challenges |
 | `sms` | Texted six-digit codes: login, signup, MFA; five ready-made gateway senders or bring-your-own `SmsSender` | user-phone entities (challenges shared with `email`) |
 | `oauth` | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution | oauth token entities & lookups |
 | `webauthn` | Passkeys: usernameless login, account-page registration | passkey blobs keyed by credential id |
@@ -181,12 +180,13 @@ With `email` also enabled, password reset works over emailed links
 single-use, purpose-bound sessions that cannot access anything but the
 reset flow.
 
-### Email links & one-time codes (`email`, `otp`)
+### Email links & one-time codes (`email`)
 
-Two independent features over the same email infrastructure: `email` is
-magic links (signup/login links, address verification, password-reset
-delivery), `otp` is one-time codes - enable either or both. SMTP is
-async (lettre) and configured with a single URL:
+One feature, two login mechanisms - magic links and one-time codes -
+plus address verification and password-reset delivery. Both mechanisms
+are on by default; withhold either by configuration
+(`EmailConfig::with_links(false)` / `.with_otp(false)`) - the pages and
+flows follow. SMTP is async (lettre) and configured with a single URL:
 
 ```text
 smtps://user:pass@smtp.example.com:465                implicit TLS
@@ -199,8 +199,8 @@ Every email and text authery sends is composable copy: implement
 override selectively) and register with `.with_messages(...)` on the
 channel config - that's the branding/localization hook.
 
-The `otp` feature sends one-time codes instead of links - same challenge
-store, different UX. Codes are namespaced per address, single-use,
+One-time codes ride the same challenge store as links, different UX.
+Codes are namespaced per address, single-use,
 short-lived and rate-limited through your `RateLimiter`. The generator is
 pluggable per channel (`CodeGenerator` via
 `with_code_generator` on `EmailConfig`/`SmsConfig`); the default is
@@ -448,7 +448,7 @@ Everything user-visible is exported through [`prelude`](https://docs.rs/authery/
 ```sh
 docker compose -f dev/compose.yaml up -d   # Keycloak (OIDC) + Mailhog (SMTP)
 cargo test --no-default-features \
-  --features password,email,otp,mfa,user,totp,sms   # core flow tests
+  --features password,email,mfa,user,totp,sms   # core flow tests
 cargo test                                 # + live Keycloak OIDC validation when up
 ```
 

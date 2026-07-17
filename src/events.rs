@@ -53,11 +53,11 @@ pub enum AuthEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CodeChannel {
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     EmailOtp,
     #[cfg(feature = "sms")]
     Sms,
-    #[cfg(all(feature = "otp", feature = "mfa"))]
+    #[cfg(all(feature = "email", feature = "mfa"))]
     MfaEmail,
     #[cfg(all(feature = "sms", feature = "mfa"))]
     MfaSms,

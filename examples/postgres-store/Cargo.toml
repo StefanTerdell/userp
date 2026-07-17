@@ -12,7 +12,6 @@ publish = false
 user = ["authery/user"]
 password = ["authery/password"]
 email = ["authery/email"]
-otp = ["authery/otp"]
 oauth = ["authery/oauth"]
 webauthn = ["authery/webauthn"]
 totp = ["authery/totp"]

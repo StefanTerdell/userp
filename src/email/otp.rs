@@ -66,7 +66,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: String,
         next: Option<String>,
     ) -> Result<(), OtpInitError<S::Error>> {
-        if self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if !self.email.offer_otp
+            || self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never
+        {
             return Err(OtpInitError::NotAllowed);
         }
 
@@ -135,7 +137,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), OtpVerifyError<S::Error>> {
-        if self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if !self.email.offer_otp
+            || self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never
+        {
             return Err(OtpVerifyError::NotAllowed);
         }
 

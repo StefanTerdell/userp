@@ -1,9 +1,8 @@
 //! Integration tests for the core auth flows, run with:
-//!   cargo test -p authery --no-default-features --features password,email,otp,mfa,user
+//!   cargo test -p authery --no-default-features --features password,email,mfa,user
 #![cfg(all(
     feature = "password",
     feature = "email",
-    feature = "otp",
     feature = "mfa",
     feature = "user"
 ))]
@@ -210,6 +209,42 @@ async fn otp_verify_is_single_use_and_code_checked() {
         .await
         .unwrap_err();
     assert_eq!(replay.to_string(), "Wrong or expired code");
+}
+
+/// Links and codes are one feature, two mechanisms - each can be withheld
+/// by configuration alone.
+#[tokio::test]
+async fn email_mechanisms_can_be_withheld_by_config() {
+    let store = TestStore::default();
+    store.seed_user("alice@x.com", None);
+    store.seed_challenge(
+        "otp:alice@x.com:123456",
+        "alice@x.com",
+        Duration::minutes(5),
+    );
+
+    let mut no_otp = auth(&store);
+    no_otp.email.offer_otp = false;
+    let err = no_otp
+        .otp_login_verify("alice@x.com", "123456")
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "Otp login not allowed");
+
+    let mut no_links = auth(&store);
+    no_links.email.offer_links = false;
+    let err = no_links
+        .email_login_init("alice@x.com".into(), None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "Login not allowed");
+
+    // The challenge is still there: only configuration said no.
+    let (logged_in, _next) = auth(&store)
+        .otp_login_verify("alice@x.com", "123456")
+        .await
+        .unwrap();
+    assert!(logged_in.session().await.unwrap().is_some());
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "sms"))]
 pub mod email;
 #[cfg(feature = "oauth")]
 pub mod oauth;
@@ -64,7 +64,7 @@ pub enum LoginMethod {
         /// The email-address used to create the Email session
         address: String,
     },
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     /// The login session was created with a one-time code sent by email
     Otp {
         /// The email-address the code was sent to
@@ -181,7 +181,7 @@ impl LoginMethodRules {
             LoginMethod::Password => self.allow_password,
             #[cfg(feature = "email")]
             LoginMethod::Email { .. } => self.allow_email,
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             LoginMethod::Otp { .. } => self.allow_email,
             _ => true,
         }

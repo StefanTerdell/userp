@@ -39,7 +39,7 @@ pub struct MfaPolicy {
     #[cfg(feature = "password")]
     pub require_for_password: bool,
     pub require_for_email: bool,
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     pub require_for_otp: bool,
     #[cfg(feature = "sms")]
     pub require_for_sms: bool,
@@ -53,7 +53,7 @@ impl Default for MfaPolicy {
             #[cfg(feature = "password")]
             require_for_password: true,
             require_for_email: false,
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             require_for_otp: false,
             #[cfg(feature = "sms")]
             require_for_sms: false,
@@ -70,7 +70,7 @@ impl MfaPolicy {
             LoginMethod::Password => self.require_for_password,
             #[cfg(feature = "email")]
             LoginMethod::Email { .. } => self.require_for_email,
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             LoginMethod::Otp { .. } => self.require_for_otp,
             #[cfg(feature = "sms")]
             LoginMethod::Sms { .. } => self.require_for_sms,
@@ -159,7 +159,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             factors.totp = self.totp_enabled(user_id).await?;
         }
 
-        #[cfg(feature = "otp")]
+        #[cfg(feature = "email")]
         {
             use crate::models::email::UserEmail;
 
@@ -199,7 +199,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             }
         }
 
-        #[cfg(not(any(feature = "otp", feature = "sms")))]
+        #[cfg(not(any(feature = "email", feature = "sms")))]
         let _ = first;
 
         factors.recovery_codes = self.store.count_recovery_codes(user_id).await? > 0;
@@ -257,7 +257,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     }
 }
 
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 mod otp_factor {
     use super::*;
     use crate::email::SendEmailChallengeError;
@@ -378,7 +378,7 @@ mod otp_factor {
     }
 }
 
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 pub use otp_factor::MfaOtpError;
 
 #[cfg(feature = "webauthn")]

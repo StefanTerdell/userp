@@ -1,6 +1,6 @@
 #[cfg(feature = "email")]
 pub mod login;
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 pub mod otp;
 #[cfg(all(feature = "email", feature = "password"))]
 pub mod reset;
@@ -71,7 +71,7 @@ pub trait EmailMessages: Send + Sync + std::fmt::Debug {
     }
 
     /// The one-time login/signup code email (`otp`).
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     fn login_code(&self, code: &str) -> EmailContent {
         EmailContent {
             subject: "Your login code".into(),
@@ -82,7 +82,7 @@ pub trait EmailMessages: Send + Sync + std::fmt::Debug {
     }
 
     /// The MFA second-factor code email.
-    #[cfg(all(feature = "otp", feature = "mfa"))]
+    #[cfg(all(feature = "email", feature = "mfa"))]
     fn mfa_code(&self, code: &str) -> EmailContent {
         EmailContent {
             subject: "Your verification code".into(),
@@ -113,12 +113,18 @@ pub(crate) enum EmailLinkKind {
 pub struct EmailConfig {
     pub allow_login: Option<Allow>,
     pub allow_signup: Option<Allow>,
+    /// Offer magic-link login/signup. Verification and password-reset links
+    /// are unaffected. Defaults to `true`.
+    pub offer_links: bool,
+    /// Offer one-time-code login/signup (and the emailed MFA factor's UI).
+    /// Defaults to `true`.
+    pub offer_otp: bool,
     pub challenge_lifetime: Duration,
     pub base_url: Url,
     pub smtp: SmtpSettings,
     /// Generates the one-time codes for the `otp` flows (and the emailed MFA
     /// factor). Defaults to six digits; see [`crate::codes`].
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     pub code_generator: std::sync::Arc<dyn crate::codes::CodeGenerator>,
     /// Composes the emails authery sends; see [`EmailMessages`].
     pub messages: std::sync::Arc<dyn EmailMessages>,
@@ -129,13 +135,29 @@ impl EmailConfig {
         Self {
             allow_login: None,
             allow_signup: None,
+            offer_links: true,
+            offer_otp: true,
             challenge_lifetime: Duration::minutes(5),
             base_url,
             smtp,
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             code_generator: std::sync::Arc::new(crate::codes::NumericCode::default()),
             messages: std::sync::Arc::new(DefaultEmailMessages),
         }
+    }
+
+    /// Offer or withhold magic-link login/signup; see
+    /// [`EmailConfig::offer_links`].
+    pub fn with_links(mut self, offer_links: bool) -> Self {
+        self.offer_links = offer_links;
+        self
+    }
+
+    /// Offer or withhold one-time-code login/signup; see
+    /// [`EmailConfig::offer_otp`].
+    pub fn with_otp(mut self, offer_otp: bool) -> Self {
+        self.offer_otp = offer_otp;
+        self
     }
 
     /// Replace the email copy; see [`EmailMessages`].
@@ -145,7 +167,7 @@ impl EmailConfig {
     }
 
     /// Replace the one-time-code generator; see [`crate::codes`].
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     pub fn with_code_generator(
         mut self,
         code_generator: impl crate::codes::CodeGenerator + 'static,

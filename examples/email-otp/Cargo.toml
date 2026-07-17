@@ -12,11 +12,10 @@ publish = false
 authery = { path = "../..", default-features = false, features = [
   "user",
   "email",
-  "otp",
   "pages",
   "axum",
 ] }
-memory-store = { path = "../memory-store", features = ["user", "email", "otp"] }
+memory-store = { path = "../memory-store", features = ["user", "email"] }
 axum = "0.8.9"
 axum-macros = "0.5.0"
 tokio = { version = "1.52.3", features = ["full"] }

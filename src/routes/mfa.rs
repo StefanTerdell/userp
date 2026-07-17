@@ -7,7 +7,7 @@ use std::fmt::Display;
 pub struct MfaRoutes<T = &'static str> {
     /// Get - renders the second-factor picker page (when `pages` is active)
     pub login_mfa: T,
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     /// Post without `code` - mails a code to the pending user's verified address
     /// Post with `code` - verifies it and completes the login
     pub login_mfa_otp: T,
@@ -32,7 +32,7 @@ impl Default for MfaRoutes {
     fn default() -> Self {
         Self {
             login_mfa: "/login/mfa",
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             login_mfa_otp: "/login/mfa/otp",
             #[cfg(feature = "totp")]
             login_mfa_totp: "/login/mfa/totp",
@@ -51,7 +51,7 @@ impl<'a> From<&'a MfaRoutes<String>> for MfaRoutes<&'a str> {
     fn from(value: &'a MfaRoutes<String>) -> Self {
         Self {
             login_mfa: &value.login_mfa,
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             login_mfa_otp: &value.login_mfa_otp,
             #[cfg(feature = "totp")]
             login_mfa_totp: &value.login_mfa_totp,
@@ -83,7 +83,7 @@ impl<T: Display> MfaRoutes<T> {
     pub fn with_prefix(self, prefix: impl Display) -> MfaRoutes<String> {
         MfaRoutes {
             login_mfa: format!("{prefix}{}", self.login_mfa),
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             login_mfa_otp: format!("{prefix}{}", self.login_mfa_otp),
             #[cfg(feature = "totp")]
             login_mfa_totp: format!("{prefix}{}", self.login_mfa_totp),

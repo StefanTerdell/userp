@@ -1,4 +1,4 @@
-#[cfg(any(feature = "email", feature = "otp"))]
+#[cfg(feature = "email")]
 use crate::email::EmailConfig;
 #[cfg(feature = "oauth")]
 use crate::oauth::OAuthConfig;
@@ -34,7 +34,7 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub store: S,
     #[cfg(feature = "password")]
     pub pass: PasswordConfig,
-    #[cfg(any(feature = "email", feature = "otp"))]
+    #[cfg(feature = "email")]
     pub email: EmailConfig,
     #[cfg(feature = "oauth")]
     pub oauth: OAuthConfig,
@@ -71,7 +71,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             }
             #[cfg(feature = "email")]
             RateLimitOp::EmailSend { address } => ("email_send", address.to_string()),
-            #[cfg(feature = "otp")]
+            #[cfg(feature = "email")]
             RateLimitOp::OtpAttempt { address } => ("otp_attempt", address.to_string()),
             #[cfg(feature = "totp")]
             RateLimitOp::TotpAttempt { user_id } => ("totp_attempt", user_id.to_string()),

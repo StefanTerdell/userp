@@ -13,10 +13,10 @@ pub(crate) fn mfa_redirect_url(routes: &Routes<String>, next: Option<&str>) -> S
     }
 }
 
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 pub(crate) use otp_factor::post_login_mfa_otp;
 
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 mod otp_factor {
     use super::*;
     use crate::mfa::MfaOtpError;

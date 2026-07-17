@@ -90,7 +90,7 @@ where
         next: next.as_deref(),
         message: message.as_deref(),
         error: error.as_deref(),
-        #[cfg(feature = "otp")]
+        #[cfg(feature = "email")]
         otp: factors
             .otp_address
             .map(|address| crate::pages::MfaOtpTemplateInfo {
@@ -100,7 +100,7 @@ where
                     auth.email.code_generator.as_ref(),
                 ),
             }),
-        #[cfg(not(feature = "otp"))]
+        #[cfg(not(feature = "email"))]
         otp: None,
         #[cfg(feature = "sms")]
         sms: factors
@@ -138,7 +138,7 @@ where
 }
 
 /// `stefan@example.com` -> `s***@example.com`
-#[cfg(all(feature = "mfa", feature = "otp"))]
+#[cfg(all(feature = "mfa", feature = "email"))]
 fn mask_address(address: &str) -> String {
     match address.split_once('@') {
         Some((local, domain)) => {
@@ -208,7 +208,7 @@ where
     Ok(Html(auth.pages.render_sms(&view)))
 }
 
-#[cfg(any(feature = "otp", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "sms"))]
 #[derive(Deserialize)]
 pub struct OtpPageQuery {
     pub address: String,
@@ -217,7 +217,7 @@ pub struct OtpPageQuery {
     pub error: Option<String>,
 }
 
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 pub async fn get_login_otp<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<OtpPageQuery>,
@@ -241,7 +241,7 @@ where
     Ok(Html(auth.pages.render_otp(&view)))
 }
 
-#[cfg(feature = "otp")]
+#[cfg(feature = "email")]
 pub async fn get_signup_otp<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<OtpPageQuery>,

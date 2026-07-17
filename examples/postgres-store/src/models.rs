@@ -30,7 +30,7 @@ impl User for PgUser {
     }
 }
 
-#[cfg(any(feature = "email", feature = "otp"))]
+#[cfg(feature = "email")]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PgUserEmail {
     pub user_id: Uuid,
@@ -39,7 +39,7 @@ pub struct PgUserEmail {
     pub allow_link_login: bool,
 }
 
-#[cfg(any(feature = "email", feature = "otp"))]
+#[cfg(feature = "email")]
 impl UserEmail for PgUserEmail {
     type UserId = Uuid;
 
@@ -124,7 +124,7 @@ impl LoginSession for PgSession {
     }
 }
 
-#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "sms"))]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PgChallenge {
     pub code: String,
@@ -133,7 +133,7 @@ pub struct PgChallenge {
     pub expires: DateTime<Utc>,
 }
 
-#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "sms"))]
 impl EmailChallenge for PgChallenge {
     fn get_address(&self) -> &str {
         &self.address

@@ -370,16 +370,16 @@ impl LoginTemplate<'_> {
             #[cfg(not(feature = "password"))]
             password: None,
             #[cfg(feature = "email")]
-            email: Some(TemplateEmailInfo {
+            email: auth.email.offer_links.then(|| TemplateEmailInfo {
                 action_route: &auth.routes.email.login_email,
             }),
             #[cfg(not(feature = "email"))]
             email: None,
-            #[cfg(feature = "otp")]
-            otp: Some(TemplateOtpInfo {
+            #[cfg(feature = "email")]
+            otp: auth.email.offer_otp.then(|| TemplateOtpInfo {
                 action_route: &auth.routes.email.login_otp,
             }),
-            #[cfg(not(feature = "otp"))]
+            #[cfg(not(feature = "email"))]
             otp: None,
             #[cfg(feature = "sms")]
             sms: Some(TemplateSmsInfo {
@@ -465,16 +465,16 @@ impl SignupTemplate<'_> {
             #[cfg(not(feature = "password"))]
             password: None,
             #[cfg(feature = "email")]
-            email: Some(TemplateEmailInfo {
+            email: auth.email.offer_links.then(|| TemplateEmailInfo {
                 action_route: &auth.routes.email.signup_email,
             }),
             #[cfg(not(feature = "email"))]
             email: None,
-            #[cfg(feature = "otp")]
-            otp: Some(TemplateOtpInfo {
+            #[cfg(feature = "email")]
+            otp: auth.email.offer_otp.then(|| TemplateOtpInfo {
                 action_route: &auth.routes.email.signup_otp,
             }),
-            #[cfg(not(feature = "otp"))]
+            #[cfg(not(feature = "email"))]
             otp: None,
             #[cfg(feature = "sms")]
             sms: Some(TemplateSmsInfo {
@@ -575,7 +575,7 @@ pub struct CodeInputHints {
 }
 
 impl CodeInputHints {
-    #[cfg(any(feature = "otp", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "sms"))]
     pub fn from_generator(generator: &dyn crate::codes::CodeGenerator) -> Self {
         let input_mode = generator.html_input_mode().map(str::to_string);
         let max_length = generator.code_length();
@@ -639,7 +639,7 @@ pub struct RecoveryCodesTemplate<'a> {
 pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_login(&self, view: &LoginTemplate<'_>) -> String;
     fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
     #[cfg(feature = "sms")]
     fn render_sms(&self, view: &SmsTemplate<'_>) -> String;
@@ -676,7 +676,7 @@ impl Pages for AskamaPages {
         render_or_err(view)
     }
 
-    #[cfg(feature = "otp")]
+    #[cfg(feature = "email")]
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String {
         render_or_err(view)
     }

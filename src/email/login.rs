@@ -51,7 +51,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         email: String,
         next: Option<String>,
     ) -> Result<(), EmailLoginInitError<S::Error>> {
-        if self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if !self.email.offer_links
+            || self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never
+        {
             return Err(EmailLoginInitError::NotAllowed);
         }
 
@@ -71,7 +73,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self,
         code: String,
     ) -> Result<(Self, Option<String>), EmailLoginCallbackError<S::Error>> {
-        if self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if !self.email.offer_links
+            || self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never
+        {
             return Err(EmailLoginCallbackError::NotAllowed);
         }
 

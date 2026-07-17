@@ -58,7 +58,6 @@ webauthn-rs-proto = { version = "0.5.5", optional = true }
 default = [
   "user",
   "email",
-  "otp",
   "mfa",
   "totp",
   "sms",
@@ -69,7 +68,6 @@ default = [
 ]
 user = []
 email = ["dep:lettre", "dep:url"]
-otp = ["dep:lettre", "dep:url"]
 mfa = ["dep:sha2"]
 totp = ["dep:totp-rs"]
 sms = ["dep:reqwest", "dep:serde_json"]

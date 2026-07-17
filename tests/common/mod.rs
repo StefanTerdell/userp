@@ -1,7 +1,7 @@
 //! Shared in-memory test store + harness for the integration tests. Built for
 //! the recommended test feature set:
 //!
-//!   cargo test -p authery --no-default-features --features password,email,otp,mfa,user
+//!   cargo test -p authery --no-default-features --features password,email,mfa,user
 #![allow(dead_code)]
 
 use authery::core::CoreAuthery;
