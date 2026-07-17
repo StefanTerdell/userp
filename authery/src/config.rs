@@ -40,6 +40,12 @@ pub struct AutheryConfig {
     /// the user's oldest sessions are deleted. `None` (the default) is
     /// unlimited.
     pub max_concurrent_sessions: Option<usize>,
+    /// Accept `Authorization: Bearer {session_id}` as an alternative to the
+    /// session cookie, and expose fresh session ids to clients via an
+    /// `X-Auth-Token` response header on login. For API and mobile clients;
+    /// off by default. Tokens are opaque session ids: server-side, revocable,
+    /// and subject to the same expiry and caps as cookie sessions.
+    pub bearer_auth: bool,
     /// Consulted before abusable operations (password attempts, email sends).
     /// Defaults to no limiting; see [`crate::ratelimit`].
     pub rate_limiter: Arc<dyn RateLimiter>,
@@ -86,6 +92,7 @@ impl AutheryConfig {
             allow_login: Allow::OnSelf,
             session_lifetime: Duration::days(30),
             max_concurrent_sessions: None,
+            bearer_auth: false,
             rate_limiter: Arc::new(NoRateLimit),
             routes: routes.into(),
             #[cfg(feature = "password")]
@@ -134,6 +141,13 @@ impl AutheryConfig {
     /// oldest sessions.
     pub fn with_max_concurrent_sessions(mut self, max: usize) -> Self {
         self.max_concurrent_sessions = Some(max);
+        self
+    }
+
+    /// Enable bearer-token auth for API/mobile clients; see
+    /// [`AutheryConfig::bearer_auth`].
+    pub fn with_bearer_auth(mut self, bearer_auth: bool) -> Self {
+        self.bearer_auth = bearer_auth;
         self
     }
 

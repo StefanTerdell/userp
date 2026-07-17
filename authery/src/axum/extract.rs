@@ -43,6 +43,14 @@ where
             )),
         };
 
+        let bearer_token = config
+            .bearer_auth
+            .then(|| parts.headers.get(axum::http::header::AUTHORIZATION))
+            .flatten()
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .map(str::to_string);
+
         let cookies = AxumAutheryCookies {
             jar,
             https_only: config.https_only,
@@ -55,6 +63,7 @@ where
             session_lifetime: config.session_lifetime,
             max_concurrent_sessions: config.max_concurrent_sessions,
             rate_limiter: config.rate_limiter,
+            bearer_token,
             routes: config.routes,
             cookies,
             store,

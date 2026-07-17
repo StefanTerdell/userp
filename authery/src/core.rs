@@ -23,6 +23,10 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub session_lifetime: Duration,
     pub max_concurrent_sessions: Option<usize>,
     pub rate_limiter: std::sync::Arc<dyn crate::ratelimit::RateLimiter>,
+    /// A bearer token presented by the client (the transport layer populates
+    /// this from the Authorization header when bearer auth is enabled). When
+    /// present it takes precedence over the session cookie.
+    pub bearer_token: Option<String>,
     pub cookies: C,
     pub store: S,
     #[cfg(feature = "password")]
@@ -117,6 +121,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     }
 
     pub(crate) fn session_id_cookie(&self) -> Option<S::SessionId> {
+        // An explicit bearer token wins over the cookie and never falls back,
+        // so a bad token can't silently ride an unrelated browser session.
+        if let Some(token) = &self.bearer_token {
+            return token.parse::<S::SessionId>().ok();
+        }
+
         let session_id_cookie = self.cookies.get(SESSION_ID_KEY)?;
 
         session_id_cookie.parse::<S::SessionId>().ok()

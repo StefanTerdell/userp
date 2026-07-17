@@ -35,7 +35,13 @@ use std::sync::{Arc, Mutex};
 /// return the auth service to persist session cookies. The built-in
 /// [`AxumRouter::router`] applies it automatically; call this yourself when
 /// wiring authery handlers into a hand-rolled router.
-pub fn with_cookie_layer<S>(router: Router<S>, key: Key) -> Router<S>
+///
+/// With `expose_auth_token` (the [`crate::config::AutheryConfig::bearer_auth`]
+/// setting), a request that establishes a NEW session also gets an
+/// `X-Auth-Token` response header carrying the session id, so non-browser
+/// clients can capture it and authenticate with
+/// `Authorization: Bearer {token}` from then on.
+pub fn with_cookie_layer<S>(router: Router<S>, key: Key, expose_auth_token: bool) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
@@ -43,13 +49,30 @@ where
         let key = key.clone();
         async move {
             let jar = PrivateCookieJar::from_headers(req.headers(), key);
+            let session_before = jar
+                .get(crate::constants::SESSION_ID_KEY)
+                .map(|c| c.value().to_string());
             let shared = SharedCookieJar(Arc::new(Mutex::new(jar)));
             req.extensions_mut().insert(shared.clone());
 
             let res = next.run(req).await;
 
             let jar = shared.0.lock().unwrap().clone();
-            (jar, res).into_response()
+            let session_after = jar
+                .get(crate::constants::SESSION_ID_KEY)
+                .map(|c| c.value().to_string());
+
+            let mut res = (jar, res).into_response();
+
+            if expose_auth_token
+                && session_after != session_before
+                && let Some(token) = session_after
+                && let Ok(value) = token.parse()
+            {
+                res.headers_mut().insert("x-auth-token", value);
+            }
+
+            res
         }
     }))
 }
@@ -75,6 +98,12 @@ pub trait AxumRouter {
 
     /// The cookie-encryption key, used to install the cookie-propagation layer.
     fn cookie_key(&self) -> Key;
+
+    /// Whether bearer-token auth is enabled (exposes `X-Auth-Token` on fresh
+    /// logins); see [`crate::config::AutheryConfig::bearer_auth`].
+    fn bearer_auth(&self) -> bool {
+        false
+    }
 
     fn router<St, S>(&self) -> Router<S>
     where
@@ -539,7 +568,7 @@ pub trait AxumRouter {
             }
         }
 
-        with_cookie_layer(router, self.cookie_key())
+        with_cookie_layer(router, self.cookie_key(), self.bearer_auth())
     }
 }
 
@@ -550,6 +579,10 @@ impl AxumRouter for AutheryConfig {
 
     fn cookie_key(&self) -> Key {
         Key::from(self.key.as_bytes())
+    }
+
+    fn bearer_auth(&self) -> bool {
+        self.bearer_auth
     }
 }
 
