@@ -420,8 +420,13 @@ mod webauthn_factor {
                 .webauthn
                 .start_passkey_authentication(&passkeys)?;
 
-            self.cookies
-                .add(MFA_WEBAUTHN_KEY, &serde_json::to_string(&auth_state)?);
+            self.cookies.add(
+                &crate::webauthn::ceremony_key(
+                    MFA_WEBAUTHN_KEY,
+                    &crate::webauthn::challenge_b64(&rcr.public_key.challenge)?,
+                ),
+                &serde_json::to_string(&auth_state)?,
+            );
 
             Ok(rcr)
         }
@@ -440,10 +445,16 @@ mod webauthn_factor {
                 return Err(MfaWebauthnError::NoPending);
             };
 
-            let Some(state_json) = self.cookies.get(MFA_WEBAUTHN_KEY) else {
+            let Some(state_key) = crate::webauthn::client_data_challenge(
+                credential.response.client_data_json.as_ref(),
+            )
+            .map(|challenge| crate::webauthn::ceremony_key(MFA_WEBAUTHN_KEY, &challenge)) else {
                 return Err(MfaWebauthnError::NoCeremony);
             };
-            self.cookies.remove(MFA_WEBAUTHN_KEY);
+            let Some(state_json) = self.cookies.get(&state_key) else {
+                return Err(MfaWebauthnError::NoCeremony);
+            };
+            self.cookies.remove(&state_key);
 
             let auth_state: PasskeyAuthentication = serde_json::from_str(&state_json)?;
 

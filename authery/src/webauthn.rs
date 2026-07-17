@@ -33,6 +33,39 @@ use webauthn_rs::{Webauthn, WebauthnBuilder};
 const WEBAUTHN_REG_KEY: &str = "authery-webauthn-reg";
 const WEBAUTHN_AUTH_KEY: &str = "authery-webauthn-auth";
 
+/// Ceremony cookies are keyed by the challenge so concurrent ceremonies (two
+/// login tabs, a registration next to a login) don't clobber each other. The
+/// finish call recovers the key from the challenge echoed in
+/// `clientDataJSON`; the signed ceremony validation still compares it against
+/// the encrypted state, so the echo only *selects* a cookie, never proves
+/// anything.
+pub(crate) fn ceremony_key(prefix: &str, challenge_b64: &str) -> String {
+    format!("{prefix}-{challenge_b64}")
+}
+
+/// The canonical base64url (no padding) rendering of a challenge, matching
+/// what browsers echo in `clientDataJSON`.
+pub(crate) fn challenge_b64(
+    challenge: &webauthn_rs::prelude::Base64UrlSafeData,
+) -> Result<String, serde_json::Error> {
+    Ok(serde_json::to_value(challenge)?
+        .as_str()
+        .unwrap_or_default()
+        .to_string())
+}
+
+/// Extract the challenge from a raw `clientDataJSON` blob. `None` when the
+/// blob isn't valid JSON - the ceremony lookup then fails as "no ceremony".
+pub(crate) fn client_data_challenge(client_data_json: &[u8]) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct ClientData {
+        challenge: webauthn_rs::prelude::Base64UrlSafeData,
+    }
+
+    let data: ClientData = serde_json::from_slice(client_data_json).ok()?;
+    challenge_b64(&data.challenge).ok()
+}
+
 #[derive(Debug, Clone)]
 pub struct WebauthnConfig {
     pub webauthn: Webauthn,
@@ -129,8 +162,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             selection.resident_key = Some(webauthn_rs_proto::ResidentKeyRequirement::Required);
         }
 
-        self.cookies
-            .add(WEBAUTHN_REG_KEY, &serde_json::to_string(&reg_state)?);
+        self.cookies.add(
+            &ceremony_key(WEBAUTHN_REG_KEY, &challenge_b64(&ccr.public_key.challenge)?),
+            &serde_json::to_string(&reg_state)?,
+        );
 
         Ok(ccr)
     }
@@ -144,11 +179,16 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(WebauthnRegisterError::NotLoggedIn);
         };
 
-        let Some(state_json) = self.cookies.get(WEBAUTHN_REG_KEY) else {
+        let Some(state_key) = client_data_challenge(credential.response.client_data_json.as_ref())
+            .map(|challenge| ceremony_key(WEBAUTHN_REG_KEY, &challenge))
+        else {
+            return Err(WebauthnRegisterError::NoCeremony);
+        };
+        let Some(state_json) = self.cookies.get(&state_key) else {
             return Err(WebauthnRegisterError::NoCeremony);
         };
         // The ceremony state is single-use either way.
-        self.cookies.remove(WEBAUTHN_REG_KEY);
+        self.cookies.remove(&state_key);
 
         let reg_state: PasskeyRegistration = serde_json::from_str(&state_json)?;
 
@@ -173,8 +213,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     ) -> Result<RequestChallengeResponse, WebauthnLoginError<S::Error>> {
         let (rcr, auth_state) = self.webauthn.webauthn.start_discoverable_authentication()?;
 
-        self.cookies
-            .add(WEBAUTHN_AUTH_KEY, &serde_json::to_string(&auth_state)?);
+        self.cookies.add(
+            &ceremony_key(
+                WEBAUTHN_AUTH_KEY,
+                &challenge_b64(&rcr.public_key.challenge)?,
+            ),
+            &serde_json::to_string(&auth_state)?,
+        );
 
         Ok(rcr)
     }
@@ -186,10 +231,15 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         mut self,
         credential: &PublicKeyCredential,
     ) -> Result<Self, WebauthnLoginError<S::Error>> {
-        let Some(state_json) = self.cookies.get(WEBAUTHN_AUTH_KEY) else {
+        let Some(state_key) = client_data_challenge(credential.response.client_data_json.as_ref())
+            .map(|challenge| ceremony_key(WEBAUTHN_AUTH_KEY, &challenge))
+        else {
             return Err(WebauthnLoginError::NoCeremony);
         };
-        self.cookies.remove(WEBAUTHN_AUTH_KEY);
+        let Some(state_json) = self.cookies.get(&state_key) else {
+            return Err(WebauthnLoginError::NoCeremony);
+        };
+        self.cookies.remove(&state_key);
 
         let auth_state: DiscoverableAuthentication = serde_json::from_str(&state_json)?;
 
