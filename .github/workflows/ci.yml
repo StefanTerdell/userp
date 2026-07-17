@@ -73,9 +73,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # One package at a time: building the whole examples workspace at once
-      # would unify authery features across apps.
-      - run: cargo build --manifest-path examples/Cargo.toml -p full
-      - run: cargo build --manifest-path examples/Cargo.toml -p password-only
-      - run: cargo build --manifest-path examples/Cargo.toml -p email-otp
-      - run: cargo build --manifest-path examples/Cargo.toml -p multi-tenant
+      # Each app is a standalone workspace (per-app feature resolution, and
+      # IDE-correct: rust-analyzer unifies features per workspace); they
+      # share examples/target via examples/.cargo/config.toml.
+      - run: cargo build
+        working-directory: examples/full
+      - run: cargo build
+        working-directory: examples/password-only
+      - run: cargo build
+        working-directory: examples/email-otp
+      - run: cargo build
+        working-directory: examples/multi-tenant

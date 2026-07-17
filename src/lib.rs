@@ -414,7 +414,9 @@
 //! ```
 //!
 //! The examples split into store libraries and feature-focused apps that
-//! share them (run apps with `cargo run -p <name>` from `examples/`):
+//! share them. Each app is its own workspace, so its IDE view resolves
+//! exactly the features it enables - run apps with `cargo run` inside
+//! `examples/<name>`:
 //!
 //! - `examples/postgres-store` - **the reference store**: a complete,
 //!   feature-gated `AutheryStore` over sqlx/Postgres, schema included. Start

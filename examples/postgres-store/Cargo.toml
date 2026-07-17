@@ -6,6 +6,8 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[workspace]
+
 [features]
 user = ["authery/user"]
 password = ["authery/password"]

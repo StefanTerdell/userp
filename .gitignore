@@ -1,5 +1,7 @@
 /target
 /examples/target
+/examples/*/target
+/examples/*/Cargo.lock
 .env
 /todo.md
 /dev/postgres-data
