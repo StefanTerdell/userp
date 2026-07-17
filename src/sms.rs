@@ -39,6 +39,27 @@ pub trait SmsSender: std::fmt::Debug + Send + Sync {
     fn send<'a>(&'a self, to: &'a str, message: &'a str) -> SmsSendFuture<'a>;
 }
 
+/// The copy for the texts authery sends. Each method has an English
+/// default; override what you need (branding, language, sender name rules).
+pub trait SmsMessages: Send + Sync + std::fmt::Debug {
+    /// The one-time login/signup code text.
+    fn login_code(&self, code: &str) -> String {
+        format!("{code} is your login code. It expires shortly.")
+    }
+
+    /// The MFA second-factor code text.
+    #[cfg(feature = "mfa")]
+    fn mfa_code(&self, code: &str) -> String {
+        format!("{code} is your verification code. It expires shortly.")
+    }
+}
+
+/// The built-in English copy - every [`SmsMessages`] default, unchanged.
+#[derive(Debug, Clone, Copy)]
+pub struct DefaultSmsMessages;
+
+impl SmsMessages for DefaultSmsMessages {}
+
 #[derive(Debug, Clone)]
 pub struct SmsConfig {
     pub sender: Arc<dyn SmsSender>,
@@ -48,6 +69,8 @@ pub struct SmsConfig {
     /// Generates the one-time codes for the `sms` flows (and the texted MFA
     /// factor). Defaults to six digits; see [`crate::codes`].
     pub code_generator: Arc<dyn crate::codes::CodeGenerator>,
+    /// Composes the texts authery sends; see [`SmsMessages`].
+    pub messages: Arc<dyn SmsMessages>,
 }
 
 impl SmsConfig {
@@ -58,7 +81,14 @@ impl SmsConfig {
             allow_signup: None,
             challenge_lifetime: Duration::minutes(5),
             code_generator: Arc::new(crate::codes::NumericCode::default()),
+            messages: Arc::new(DefaultSmsMessages),
         }
+    }
+
+    /// Replace the SMS copy; see [`SmsMessages`].
+    pub fn with_messages(mut self, messages: impl SmsMessages + 'static) -> Self {
+        self.messages = Arc::new(messages);
+        self
     }
 
     /// Replace the one-time-code generator; see [`crate::codes`].
@@ -168,7 +198,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .sender
             .send(
                 challenge.get_address(),
-                &format!("{digits} is your login code. It expires shortly."),
+                &self.sms.messages.login_code(&digits),
             )
             .await?;
 

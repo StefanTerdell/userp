@@ -306,13 +306,10 @@ mod otp_factor {
                 .await
                 .map_err(MfaOtpError::Store)?;
 
-            self.send_email(
-                &address,
-                "Your verification code",
-                format!("<p>Your verification code is:</p><h1>{digits}</h1><p>It expires shortly. If you did not request it, ignore this email.</p>"),
-            )
-            .await
-            .map_err(MfaOtpError::SendingEmail)?;
+            let content = self.email.messages.mfa_code(&digits);
+            self.send_email(&address, &content.subject, content.html_body)
+                .await
+                .map_err(MfaOtpError::SendingEmail)?;
 
             Ok(address)
         }
@@ -603,10 +600,7 @@ mod sms_factor {
 
             self.sms
                 .sender
-                .send(
-                    &number,
-                    &format!("{digits} is your verification code. It expires shortly."),
-                )
+                .send(&number, &self.sms.messages.mfa_code(&digits))
                 .await?;
 
             Ok(number)

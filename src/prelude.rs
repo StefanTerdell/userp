@@ -76,7 +76,10 @@ pub use crate::routes::webauthn::WebauthnRoutes;
 #[cfg(feature = "sms")]
 pub use crate::sms::providers::*;
 #[cfg(feature = "sms")]
-pub use crate::sms::{SmsConfig, SmsInitError, SmsSendFuture, SmsSender, SmsVerifyError};
+pub use crate::sms::{
+    DefaultSmsMessages, SmsConfig, SmsInitError, SmsMessages, SmsSendFuture, SmsSender,
+    SmsVerifyError,
+};
 #[cfg(feature = "totp")]
 pub use crate::totp::{TotpConfig, TotpEnrollment, TotpError};
 #[cfg(feature = "webauthn")]

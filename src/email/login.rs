@@ -58,7 +58,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self.send_email_challenge(
             self.routes.email.login_email.clone(),
             email,
-            "Click here to log in".into(),
+            crate::email::EmailLinkKind::LogIn,
             next,
         )
         .await?;

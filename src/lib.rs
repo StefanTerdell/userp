@@ -184,6 +184,11 @@
 //! smtp://localhost:1025                                 plain, for Mailhog etc.
 //! ```
 //!
+//! Every email and text authery sends is composable copy: implement
+//! `EmailMessages` / `SmsMessages` (each method has an English default, so
+//! override selectively) and register with `.with_messages(...)` on the
+//! channel config - that's the branding/localization hook.
+//!
 //! The `otp` feature sends one-time codes instead of links - same challenge
 //! store, different UX. Codes are namespaced per address, single-use,
 //! short-lived and rate-limited through your `RateLimiter`. The generator is

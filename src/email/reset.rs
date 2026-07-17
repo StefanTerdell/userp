@@ -59,7 +59,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self.send_email_challenge(
             self.routes.email.password_reset_callback.clone(),
             email,
-            "Click here to reset password".into(),
+            crate::email::EmailLinkKind::Reset,
             next,
         )
         .await?;

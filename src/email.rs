@@ -21,6 +21,87 @@ use crate::{
     store::AutheryStore,
 };
 
+/// A composed email: subject + HTML body.
+pub struct EmailContent {
+    pub subject: String,
+    pub html_body: String,
+}
+
+/// The copy for every email authery sends. Implement this to brand,
+/// rephrase or localize the messages - each method has a sensible English
+/// default, so override only what you need. Rendering is plain string
+/// building; bring your own templating inside the methods if you like.
+pub trait EmailMessages: Send + Sync + std::fmt::Debug {
+    /// The magic-link login email; `url` completes the login.
+    fn login_link(&self, url: &url::Url) -> EmailContent {
+        EmailContent {
+            subject: "Login link".into(),
+            html_body: format!("<a href=\"{url}\">Click here to log in</a>"),
+        }
+    }
+
+    /// The magic-link signup email.
+    fn signup_link(&self, url: &url::Url) -> EmailContent {
+        EmailContent {
+            subject: "Sign-up link".into(),
+            html_body: format!("<a href=\"{url}\">Click here to sign up</a>"),
+        }
+    }
+
+    /// The address-verification email.
+    fn verify_link(&self, url: &url::Url) -> EmailContent {
+        EmailContent {
+            subject: "Verify your email address".into(),
+            html_body: format!("<a href=\"{url}\">Click here to verify email</a>"),
+        }
+    }
+
+    /// The password-reset email.
+    fn reset_link(&self, url: &url::Url) -> EmailContent {
+        EmailContent {
+            subject: "Reset your password".into(),
+            html_body: format!("<a href=\"{url}\">Click here to reset password</a>"),
+        }
+    }
+
+    /// The one-time login/signup code email (`otp`).
+    #[cfg(feature = "otp")]
+    fn login_code(&self, code: &str) -> EmailContent {
+        EmailContent {
+            subject: "Your login code".into(),
+            html_body: format!(
+                "<p>Your login code is:</p><h1>{code}</h1><p>It expires shortly. If you did not request it, ignore this email.</p>"
+            ),
+        }
+    }
+
+    /// The MFA second-factor code email.
+    #[cfg(all(feature = "otp", feature = "mfa"))]
+    fn mfa_code(&self, code: &str) -> EmailContent {
+        EmailContent {
+            subject: "Your verification code".into(),
+            html_body: format!(
+                "<p>Your verification code is:</p><h1>{code}</h1><p>It expires shortly. If you did not request it, ignore this email.</p>"
+            ),
+        }
+    }
+}
+
+/// The built-in English copy - every [`EmailMessages`] default, unchanged.
+#[derive(Debug, Clone, Copy)]
+pub struct DefaultEmailMessages;
+
+impl EmailMessages for DefaultEmailMessages {}
+
+/// Which link email a challenge send composes; see [`EmailMessages`].
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum EmailLinkKind {
+    LogIn,
+    SignUp,
+    Verify,
+    Reset,
+}
+
 #[derive(Debug, Clone)]
 pub struct EmailConfig {
     pub allow_login: Option<Allow>,
@@ -32,6 +113,8 @@ pub struct EmailConfig {
     /// factor). Defaults to six digits; see [`crate::codes`].
     #[cfg(feature = "otp")]
     pub code_generator: std::sync::Arc<dyn crate::codes::CodeGenerator>,
+    /// Composes the emails authery sends; see [`EmailMessages`].
+    pub messages: std::sync::Arc<dyn EmailMessages>,
 }
 
 impl EmailConfig {
@@ -44,7 +127,14 @@ impl EmailConfig {
             smtp,
             #[cfg(feature = "otp")]
             code_generator: std::sync::Arc::new(crate::codes::NumericCode::default()),
+            messages: std::sync::Arc::new(DefaultEmailMessages),
         }
+    }
+
+    /// Replace the email copy; see [`EmailMessages`].
+    pub fn with_messages(mut self, messages: impl EmailMessages + 'static) -> Self {
+        self.messages = std::sync::Arc::new(messages);
+        self
     }
 
     /// Replace the one-time-code generator; see [`crate::codes`].
@@ -117,7 +207,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         &self,
         path: String,
         address: String,
-        message: String,
+        kind: EmailLinkKind,
         next: Option<String>,
     ) -> Result<(), SendEmailChallengeError<S::Error>> {
         self.rate_limiter
@@ -145,12 +235,15 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .join(&format!("{path}?code={code}"))
             .map_err(SendEmailChallengeError::Url)?;
 
-        self.send_email(
-            challenge.get_address(),
-            "Login link",
-            format!("<a href=\"{url}\">{message}</a>"),
-        )
-        .await
+        let content = match kind {
+            EmailLinkKind::LogIn => self.email.messages.login_link(&url),
+            EmailLinkKind::SignUp => self.email.messages.signup_link(&url),
+            EmailLinkKind::Verify => self.email.messages.verify_link(&url),
+            EmailLinkKind::Reset => self.email.messages.reset_link(&url),
+        };
+
+        self.send_email(challenge.get_address(), &content.subject, content.html_body)
+            .await
     }
 
     pub(crate) async fn send_email(

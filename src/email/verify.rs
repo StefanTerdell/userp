@@ -78,7 +78,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self.send_email_challenge(
             self.routes.email.user_email_verify.clone(),
             email,
-            "Click here to verify email".into(),
+            crate::email::EmailLinkKind::Verify,
             next,
         )
         .await?;
