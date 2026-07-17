@@ -33,6 +33,15 @@ use url::Url;
 
 const OAUTH_DATA_KEY: &str = "authery-oauth-state";
 
+/// The flow cookie is keyed by the CSRF state so concurrent flows (two login
+/// tabs, a login and a link) don't clobber each other; the callback knows
+/// which cookie to open because the state comes back as a query param. The
+/// value is encrypted+authenticated by the private jar, so a forged state can
+/// at most fail to find a cookie.
+fn oauth_data_key(csrf_state: &str) -> String {
+    format!("{OAUTH_DATA_KEY}-{csrf_state}")
+}
+
 pub enum RefreshInitResult {
     Redirect(Url),
     Ok,
@@ -264,7 +273,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             );
 
         self.cookies.add(
-            OAUTH_DATA_KEY,
+            &oauth_data_key(csrf_state.secret()),
             &json!((csrf_state, pkce_verifier.secret(), nonce, oauth_flow)).to_string(),
         );
 
@@ -278,13 +287,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         csrf_token: CsrfToken,
         path: String,
     ) -> Result<(UnmatchedOAuthToken, OAuthFlow, Arc<dyn OAuthProvider>), OAuthCallbackError> {
+        let data_key = oauth_data_key(csrf_token.secret());
         let oauth_data = self
             .cookies
-            .get(OAUTH_DATA_KEY)
+            .get(&data_key)
             .ok_or(OAuthCallbackError::NoOAuthDataCookie)?;
 
         // The state cookie is single-use.
-        self.cookies.remove(OAUTH_DATA_KEY);
+        self.cookies.remove(&data_key);
 
         let (prev_csrf_token, pkce_verifier, nonce, oauth_flow) =
             serde_json::from_str::<(CsrfToken, String, Option<String>, OAuthFlow)>(&oauth_data)?;

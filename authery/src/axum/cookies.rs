@@ -80,11 +80,14 @@ impl AutheryCookies for AxumAutheryCookies {
     }
 
     fn remove(&mut self, key: &str) {
+        // The removal cookie must carry the same Path (and domain) as the
+        // original or the browser won't match it and the cookie survives.
+        let cookie = self.build_cookie(key, "");
         match &mut self.jar {
-            JarHandle::Owned(jar) => *jar = jar.clone().remove(key.to_owned()),
+            JarHandle::Owned(jar) => *jar = jar.clone().remove(cookie),
             JarHandle::Shared(shared) => {
                 let mut jar = shared.0.lock().unwrap();
-                *jar = jar.clone().remove(key.to_owned());
+                *jar = jar.clone().remove(cookie);
             }
         }
     }
