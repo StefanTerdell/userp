@@ -48,6 +48,12 @@ pub struct AutheryConfig {
     /// off by default. Tokens are opaque session ids: server-side, revocable,
     /// and subject to the same expiry and caps as cookie sessions.
     pub bearer_auth: bool,
+    /// A fixed prefix prepended to bearer tokens on the wire (e.g. `myapp_`),
+    /// so tokens are recognizable to humans and secret scanners. Applied to
+    /// the `X-Auth-Token` header and required (and stripped) when reading
+    /// `Authorization: Bearer` — a token without the prefix is rejected.
+    /// `None` (the default) uses the bare session id.
+    pub bearer_token_prefix: Option<String>,
     /// Consulted before abusable operations (password attempts, email sends).
     /// Defaults to no limiting; see [`crate::ratelimit`].
     pub rate_limiter: Arc<dyn RateLimiter>,
@@ -101,6 +107,7 @@ impl AutheryConfig {
             session_lifetime: Duration::days(30),
             max_concurrent_sessions: None,
             bearer_auth: false,
+            bearer_token_prefix: None,
             rate_limiter: Arc::new(NoRateLimit),
             routes: routes.into(),
             #[cfg(feature = "password")]
@@ -158,6 +165,13 @@ impl AutheryConfig {
     /// [`AutheryConfig::bearer_auth`].
     pub fn with_bearer_auth(mut self, bearer_auth: bool) -> Self {
         self.bearer_auth = bearer_auth;
+        self
+    }
+
+    /// Prefix bearer tokens on the wire; see
+    /// [`AutheryConfig::bearer_token_prefix`].
+    pub fn with_bearer_token_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.bearer_token_prefix = Some(prefix.into());
         self
     }
 

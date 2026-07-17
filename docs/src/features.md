@@ -54,6 +54,11 @@ logout/session deletion and subject to the same lifetime and concurrency caps
 as cookie sessions. Nothing is signed client-side; there is no JWT to leak or
 mis-validate.
 
+An optional `.with_bearer_token_prefix("myapp_")` prepends a fixed prefix to
+tokens on the wire (GitHub's `ghp_`-style), making them recognizable to
+humans and secret scanners. The prefix is required and stripped on the way
+back in — a bearer token without it is rejected.
+
 ## Routes
 
 Every path authery serves or links to lives in the `Routes` struct — override

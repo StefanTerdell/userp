@@ -40,15 +40,22 @@ use std::sync::{Arc, Mutex};
 ///
 /// With `expose_auth_token` (the [`crate::config::AutheryConfig::bearer_auth`]
 /// setting), a request that establishes a NEW session also gets an
-/// `X-Auth-Token` response header carrying the session id, so non-browser
-/// clients can capture it and authenticate with
-/// `Authorization: Bearer {token}` from then on.
-pub fn with_cookie_layer<S>(router: Router<S>, key: Key, expose_auth_token: bool) -> Router<S>
+/// `X-Auth-Token` response header carrying the session id — prefixed with
+/// `auth_token_prefix` when one is configured — so non-browser clients can
+/// capture it and authenticate with `Authorization: Bearer {token}` from
+/// then on.
+pub fn with_cookie_layer<S>(
+    router: Router<S>,
+    key: Key,
+    expose_auth_token: bool,
+    auth_token_prefix: Option<String>,
+) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     router.layer(from_fn(move |mut req: Request, next: Next| {
         let key = key.clone();
+        let auth_token_prefix = auth_token_prefix.clone();
         async move {
             let jar = PrivateCookieJar::from_headers(req.headers(), key);
             let session_before = jar
@@ -69,7 +76,10 @@ where
             if expose_auth_token
                 && session_after != session_before
                 && let Some(token) = session_after
-                && let Ok(value) = token.parse()
+                && let Ok(value) = match &auth_token_prefix {
+                    Some(prefix) => format!("{prefix}{token}").parse(),
+                    None => token.parse(),
+                }
             {
                 res.headers_mut().insert("x-auth-token", value);
             }
@@ -105,6 +115,12 @@ pub trait AxumRouter {
     /// logins); see [`crate::config::AutheryConfig::bearer_auth`].
     fn bearer_auth(&self) -> bool {
         false
+    }
+
+    /// The wire prefix for bearer tokens, if any; see
+    /// [`crate::config::AutheryConfig::bearer_token_prefix`].
+    fn bearer_token_prefix(&self) -> Option<String> {
+        None
     }
 
     fn router<St, S>(&self) -> Router<S>
@@ -593,7 +609,12 @@ pub trait AxumRouter {
             }
         }
 
-        with_cookie_layer(router, self.cookie_key(), self.bearer_auth())
+        with_cookie_layer(
+            router,
+            self.cookie_key(),
+            self.bearer_auth(),
+            self.bearer_token_prefix(),
+        )
     }
 }
 
@@ -608,6 +629,10 @@ impl AxumRouter for AutheryConfig {
 
     fn bearer_auth(&self) -> bool {
         self.bearer_auth
+    }
+
+    fn bearer_token_prefix(&self) -> Option<String> {
+        self.bearer_token_prefix.clone()
     }
 }
 

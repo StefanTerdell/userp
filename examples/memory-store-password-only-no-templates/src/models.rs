@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use authery::{
     prelude::*,
     reexports::{
@@ -6,6 +5,7 @@ use authery::{
         uuid::Uuid,
     },
 };
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct SigninForm {

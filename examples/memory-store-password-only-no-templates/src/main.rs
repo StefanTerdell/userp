@@ -8,7 +8,7 @@ use self::templates::{IndexTemplate, ProtectedTemplate};
 use askama::Template;
 use axum::Form;
 use axum::response::{Html, IntoResponse};
-use axum::{extract::State, response::Redirect, routing::get, serve, Router};
+use axum::{Router, extract::State, response::Redirect, routing::get, serve};
 use axum_macros::FromRef;
 use models::SigninForm;
 use templates::SigninTemplate;
@@ -29,7 +29,9 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let key = String::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let key = String::from(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    );
 
     let auth = AutheryConfig::new(key, Routes::default(), PasswordConfig::new())
         .expect("valid auth config")
@@ -66,7 +68,10 @@ async fn get_signin() -> impl IntoResponse {
     Html(SigninTemplate { message: None }.render().unwrap())
 }
 
-async fn post_signin(auth: Authery<MemoryStore>, Form(data): Form<SigninForm>) -> impl IntoResponse {
+async fn post_signin(
+    auth: Authery<MemoryStore>,
+    Form(data): Form<SigninForm>,
+) -> impl IntoResponse {
     match auth
         .password_login(&data.email_address, &data.password)
         .await

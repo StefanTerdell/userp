@@ -49,6 +49,12 @@ where
             .flatten()
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "))
+            // A configured token prefix is part of the wire format: required
+            // and stripped, so the rest of the crate only sees session ids.
+            .and_then(|token| match &config.bearer_token_prefix {
+                Some(prefix) => token.strip_prefix(prefix.as_str()),
+                None => Some(token),
+            })
             .map(str::to_string);
 
         let cookies = AxumAutheryCookies {

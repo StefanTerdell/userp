@@ -144,7 +144,8 @@ async fn main() {
     .with_https_only(false)
     .with_rate_limiter(FixedWindowRateLimiter::default())
     .with_max_concurrent_sessions(3)
-    .with_bearer_auth(true);
+    .with_bearer_auth(true)
+    .with_bearer_token_prefix("authery_");
 
     let auth_router = auth.router::<MemoryStore, AppState>();
 
