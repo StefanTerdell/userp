@@ -1,0 +1,22 @@
+# The minimal setup: password login only, no bundled pages - the app owns
+# every page and calls the core flows directly.
+[package]
+name = "password-only"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+authery = { path = "../..", default-features = false, features = [
+  "password",
+  "axum",
+] }
+memory-store = { path = "../memory-store", features = ["password"] }
+axum = "0.8.9"
+axum-macros = "0.5.0"
+tokio = { version = "1.52.3", features = ["full"] }
+askama = "0.16.0"
+tower-http = { version = "0.6.1", features = ["trace"] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+serde = { version = "1.0.228", features = ["derive"] }

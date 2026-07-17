@@ -1,7 +1,7 @@
 # Live e2e helpers
 
 Manual end-to-end verification against a running example app
-(`cargo run` in `examples/memory-store` or `examples/postgres-store`, with
+(`cargo run -p full` in `examples/`, with
 `docker compose -f dev/compose.yaml up -d` for Keycloak/Mailhog/Postgres).
 
 - `webauthn.mjs` — registers a passkey and completes two concurrent

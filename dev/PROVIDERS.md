@@ -1,6 +1,6 @@
 # Providers to configure for live testing
 
-The memory-store example now picks up any provider whose `{NAME}_CLIENT_ID` +
+The `full` example picks up any provider whose `{NAME}_CLIENT_ID` +
 `{NAME}_CLIENT_SECRET` env vars are set (it prints `oauth provider enabled: …`
 at startup for each one it found). Nothing is required — configure whichever
 you want tested and start the example; the login page will show a button per
@@ -29,7 +29,7 @@ state cookie):
 ## SMS providers
 
 The `sms` feature ships ready-made senders (Twilio, Vonage, MessageBird,
-Telnyx, 46elks); any `SmsSender` impl works too. The example
+Telnyx, 46elks); any `SmsSender` impl works too. The `full` example
 wires up two of them by env, falling back to a dev sender that just prints
 the text to stdout (so SMS login is fully testable with no account at all —
 the code also shows up in the challenges on `/store`):

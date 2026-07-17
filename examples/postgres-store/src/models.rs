@@ -1,6 +1,7 @@
 //! The app's own entity types. Authery only sees them through its traits -
 //! extra columns, different names or newtype ids would all be fine.
 
+#[allow(unused_imports)]
 use authery::{
     prelude::*,
     reexports::{
@@ -23,11 +24,13 @@ impl User for PgUser {
         self.id
     }
 
+    #[cfg(feature = "password")]
     fn get_password_hash(&self) -> Option<String> {
         self.password_hash.clone()
     }
 }
 
+#[cfg(feature = "email")]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PgUserEmail {
     pub user_id: Uuid,
@@ -36,6 +39,7 @@ pub struct PgUserEmail {
     pub allow_link_login: bool,
 }
 
+#[cfg(feature = "email")]
 impl UserEmail for PgUserEmail {
     type UserId = Uuid;
 
@@ -56,6 +60,7 @@ impl UserEmail for PgUserEmail {
     }
 }
 
+#[cfg(feature = "sms")]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PgUserPhone {
     pub user_id: Uuid,
@@ -64,6 +69,7 @@ pub struct PgUserPhone {
     pub allow_login: bool,
 }
 
+#[cfg(feature = "sms")]
 impl UserPhone for PgUserPhone {
     type UserId = Uuid;
 
@@ -113,6 +119,7 @@ impl LoginSession for PgSession {
     }
 }
 
+#[cfg(any(feature = "email", feature = "sms"))]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PgChallenge {
     pub code: String,
@@ -121,6 +128,7 @@ pub struct PgChallenge {
     pub expires: DateTime<Utc>,
 }
 
+#[cfg(any(feature = "email", feature = "sms"))]
 impl EmailChallenge for PgChallenge {
     fn get_address(&self) -> &str {
         &self.address
@@ -139,6 +147,7 @@ impl EmailChallenge for PgChallenge {
     }
 }
 
+#[cfg(feature = "oauth")]
 #[derive(Debug, Clone, sqlx::FromRow)]
 #[allow(unused)]
 pub struct PgOAuthToken {
@@ -152,6 +161,7 @@ pub struct PgOAuthToken {
     pub scopes: Vec<String>,
 }
 
+#[cfg(feature = "oauth")]
 impl OAuthToken for PgOAuthToken {
     type Id = Uuid;
     type UserId = Uuid;

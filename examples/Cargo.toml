@@ -1,0 +1,15 @@
+# The examples form their own workspace, separate from the crate at the repo
+# root. The store crates are libraries the app examples share; each app
+# enables only the features it demonstrates. Build one app at a time
+# (`cargo build -p full`) - building them all at once would let cargo unify
+# authery's features across apps.
+[workspace]
+resolver = "2"
+members = [
+  "memory-store",
+  "postgres-store",
+  "full",
+  "password-only",
+  "email-otp",
+  "multi-tenant",
+]

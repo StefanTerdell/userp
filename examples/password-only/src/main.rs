@@ -1,16 +1,20 @@
-mod models;
-mod store;
 mod templates;
 
-use self::store::MemoryStore;
 use self::templates::{IndexTemplate, ProtectedTemplate};
 
 use askama::Template;
 use axum::Form;
 use axum::response::{Html, IntoResponse};
-use axum::{Router, extract::State, response::Redirect, routing::get, serve};
+use axum::{Router, response::Redirect, routing::get, serve};
 use axum_macros::FromRef;
-use models::SigninForm;
+use memory_store::MemoryStore;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct SigninForm {
+    email_address: String,
+    password: String,
+}
 use templates::SigninTemplate;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -45,7 +49,6 @@ async fn main() {
     };
 
     let app = Router::new()
-        .route("/store", get(get_store))
         .route("/", get(get_index))
         .route("/signin", get(get_signin).post(post_signin))
         .route("/protected", get(get_protected))
@@ -86,10 +89,6 @@ async fn post_signin(
         )
         .into_response(),
     }
-}
-
-async fn get_store(State(state): State<AppState>) -> impl IntoResponse {
-    format!("{:#?}", state.store).into_response()
 }
 
 async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {

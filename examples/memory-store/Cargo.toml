@@ -1,28 +1,25 @@
+# An in-memory AutheryStore, feature-gated exactly like a real store would
+# be: enable a feature here and it both activates the matching authery
+# feature and compiles the store methods it requires.
 [package]
-name = "memory-store-example"
+name = "memory-store"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
-[workspace]
+[features]
+user = ["authery/user"]
+password = ["authery/password"]
+email = ["authery/email"]
+otp = ["email", "authery/otp"]
+oauth = ["authery/oauth"]
+webauthn = ["authery/webauthn"]
+totp = ["authery/totp"]
+sms = ["authery/sms"]
+mfa = ["authery/mfa"]
 
 [dependencies]
-authery = { path = "../..", features = [
-  "axum",
-  "pages",
-  "otp",
-  "webauthn",
-  "mfa",
-  "totp",
-  "sms",
-] }
+authery = { path = "../..", default-features = false }
 axum = "0.8.9"
-axum-macros = "0.5.0"
-tokio = { version = "1.52.3", features = ["full"] }
-urlencoding = "2.1.3"
-askama = "0.16.0"
-dotenv = "0.15.0"
-tower-http = { version = "0.6.1", features = ["trace"] }
-tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
+tokio = { version = "1.52.3", features = ["sync"] }
 thiserror = "2.0.18"

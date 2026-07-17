@@ -1,18 +1,18 @@
-mod models;
-mod ratelimit;
-mod store;
-mod templates;
+//! Multi-tenant SSO on authery's provider-resolver primitive.
+//!
+//! Orgs (tenants) live in the app's own tables; each can register its own
+//! OIDC provider. `/login/acme` starts an SSO flow with the org slug as the
+//! resolution context; the store upserts membership when the callback lands.
+//! The dev Keycloak acts as ACME's IdP:
+//!
+//!     docker compose -f dev/compose.yaml up -d
+//!     cargo run -p multi-tenant
+//!     # visit http://localhost:3000/login/acme (testuser/testpass)
 
-use self::ratelimit::FixedWindowRateLimiter;
-use self::store::MemoryStore;
-use self::templates::{IndexTemplate, ProtectedTemplate};
-
-use askama::Template;
-use axum::response::Redirect;
 use axum::{
     Router,
     extract::State,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
     routing::get,
     serve,
 };
@@ -23,6 +23,7 @@ use tower_http::trace::TraceLayer;
 
 use authery::prelude::*;
 use authery::reexports::url::Url;
+use memory_store::MemoryStore;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -37,18 +38,13 @@ async fn main() {
         .init();
 
     let base_url = Url::parse("http://localhost:3000").unwrap();
-
     let key = String::from(
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     );
 
     let store = MemoryStore::default();
 
-    // --- App-level organizations (see the book chapter) ---
-    //
-    // Orgs live entirely in the app's own tables. Authery's part is the
-    // provider resolver below plus the `context` string that rides the oauth
-    // flow; membership upserts happen in the store's token methods.
+    // The ACME org and its IdP, in the app's own tables.
     let acme = AppOrg {
         id: authery::reexports::uuid::Uuid::new_v4(),
         slug: "acme".into(),
@@ -72,140 +68,52 @@ async fn main() {
     });
     store.orgs.write().await.insert(acme.id, acme);
 
-    // Each provider is added only when its credentials are present, so you
-    // can live-test any one of them by exporting {NAME}_CLIENT_ID and
-    // {NAME}_CLIENT_SECRET and restarting. See dev/PROVIDERS.md.
-    type ProviderBuilder = fn(String, String) -> OAuthCustomProvider;
-    let providers: [(&str, ProviderBuilder); 11] = [
-        ("SPOTIFY", SpotifyOAuthProvider::new),
-        ("GITHUB", GitHubOAuthProvider::new),
-        ("GITLAB", GitLabOAuthProvider::new),
-        ("GOOGLE", GoogleOAuthProvider::new),
-        ("MICROSOFT", MicrosoftOAuthProvider::new),
-        ("DISCORD", DiscordOAuthProvider::new),
-        ("FACEBOOK", FacebookOAuthProvider::new),
-        ("TWITCH", TwitchOAuthProvider::new),
-        ("SLACK", SlackOAuthProvider::new),
-        ("LINKEDIN", LinkedInOAuthProvider::new),
-        ("X", XOAuthProvider::new),
-    ];
-
-    let mut oauth = OAuthConfig::new(base_url.clone());
-    for (name, build) in providers {
-        if let (Ok(id), Ok(secret)) = (
-            var(format!("{name}_CLIENT_ID")),
-            var(format!("{name}_CLIENT_SECRET")),
-        ) {
-            println!("oauth provider enabled: {name}");
-            oauth = oauth.with_client(build(id, secret));
-        }
-    }
-
     // Per-org providers are resolved from the app's tables at request time.
-    oauth = oauth.with_provider_resolver(AppProviderResolver {
+    let oauth = OAuthConfig::new(base_url.clone()).with_provider_resolver(AppProviderResolver {
         store: store.clone(),
     });
-
-    // A real gateway when its env credentials are present, otherwise codes
-    // are just logged (they also show up in the challenges on /store).
-    let sms = if let (Ok(sid), Ok(token), Ok(from)) = (
-        var("TWILIO_ACCOUNT_SID"),
-        var("TWILIO_AUTH_TOKEN"),
-        var("TWILIO_FROM"),
-    ) {
-        println!("sms sender enabled: twilio");
-        SmsConfig::new(TwilioSmsSender::new(sid, token, from))
-    } else if let (Ok(username), Ok(password), Ok(from)) =
-        (var("ELKS_USERNAME"), var("ELKS_PASSWORD"), var("ELKS_FROM"))
-    {
-        println!("sms sender enabled: 46elks");
-        SmsConfig::new(FortySixElksSmsSender::new(username, password, from))
-    } else {
-        SmsConfig::new(DevSmsSender)
-    };
 
     let auth = AutheryConfig::new(
         key,
         Routes::default(),
-        PasswordConfig::new().with_allow_reset(PasswordReset::AnyUserEmail),
+        PasswordConfig::new(),
         EmailConfig::new(
-            base_url.clone(),
+            base_url,
             SmtpSettings {
                 server_url: var("SMTP_URL").unwrap_or_else(|_| "smtp://localhost:1025".into()),
                 from: var("SMTP_FROM").unwrap_or_else(|_| "auth@example.com".into()),
             },
         ),
         oauth,
-        WebauthnConfig::new(base_url, "Authery example").expect("valid webauthn config"),
-        TotpConfig::new("Authery example"),
-        sms,
     )
     .expect("valid auth config")
-    .with_https_only(false)
-    .with_rate_limiter(FixedWindowRateLimiter::default())
-    .with_max_concurrent_sessions(3)
-    .with_bearer_auth(true)
-    .with_bearer_token_prefix("authery_");
+    .with_https_only(false);
 
     let auth_router = auth.router::<MemoryStore, AppState>();
 
-    let state = AppState { store, auth };
-
     let app = Router::new()
         .merge(auth_router)
-        .route("/store", get(get_store))
         .route("/", get(get_index))
-        .route("/protected", get(get_protected))
         .route("/login/{org}", get(get_org_login).post(post_org_login))
         .route("/orgs/{org}/protected", get(get_org_protected))
-        .with_state(state)
+        .with_state(AppState { store, auth })
         .layer(TraceLayer::new_for_http());
 
-    println!("Authery example listening at http://localhost:3000 :)");
+    println!("Authery multi-tenant example listening at http://localhost:3000 :)");
+    println!("Org SSO login: http://localhost:3000/login/acme");
     let tcp = TcpListener::bind("0.0.0.0:3000").await.unwrap();
     serve(tcp, app.into_make_service()).await.unwrap();
-}
-
-/// Logs texts instead of sending them. The pending challenges (code included)
-/// are also visible on the /store debug page.
-#[derive(Debug, Clone)]
-struct DevSmsSender;
-
-impl SmsSender for DevSmsSender {
-    fn send<'a>(&'a self, to: &'a str, message: &'a str) -> SmsSendFuture<'a> {
-        println!("=== SMS to {to}: {message} ===");
-        Box::pin(async { Ok(()) })
-    }
 }
 
 async fn get_index(auth: Authery<MemoryStore>) -> impl IntoResponse {
     let logged_in = auth.logged_in().await.unwrap();
 
-    Html(IndexTemplate { logged_in }.render().unwrap())
-}
-
-async fn get_store(State(state): State<AppState>) -> impl IntoResponse {
-    format!("{:#?}", state.store).into_response()
-}
-
-async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {
-    let Some((user, session)) = auth.user_session().await.unwrap() else {
-        return Redirect::to(&format!(
-            "/login?next={}",
-            urlencoding::encode("/protected")
-        ))
-        .into_response();
-    };
-
-    Html(
-        ProtectedTemplate {
-            user: format!("{user:#?}"),
-            session: format!("{session:#?}"),
-        }
-        .render()
-        .unwrap(),
-    )
-    .into_response()
+    Html(format!(
+        "<h1>Multi-tenant demo</h1><p>logged in: {logged_in}</p>\
+         <p><a href=\"/login/acme\">ACME SSO login</a> · \
+         <a href=\"/orgs/acme/protected\">ACME-gated page</a> · \
+         <a href=\"/login\">Generic login</a></p>"
+    ))
 }
 
 // --- App-level organizations ---
@@ -214,7 +122,7 @@ async fn get_protected(auth: Authery<MemoryStore>) -> impl IntoResponse {
 // provider resolver (per-org IdPs from app tables) and the `context` string
 // that rides the oauth flow into the store's token methods.
 
-use crate::models::{AppOrg, AppOrgProvider};
+use memory_store::models::{AppOrg, AppOrgProvider};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]

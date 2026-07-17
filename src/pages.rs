@@ -547,15 +547,14 @@ pub struct MfaTemplate<'a> {
 
 /// How the bundled pages should render a code input, derived from the
 /// channel's [`CodeGenerator`](crate::codes::CodeGenerator) hints.
-#[cfg(any(feature = "otp", feature = "sms"))]
 pub struct CodeInputHints {
     pub input_mode: Option<String>,
     pub max_length: Option<u8>,
     pub pattern: Option<String>,
 }
 
-#[cfg(any(feature = "otp", feature = "sms"))]
 impl CodeInputHints {
+    #[cfg(any(feature = "otp", feature = "sms"))]
     pub fn from_generator(generator: &dyn crate::codes::CodeGenerator) -> Self {
         let input_mode = generator.html_input_mode().map(str::to_string);
         let max_length = generator.code_length();

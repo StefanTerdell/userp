@@ -1,14 +1,20 @@
-use crate::models::{
-    AppOrg, AppOrgMember, AppOrgProvider, MyEmailChallenge, MyLoginSession, MyOAuthToken, MyUser,
-    MyUserEmail, MyUserPhone,
-};
+#[cfg(any(feature = "email", feature = "sms"))]
+use crate::models::MyEmailChallenge;
+#[cfg(any(feature = "email", feature = "password", feature = "oauth"))]
+use crate::models::MyUserEmail;
+#[cfg(feature = "sms")]
+use crate::models::MyUserPhone;
+#[cfg(feature = "oauth")]
+use crate::models::{AppOrg, AppOrgMember, AppOrgProvider, MyOAuthToken};
+use crate::models::{MyLoginSession, MyUser};
+#[cfg(feature = "webauthn")]
+use authery::reexports::webauthn_rs::prelude::Passkey;
 use authery::{
     prelude::*,
     reexports::{
         chrono::{DateTime, Utc},
         thiserror,
         uuid::Uuid,
-        webauthn_rs::prelude::Passkey,
     },
 };
 use axum::{
@@ -22,16 +28,25 @@ use tokio::sync::RwLock;
 pub struct MemoryStore {
     sessions: Arc<RwLock<HashMap<Uuid, MyLoginSession>>>,
     users: Arc<RwLock<HashMap<Uuid, MyUser>>>,
+    #[cfg(any(feature = "email", feature = "sms"))]
     challenges: Arc<RwLock<HashMap<String, MyEmailChallenge>>>,
+    #[cfg(feature = "oauth")]
     oauth_tokens: Arc<RwLock<HashMap<Uuid, MyOAuthToken>>>,
     /// Passkeys keyed by raw credential id, with their owning user.
+    #[cfg(feature = "webauthn")]
     #[allow(clippy::type_complexity)]
     passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
+    #[cfg(feature = "totp")]
     totp: Arc<RwLock<HashMap<Uuid, TotpCredential>>>,
+    #[cfg(feature = "sms")]
     phones: Arc<RwLock<Vec<MyUserPhone>>>,
-    /// App-level org tables - authery knows nothing about these.
+    /// App-level org tables - authery knows nothing about these; see the
+    /// multi-tenant example.
+    #[cfg(feature = "oauth")]
     pub orgs: Arc<RwLock<HashMap<Uuid, AppOrg>>>,
+    #[cfg(feature = "oauth")]
     pub org_members: Arc<RwLock<Vec<AppOrgMember>>>,
+    #[cfg(feature = "oauth")]
     pub org_providers: Arc<RwLock<Vec<AppOrgProvider>>>,
 }
 
@@ -53,16 +68,22 @@ impl IntoResponse for MemoryStoreError {
 
 impl AutheryStore for MemoryStore {
     type User = MyUser;
+    #[cfg(feature = "email")]
     type UserEmail = MyUserEmail;
+    #[cfg(feature = "sms")]
     type UserPhone = MyUserPhone;
     type LoginSession = MyLoginSession;
+    #[cfg(any(feature = "email", feature = "sms"))]
     type EmailChallenge = MyEmailChallenge;
+    #[cfg(feature = "oauth")]
     type OAuthToken = MyOAuthToken;
     type Error = MemoryStoreError;
     type UserId = Uuid;
     type SessionId = Uuid;
+    #[cfg(feature = "oauth")]
     type OAuthTokenId = Uuid;
 
+    #[cfg(feature = "webauthn")]
     async fn create_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), Self::Error> {
         let mut passkeys = self.passkeys.write().await;
 
@@ -71,6 +92,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(feature = "webauthn")]
     async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<Passkey>, Self::Error> {
         let passkeys = self.passkeys.read().await;
 
@@ -81,6 +103,7 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
+    #[cfg(feature = "webauthn")]
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
@@ -90,6 +113,7 @@ impl AutheryStore for MemoryStore {
         Ok(passkeys.get(credential_id).cloned())
     }
 
+    #[cfg(feature = "webauthn")]
     async fn update_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), Self::Error> {
         let mut passkeys = self.passkeys.write().await;
 
@@ -106,6 +130,7 @@ impl AutheryStore for MemoryStore {
         }
     }
 
+    #[cfg(all(feature = "webauthn", feature = "user"))]
     async fn delete_passkey(
         &self,
         user_id: &Uuid,
@@ -123,10 +148,12 @@ impl AutheryStore for MemoryStore {
         }
     }
 
+    #[cfg(feature = "totp")]
     async fn get_totp(&self, user_id: &Uuid) -> Result<Option<TotpCredential>, Self::Error> {
         Ok(self.totp.read().await.get(user_id).cloned())
     }
 
+    #[cfg(feature = "totp")]
     async fn upsert_totp(
         &self,
         user_id: &Uuid,
@@ -137,6 +164,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(feature = "totp")]
     async fn delete_totp(&self, user_id: &Uuid) -> Result<(), Self::Error> {
         self.totp.write().await.remove(user_id);
 
@@ -190,6 +218,7 @@ impl AutheryStore for MemoryStore {
         Ok(users.get(user_id).cloned())
     }
 
+    #[cfg(feature = "email")]
     async fn set_email_verified(&self, address: &str) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
@@ -204,6 +233,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(any(feature = "email", feature = "sms"))]
     async fn create_challenge(
         &self,
 
@@ -225,6 +255,7 @@ impl AutheryStore for MemoryStore {
         Ok(challenge)
     }
 
+    #[cfg(any(feature = "email", feature = "sms"))]
     async fn consume_challenge(
         &self,
         code: String,
@@ -237,6 +268,7 @@ impl AutheryStore for MemoryStore {
         Ok(challenge)
     }
 
+    #[cfg(feature = "email")]
     async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<MyUserEmail>, Self::Error> {
         let users = self.users.read().await;
 
@@ -256,6 +288,7 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
+    #[cfg(all(feature = "user", feature = "oauth"))]
     async fn get_user_oauth_tokens(
         &self,
         user_id: &Uuid,
@@ -269,6 +302,7 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
+    #[cfg(all(feature = "user", feature = "oauth"))]
     async fn delete_oauth_token(&self, user_id: &Uuid, token_id: &Uuid) -> Result<(), Self::Error> {
         let mut tokens = self.oauth_tokens.write().await;
 
@@ -281,6 +315,7 @@ impl AutheryStore for MemoryStore {
         }
     }
 
+    #[cfg(feature = "user")]
     async fn delete_user(&self, id: &Uuid) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
         let mut sessions = self.sessions.write().await;
@@ -290,6 +325,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(all(feature = "user", feature = "password"))]
     async fn clear_user_password_hash(
         &self,
         user_id: &Uuid,
@@ -310,6 +346,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(all(any(feature = "user", feature = "email"), feature = "password"))]
     async fn set_user_password_hash(
         &self,
         user_id: &Uuid,
@@ -331,6 +368,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(all(feature = "user", feature = "email"))]
     async fn set_user_email_allow_link_login(
         &self,
         user_id: &Uuid,
@@ -348,6 +386,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(all(feature = "user", feature = "email"))]
     async fn add_user_email(&self, user_id: &Uuid, address: String) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
@@ -372,6 +411,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(all(feature = "user", feature = "email"))]
     async fn delete_user_email(&self, user_id: &Uuid, address: String) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
@@ -383,6 +423,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
+    #[cfg(feature = "sms")]
     async fn get_user_by_phone(
         &self,
         number: &str,
@@ -396,6 +437,7 @@ impl AutheryStore for MemoryStore {
             .and_then(|p| users.get(&p.user_id).map(|u| (u.clone(), p.clone()))))
     }
 
+    #[cfg(feature = "sms")]
     async fn create_user_by_phone(
         &self,
         number: &str,
@@ -423,6 +465,7 @@ impl AutheryStore for MemoryStore {
         Ok((user, phone))
     }
 
+    #[cfg(feature = "sms")]
     async fn get_user_phones(&self, user_id: &Uuid) -> Result<Vec<MyUserPhone>, Self::Error> {
         let phones = self.phones.read().await;
 
@@ -433,6 +476,7 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
+    #[cfg(feature = "password")]
     async fn get_user_by_password_id(
         &self,
         password_id: &str,
@@ -441,10 +485,11 @@ impl AutheryStore for MemoryStore {
 
         Ok(users
             .values()
-            .find(|u| u.emails.iter().any(|e| e.get_address() == password_id))
+            .find(|u| u.emails.iter().any(|e| e.email == password_id))
             .cloned())
     }
 
+    #[cfg(feature = "password")]
     async fn create_user_by_password_id(
         &self,
         password_id: &str,
@@ -454,7 +499,7 @@ impl AutheryStore for MemoryStore {
 
         if users
             .values()
-            .any(|u| u.emails.iter().any(|e| e.get_address() == password_id))
+            .any(|u| u.emails.iter().any(|e| e.email == password_id))
         {
             return Err(MemoryStoreError::AddressInUse(password_id.to_string()));
         }
@@ -464,7 +509,7 @@ impl AutheryStore for MemoryStore {
         let user = Self::User {
             id: user_id,
             password_hash: Some(password_hash.into()),
-            emails: vec![Self::UserEmail {
+            emails: vec![MyUserEmail {
                 user_id,
                 email: password_id.into(),
                 verified: false,
@@ -478,6 +523,7 @@ impl AutheryStore for MemoryStore {
     }
 
     // user store
+    #[cfg(feature = "email")]
     async fn get_user_by_email_address(
         &self,
         address: &str,
@@ -492,6 +538,7 @@ impl AutheryStore for MemoryStore {
         }))
     }
 
+    #[cfg(feature = "email")]
     async fn create_user_by_email_address(
         &self,
         address: &str,
@@ -525,6 +572,7 @@ impl AutheryStore for MemoryStore {
         Ok((user, email))
     }
 
+    #[cfg(feature = "oauth")]
     async fn update_token_by_unmatched_token(
         &self,
         token_id: &Uuid,
@@ -546,6 +594,7 @@ impl AutheryStore for MemoryStore {
         Ok(prev.clone())
     }
 
+    #[cfg(feature = "oauth")]
     async fn get_oauth_token_by_id(
         &self,
         token_id: &Uuid,
@@ -555,6 +604,7 @@ impl AutheryStore for MemoryStore {
         Ok(tokens.get(token_id).cloned())
     }
 
+    #[cfg(feature = "oauth")]
     async fn get_token_by_unmatched_token(
         &self,
         unmatched_token: UnmatchedOAuthToken,
@@ -570,6 +620,7 @@ impl AutheryStore for MemoryStore {
             .cloned())
     }
 
+    #[cfg(feature = "oauth")]
     async fn create_user_token_from_unmatched_token(
         &self,
         user_id: &Uuid,
@@ -581,7 +632,7 @@ impl AutheryStore for MemoryStore {
             let mut users = self.users.write().await;
 
             if let Some(u) = users.get_mut(user_id) {
-                u.emails.push(Self::UserEmail {
+                u.emails.push(MyUserEmail {
                     user_id: u.id,
                     email: address.to_string(),
                     verified: false,
@@ -606,6 +657,7 @@ impl AutheryStore for MemoryStore {
         Ok(token)
     }
 
+    #[cfg(feature = "oauth")]
     async fn create_user_from_unmatched_token(
         &self,
         unmatched_token: UnmatchedOAuthToken,
@@ -627,7 +679,7 @@ impl AutheryStore for MemoryStore {
                 return Err(MemoryStoreError::AddressInUse(address.to_string()));
             };
 
-            user.emails.push(Self::UserEmail {
+            user.emails.push(MyUserEmail {
                 user_id: user.id,
                 email: address.to_string(),
                 verified: false,
@@ -654,6 +706,7 @@ impl AutheryStore for MemoryStore {
         Ok((user, token))
     }
 
+    #[cfg(feature = "oauth")]
     async fn get_user_by_unmatched_token(
         &self,
         unmatched_token: UnmatchedOAuthToken,
@@ -679,6 +732,7 @@ impl AutheryStore for MemoryStore {
     }
 }
 
+#[cfg(feature = "oauth")]
 impl MemoryStore {
     /// App-level org logic, run wherever the store observes an oauth login
     /// carrying a provider-resolution context: upsert the user as a member of

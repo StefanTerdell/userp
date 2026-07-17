@@ -9,13 +9,17 @@ use authery::{
 #[derive(Debug, Clone)]
 pub struct MyUser {
     pub id: Uuid,
+    #[allow(dead_code)]
     pub password_hash: Option<String>,
+    /// Doubles as the password-id lookup, so present for `password` too.
+    #[allow(dead_code)]
     pub emails: Vec<MyUserEmail>,
 }
 
 impl User for MyUser {
     type Id = Uuid;
 
+    #[cfg(feature = "password")]
     fn get_password_hash(&self) -> Option<String> {
         self.password_hash.clone()
     }
@@ -33,6 +37,7 @@ pub struct MyUserEmail {
     pub allow_link_login: bool,
 }
 
+#[cfg(feature = "email")]
 impl UserEmail for MyUserEmail {
     type UserId = Uuid;
 
@@ -53,6 +58,7 @@ impl UserEmail for MyUserEmail {
     }
 }
 
+#[cfg(feature = "sms")]
 #[derive(Debug, Clone)]
 pub struct MyUserPhone {
     pub user_id: Uuid,
@@ -61,6 +67,7 @@ pub struct MyUserPhone {
     pub allow_login: bool,
 }
 
+#[cfg(feature = "sms")]
 impl UserPhone for MyUserPhone {
     type UserId = Uuid;
 
@@ -110,6 +117,7 @@ impl LoginSession for MyLoginSession {
     }
 }
 
+#[cfg(any(feature = "email", feature = "sms"))]
 #[derive(Clone, Debug)]
 pub struct MyEmailChallenge {
     pub address: String,
@@ -118,6 +126,7 @@ pub struct MyEmailChallenge {
     pub expires: DateTime<Utc>,
 }
 
+#[cfg(any(feature = "email", feature = "sms"))]
 impl EmailChallenge for MyEmailChallenge {
     fn get_address(&self) -> &str {
         &self.address
@@ -136,6 +145,7 @@ impl EmailChallenge for MyEmailChallenge {
     }
 }
 
+#[cfg(feature = "oauth")]
 #[derive(Clone, Debug)]
 #[allow(unused)]
 pub struct MyOAuthToken {
@@ -149,6 +159,7 @@ pub struct MyOAuthToken {
     pub scopes: Vec<String>,
 }
 
+#[cfg(feature = "oauth")]
 impl OAuthToken for MyOAuthToken {
     type Id = Uuid;
     type UserId = Uuid;
@@ -178,6 +189,7 @@ impl OAuthToken for MyOAuthToken {
 // arrives on `UnmatchedOAuthToken` at user/token creation - which is where
 // `MemoryStore` below upserts memberships.
 
+#[cfg(feature = "oauth")]
 #[derive(Debug, Clone)]
 pub struct AppOrg {
     pub id: Uuid,
@@ -187,6 +199,7 @@ pub struct AppOrg {
     pub login_rules: LoginMethodRules,
 }
 
+#[cfg(feature = "oauth")]
 #[derive(Debug, Clone)]
 pub struct AppOrgMember {
     pub user_id: Uuid,
@@ -196,6 +209,7 @@ pub struct AppOrgMember {
 
 /// Per-org OIDC provider config; built into a live provider by the app's
 /// `OAuthProviderResolver` impl.
+#[cfg(feature = "oauth")]
 #[derive(Debug, Clone)]
 pub struct AppOrgProvider {
     pub org_id: Uuid,

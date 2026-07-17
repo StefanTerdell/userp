@@ -373,15 +373,19 @@
 //! # Keycloak UI: http://localhost:8080 (admin/admin)
 //! ```
 //!
-//! Three runnable examples cover the spectrum:
+//! The examples split into store libraries and feature-focused apps that
+//! share them (run apps with `cargo run -p <name>` from `examples/`):
 //!
-//! - `examples/postgres-store` - **the reference store**: a complete
-//!   `AutheryStore` over sqlx/Postgres, schema included. Start here when
-//!   implementing your own.
-//! - `examples/memory-store` - every feature over in-memory maps, including
-//!   the multi-tenant recipe against Keycloak.
-//! - `examples/memory-store-password-only-no-templates` - the minimal
-//!   bring-your-own-pages setup.
+//! - `examples/postgres-store` - **the reference store**: a complete,
+//!   feature-gated `AutheryStore` over sqlx/Postgres, schema included. Start
+//!   here when implementing your own.
+//! - `examples/memory-store` - the same store shape over in-memory maps.
+//! - `examples/full` - every feature at once, over either store
+//!   (`DATABASE_URL` picks Postgres, its absence the memory store).
+//! - `examples/multi-tenant` - per-org SSO on the provider resolver, against
+//!   the dev Keycloak.
+//! - `examples/email-otp` - passwordless magic links + one-time codes.
+//! - `examples/password-only` - the minimal bring-your-own-pages setup.
 //!
 //! Everything user-visible is exported through [`prelude`].
 

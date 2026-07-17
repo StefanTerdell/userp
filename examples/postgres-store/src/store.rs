@@ -9,20 +9,31 @@
 //! - `LoginMethod`, `Passkey` and `TotpCredential` are persisted as opaque
 //!   jsonb - the store never inspects them.
 
-use crate::models::{PgChallenge, PgOAuthToken, PgSession, PgUser, PgUserEmail, PgUserPhone};
+#[cfg(any(feature = "email", feature = "sms"))]
+use crate::models::PgChallenge;
+#[cfg(feature = "oauth")]
+use crate::models::PgOAuthToken;
+#[cfg(feature = "email")]
+use crate::models::PgUserEmail;
+#[cfg(feature = "sms")]
+use crate::models::PgUserPhone;
+use crate::models::{PgSession, PgUser};
+#[cfg(feature = "webauthn")]
+use authery::reexports::webauthn_rs::prelude::Passkey;
+#[allow(unused_imports)]
 use authery::{
     prelude::*,
     reexports::{
         chrono::{DateTime, Utc},
         thiserror,
         uuid::Uuid,
-        webauthn_rs::prelude::Passkey,
     },
 };
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+#[allow(unused_imports)]
 use sqlx::{PgPool, Row, types::Json};
 
 #[derive(Clone, Debug)]
@@ -60,12 +71,17 @@ impl AutheryStore for PgStore {
     type Error = PgStoreError;
     type UserId = Uuid;
     type SessionId = Uuid;
+    #[cfg(feature = "oauth")]
     type OAuthTokenId = Uuid;
     type User = PgUser;
+    #[cfg(feature = "email")]
     type UserEmail = PgUserEmail;
+    #[cfg(feature = "sms")]
     type UserPhone = PgUserPhone;
     type LoginSession = PgSession;
+    #[cfg(any(feature = "email", feature = "sms"))]
     type EmailChallenge = PgChallenge;
+    #[cfg(feature = "oauth")]
     type OAuthToken = PgOAuthToken;
 
     // --- basic store ---
@@ -79,6 +95,7 @@ impl AutheryStore for PgStore {
         )
     }
 
+    #[cfg(feature = "user")]
     async fn delete_user(&self, id: &Uuid) -> Result<(), PgStoreError> {
         sqlx::query("DELETE FROM users WHERE id = $1")
             .bind(id)
@@ -134,6 +151,7 @@ impl AutheryStore for PgStore {
 
     // --- password store ---
 
+    #[cfg(feature = "password")]
     async fn get_user_by_password_id(
         &self,
         password_id: &str,
@@ -148,6 +166,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(feature = "password")]
     async fn create_user_by_password_id(
         &self,
         password_id: &str,
@@ -185,6 +204,7 @@ impl AutheryStore for PgStore {
         Ok(user)
     }
 
+    #[cfg(all(feature = "user", feature = "password"))]
     async fn clear_user_password_hash(
         &self,
         user_id: &Uuid,
@@ -208,6 +228,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(all(any(feature = "user", feature = "email"), feature = "password"))]
     async fn set_user_password_hash(
         &self,
         user_id: &Uuid,
@@ -234,6 +255,7 @@ impl AutheryStore for PgStore {
 
     // --- email store ---
 
+    #[cfg(feature = "email")]
     async fn get_user_by_email_address(
         &self,
         address: &str,
@@ -252,6 +274,7 @@ impl AutheryStore for PgStore {
         Ok(self.get_user(&email.user_id).await?.map(|u| (u, email)))
     }
 
+    #[cfg(feature = "email")]
     async fn create_user_by_email_address(
         &self,
         address: &str,
@@ -288,6 +311,7 @@ impl AutheryStore for PgStore {
         Ok((user, email))
     }
 
+    #[cfg(feature = "email")]
     async fn set_email_verified(&self, address: &str) -> Result<(), PgStoreError> {
         sqlx::query("UPDATE user_emails SET verified = true WHERE address = $1")
             .bind(address)
@@ -296,6 +320,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(any(feature = "email", feature = "sms"))]
     async fn create_challenge(
         &self,
         address: String,
@@ -315,6 +340,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(any(feature = "email", feature = "sms"))]
     async fn consume_challenge(&self, code: String) -> Result<Option<PgChallenge>, PgStoreError> {
         // Fetch AND delete in one statement: single-use under concurrency.
         Ok(sqlx::query_as(
@@ -325,6 +351,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(feature = "email")]
     async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<PgUserEmail>, PgStoreError> {
         Ok(sqlx::query_as(
             "SELECT user_id, address, verified, allow_link_login FROM user_emails
@@ -335,6 +362,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(all(feature = "user", feature = "email"))]
     async fn set_user_email_allow_link_login(
         &self,
         user_id: &Uuid,
@@ -352,6 +380,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(all(feature = "user", feature = "email"))]
     async fn add_user_email(&self, user_id: &Uuid, address: String) -> Result<(), PgStoreError> {
         let taken: Option<Uuid> =
             sqlx::query_scalar("SELECT user_id FROM user_emails WHERE address = $1")
@@ -376,6 +405,7 @@ impl AutheryStore for PgStore {
         }
     }
 
+    #[cfg(all(feature = "user", feature = "email"))]
     async fn delete_user_email(&self, user_id: &Uuid, address: String) -> Result<(), PgStoreError> {
         sqlx::query("DELETE FROM user_emails WHERE user_id = $1 AND address = $2")
             .bind(user_id)
@@ -387,6 +417,7 @@ impl AutheryStore for PgStore {
 
     // --- sms store ---
 
+    #[cfg(feature = "sms")]
     async fn get_user_by_phone(
         &self,
         number: &str,
@@ -404,6 +435,7 @@ impl AutheryStore for PgStore {
         Ok(self.get_user(&phone.user_id).await?.map(|u| (u, phone)))
     }
 
+    #[cfg(feature = "sms")]
     async fn create_user_by_phone(
         &self,
         number: &str,
@@ -430,6 +462,7 @@ impl AutheryStore for PgStore {
         Ok((user, phone))
     }
 
+    #[cfg(feature = "sms")]
     async fn get_user_phones(&self, user_id: &Uuid) -> Result<Vec<PgUserPhone>, PgStoreError> {
         Ok(sqlx::query_as(
             "SELECT user_id, number, verified, allow_login FROM user_phones WHERE user_id = $1",
@@ -441,6 +474,7 @@ impl AutheryStore for PgStore {
 
     // --- totp store ---
 
+    #[cfg(feature = "totp")]
     async fn get_totp(&self, user_id: &Uuid) -> Result<Option<TotpCredential>, PgStoreError> {
         Ok(
             sqlx::query("SELECT credential FROM totp_credentials WHERE user_id = $1")
@@ -451,6 +485,7 @@ impl AutheryStore for PgStore {
         )
     }
 
+    #[cfg(feature = "totp")]
     async fn upsert_totp(
         &self,
         user_id: &Uuid,
@@ -467,6 +502,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(feature = "totp")]
     async fn delete_totp(&self, user_id: &Uuid) -> Result<(), PgStoreError> {
         sqlx::query("DELETE FROM totp_credentials WHERE user_id = $1")
             .bind(user_id)
@@ -477,6 +513,7 @@ impl AutheryStore for PgStore {
 
     // --- webauthn store ---
 
+    #[cfg(feature = "webauthn")]
     async fn create_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), PgStoreError> {
         sqlx::query(
             "INSERT INTO passkeys (credential_id, user_id, passkey) VALUES ($1, $2, $3)
@@ -490,6 +527,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(feature = "webauthn")]
     async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<Passkey>, PgStoreError> {
         Ok(
             sqlx::query("SELECT passkey FROM passkeys WHERE user_id = $1")
@@ -502,6 +540,7 @@ impl AutheryStore for PgStore {
         )
     }
 
+    #[cfg(feature = "webauthn")]
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
@@ -520,6 +559,7 @@ impl AutheryStore for PgStore {
         )
     }
 
+    #[cfg(feature = "webauthn")]
     async fn update_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), PgStoreError> {
         sqlx::query("UPDATE passkeys SET passkey = $3 WHERE credential_id = $1 AND user_id = $2")
             .bind(passkey.cred_id().as_slice())
@@ -530,6 +570,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(all(feature = "webauthn", feature = "user"))]
     async fn delete_passkey(
         &self,
         user_id: &Uuid,
@@ -545,6 +586,7 @@ impl AutheryStore for PgStore {
 
     // --- oauth store ---
 
+    #[cfg(feature = "oauth")]
     async fn get_oauth_token_by_id(
         &self,
         token_id: &Uuid,
@@ -559,6 +601,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(all(feature = "user", feature = "oauth"))]
     async fn get_user_oauth_tokens(
         &self,
         user_id: &Uuid,
@@ -573,6 +616,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(all(feature = "user", feature = "oauth"))]
     async fn delete_oauth_token(
         &self,
         user_id: &Uuid,
@@ -586,6 +630,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
+    #[cfg(feature = "oauth")]
     async fn update_token_by_unmatched_token(
         &self,
         token_id: &Uuid,
@@ -611,6 +656,7 @@ impl AutheryStore for PgStore {
         .ok_or_else(|| PgStoreError::TokenNotFound(token_id.to_string()))
     }
 
+    #[cfg(feature = "oauth")]
     async fn get_token_by_unmatched_token(
         &self,
         unmatched_token: UnmatchedOAuthToken,
@@ -626,6 +672,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
+    #[cfg(feature = "oauth")]
     async fn get_user_by_unmatched_token(
         &self,
         unmatched_token: UnmatchedOAuthToken,
@@ -640,6 +687,7 @@ impl AutheryStore for PgStore {
         Ok(self.get_user(&token.user_id).await?.map(|u| (u, token)))
     }
 
+    #[cfg(feature = "oauth")]
     async fn create_user_token_from_unmatched_token(
         &self,
         user_id: &Uuid,
@@ -682,6 +730,7 @@ impl AutheryStore for PgStore {
         Ok(token)
     }
 
+    #[cfg(feature = "oauth")]
     async fn create_user_from_unmatched_token(
         &self,
         unmatched_token: UnmatchedOAuthToken,

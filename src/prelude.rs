@@ -52,6 +52,8 @@ pub use crate::pages::*;
 
 #[cfg(feature = "totp")]
 pub use crate::models::TotpCredential;
+#[cfg(any(feature = "email", feature = "sms"))]
+pub use crate::models::email::EmailChallenge;
 #[cfg(feature = "email")]
 pub use crate::models::email::*;
 #[cfg(feature = "oauth")]
