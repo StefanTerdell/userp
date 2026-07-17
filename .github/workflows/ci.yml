@@ -67,3 +67,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --manifest-path examples/memory-store/Cargo.toml
       - run: cargo build --manifest-path examples/memory-store-password-only-no-templates/Cargo.toml
+      - run: cargo build --manifest-path examples/postgres-store/Cargo.toml

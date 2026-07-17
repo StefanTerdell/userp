@@ -373,7 +373,7 @@ known gaps.
 ## Local development
 
 The repo ships a compose file with Keycloak (a real OIDC provider with a
-preconfigured realm) and Mailhog (catches all outgoing email):
+preconfigured realm), Mailhog (catches all outgoing email) and Postgres:
 
 ```sh
 docker compose -f dev/compose.yaml up -d
@@ -381,8 +381,15 @@ docker compose -f dev/compose.yaml up -d
 # Keycloak UI: http://localhost:8080 (admin/admin)
 ```
 
-See `examples/memory-store` for a complete runnable app exercising every
-feature, including the multi-tenant recipe.
+Three runnable examples cover the spectrum:
+
+- `examples/postgres-store` - **the reference store**: a complete
+  `AutheryStore` over sqlx/Postgres, schema included. Start here when
+  implementing your own.
+- `examples/memory-store` - every feature over in-memory maps, including
+  the multi-tenant recipe against Keycloak.
+- `examples/memory-store-password-only-no-templates` - the minimal
+  bring-your-own-pages setup.
 
 Everything user-visible is exported through [`prelude`](https://docs.rs/authery/latest/authery/prelude/).
 
