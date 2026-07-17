@@ -25,6 +25,14 @@ jobs:
       # README.md is generated from the crate docs in src/lib.rs.
       - run: cargo rdme --check
 
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
   feature-matrix:
     runs-on: ubuntu-latest
     strategy:

@@ -2,7 +2,9 @@
 name = "authery"
 version = "0.1.0"
 edition = "2024"
-exclude = [".github/*"]
+# let-chains (used throughout) stabilized in 1.88.
+rust-version = "1.88"
+include = ["/src", "/templates", "/README.md", "/CHANGELOG.md", "/license"]
 description = "Batteries-included authentication for Axum: sessions, passwords, email links & one-time codes, OAuth/OIDC, passkeys and MFA over storage you bring"
 license = "ISC"
 repository = "https://github.com/StefanTerdell/userp"
