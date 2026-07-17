@@ -46,11 +46,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let allow_login =
             self.pass.allow_login.as_ref().unwrap_or(&self.allow_signup) == &Allow::OnEither;
 
-        let user = match self
-            .store
-            .password_get_user_by_password_id(password_id)
-            .await?
-        {
+        let user = match self.store.get_user_by_password_id(password_id).await? {
             Some(user) if allow_login => match user.get_password_hash() {
                 Some(hash) => {
                     if self
@@ -69,7 +65,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             Some(_) => Err(PasswordSignupError::UserExists),
             None => Ok(self
                 .store
-                .password_create_user(
+                .create_user_by_password_id(
                     password_id,
                     &self.pass.hasher.generate_hash(password.into()).await,
                 )

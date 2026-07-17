@@ -25,7 +25,7 @@ Enrollment is two-step so a typo'd setup can never lock anyone out:
 
 The built-in account page has an "Authenticator" tab driving both steps, plus
 disable. The store persists a single `TotpCredential` per user
-(`totp_get`/`totp_upsert`/`totp_delete`).
+(`get_totp`/`upsert_totp`/`delete_totp`).
 
 ## Verification & replay protection
 

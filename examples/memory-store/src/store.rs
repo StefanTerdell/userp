@@ -63,11 +63,7 @@ impl AutheryStore for MemoryStore {
     type SessionId = Uuid;
     type OAuthTokenId = Uuid;
 
-    async fn webauthn_create_credential(
-        &self,
-        user_id: &Uuid,
-        passkey: Passkey,
-    ) -> Result<(), Self::Error> {
+    async fn create_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), Self::Error> {
         let mut passkeys = self.passkeys.write().await;
 
         passkeys.insert(passkey.cred_id().to_vec(), (*user_id, passkey));
@@ -75,7 +71,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    async fn webauthn_get_credentials(&self, user_id: &Uuid) -> Result<Vec<Passkey>, Self::Error> {
+    async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<Passkey>, Self::Error> {
         let passkeys = self.passkeys.read().await;
 
         Ok(passkeys
@@ -85,7 +81,7 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
-    async fn webauthn_get_credential_by_credential_id(
+    async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
     ) -> Result<Option<(Uuid, Passkey)>, Self::Error> {
@@ -94,11 +90,7 @@ impl AutheryStore for MemoryStore {
         Ok(passkeys.get(credential_id).cloned())
     }
 
-    async fn webauthn_update_credential(
-        &self,
-        user_id: &Uuid,
-        passkey: Passkey,
-    ) -> Result<(), Self::Error> {
+    async fn update_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), Self::Error> {
         let mut passkeys = self.passkeys.write().await;
 
         match passkeys.get(passkey.cred_id().as_slice()) {
@@ -114,7 +106,7 @@ impl AutheryStore for MemoryStore {
         }
     }
 
-    async fn webauthn_delete_credential(
+    async fn delete_passkey(
         &self,
         user_id: &Uuid,
         credential_id: &[u8],
@@ -131,11 +123,11 @@ impl AutheryStore for MemoryStore {
         }
     }
 
-    async fn totp_get(&self, user_id: &Uuid) -> Result<Option<TotpCredential>, Self::Error> {
+    async fn get_totp(&self, user_id: &Uuid) -> Result<Option<TotpCredential>, Self::Error> {
         Ok(self.totp.read().await.get(user_id).cloned())
     }
 
-    async fn totp_upsert(
+    async fn upsert_totp(
         &self,
         user_id: &Uuid,
         credential: TotpCredential,
@@ -145,7 +137,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    async fn totp_delete(&self, user_id: &Uuid) -> Result<(), Self::Error> {
+    async fn delete_totp(&self, user_id: &Uuid) -> Result<(), Self::Error> {
         self.totp.write().await.remove(user_id);
 
         Ok(())
@@ -198,7 +190,7 @@ impl AutheryStore for MemoryStore {
         Ok(users.get(user_id).cloned())
     }
 
-    async fn email_set_verified(&self, address: &str) -> Result<(), Self::Error> {
+    async fn set_email_verified(&self, address: &str) -> Result<(), Self::Error> {
         let mut users = self.users.write().await;
 
         users.values_mut().for_each(|u| {
@@ -212,7 +204,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    async fn email_create_challenge(
+    async fn create_challenge(
         &self,
 
         address: String,
@@ -233,7 +225,7 @@ impl AutheryStore for MemoryStore {
         Ok(challenge)
     }
 
-    async fn email_consume_challenge(
+    async fn consume_challenge(
         &self,
         code: String,
     ) -> Result<Option<Self::EmailChallenge>, Self::Error> {
@@ -391,7 +383,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    async fn sms_get_user_by_phone(
+    async fn get_user_by_phone(
         &self,
         number: &str,
     ) -> Result<Option<(Self::User, Self::UserPhone)>, Self::Error> {
@@ -404,7 +396,7 @@ impl AutheryStore for MemoryStore {
             .and_then(|p| users.get(&p.user_id).map(|u| (u.clone(), p.clone()))))
     }
 
-    async fn sms_create_user_by_phone(
+    async fn create_user_by_phone(
         &self,
         number: &str,
     ) -> Result<(Self::User, Self::UserPhone), Self::Error> {
@@ -441,7 +433,7 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
-    async fn password_get_user_by_password_id(
+    async fn get_user_by_password_id(
         &self,
         password_id: &str,
     ) -> Result<Option<Self::User>, Self::Error> {
@@ -453,7 +445,7 @@ impl AutheryStore for MemoryStore {
             .cloned())
     }
 
-    async fn password_create_user(
+    async fn create_user_by_password_id(
         &self,
         password_id: &str,
         password_hash: &str,
@@ -486,7 +478,7 @@ impl AutheryStore for MemoryStore {
     }
 
     // user store
-    async fn email_get_user_by_email_address(
+    async fn get_user_by_email_address(
         &self,
         address: &str,
     ) -> Result<Option<(Self::User, Self::UserEmail)>, Self::Error> {
@@ -500,7 +492,7 @@ impl AutheryStore for MemoryStore {
         }))
     }
 
-    async fn email_create_user_by_email_address(
+    async fn create_user_by_email_address(
         &self,
         address: &str,
     ) -> Result<(Self::User, Self::UserEmail), Self::Error> {
@@ -554,7 +546,7 @@ impl AutheryStore for MemoryStore {
         Ok(prev.clone())
     }
 
-    async fn oauth_get_token_by_id(
+    async fn get_oauth_token_by_id(
         &self,
         token_id: &Uuid,
     ) -> Result<Option<Self::OAuthToken>, Self::Error> {

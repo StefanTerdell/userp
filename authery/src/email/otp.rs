@@ -107,7 +107,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let challenge = self
             .store
-            .email_create_challenge(
+            .create_challenge(
                 address,
                 key,
                 next,
@@ -146,14 +146,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let user = match self
             .store
-            .email_get_user_by_email_address(challenge.get_address())
+            .get_user_by_email_address(challenge.get_address())
             .await?
         {
             Some((user, email)) if email.get_allow_link_login() => Ok(user),
             Some(_) => Err(OtpVerifyError::NotAllowed),
             None if allow_signup => Ok(self
                 .store
-                .email_create_user_by_email_address(challenge.get_address())
+                .create_user_by_email_address(challenge.get_address())
                 .await?
                 .0),
             None => Err(OtpVerifyError::NoUser),
@@ -187,7 +187,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let user = match self
             .store
-            .email_get_user_by_email_address(challenge.get_address())
+            .get_user_by_email_address(challenge.get_address())
             .await?
         {
             Some((user, email)) if allow_login && email.get_allow_link_login() => Ok(user),
@@ -195,7 +195,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             Some(_) => Err(OtpVerifyError::UserExists),
             None => Ok(self
                 .store
-                .email_create_user_by_email_address(challenge.get_address())
+                .create_user_by_email_address(challenge.get_address())
                 .await?
                 .0),
         }?;
@@ -215,7 +215,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some(challenge) = self
             .store
-            .email_consume_challenge(challenge_key(address, code))
+            .consume_challenge(challenge_key(address, code))
             .await?
         else {
             return Err(OtpVerifyError::WrongCode);

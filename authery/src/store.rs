@@ -56,21 +56,21 @@ pub trait AutheryStore: Send + Sync {
     // totp store
     /// The user's TOTP enrollment, if any (confirmed or not).
     #[cfg(feature = "totp")]
-    fn totp_get(
+    fn get_totp(
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Option<crate::models::TotpCredential>, Self::Error>> + Send;
     /// Create or replace the user's TOTP enrollment (used for enrollment,
     /// confirmation, and replay-guard updates).
     #[cfg(feature = "totp")]
-    fn totp_upsert(
+    fn upsert_totp(
         &self,
         user_id: &Self::UserId,
         credential: crate::models::TotpCredential,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Remove the user's TOTP enrollment.
     #[cfg(feature = "totp")]
-    fn totp_delete(
+    fn delete_totp(
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
@@ -81,7 +81,7 @@ pub trait AutheryStore: Send + Sync {
     // (serde-serializable) keyed by their credential id and owning user.
     /// Persist a newly registered passkey for the user.
     #[cfg(feature = "webauthn")]
-    fn webauthn_create_credential(
+    fn create_passkey(
         &self,
         user_id: &Self::UserId,
         passkey: webauthn_rs::prelude::Passkey,
@@ -89,13 +89,13 @@ pub trait AutheryStore: Send + Sync {
     /// All of the user's passkeys (used to exclude re-registration and for
     /// listing on the account page).
     #[cfg(feature = "webauthn")]
-    fn webauthn_get_credentials(
+    fn get_passkeys(
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<webauthn_rs::prelude::Passkey>, Self::Error>> + Send;
     /// Look up a passkey - and the user owning it - by raw credential id.
     #[cfg(feature = "webauthn")]
-    fn webauthn_get_credential_by_credential_id(
+    fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
     ) -> impl Future<
@@ -104,14 +104,14 @@ pub trait AutheryStore: Send + Sync {
     /// Replace the stored passkey blob (called after logins to persist
     /// counter updates and backup-state changes).
     #[cfg(feature = "webauthn")]
-    fn webauthn_update_credential(
+    fn update_passkey(
         &self,
         user_id: &Self::UserId,
         passkey: webauthn_rs::prelude::Passkey,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Delete a passkey owned by the user.
     #[cfg(all(feature = "webauthn", feature = "user"))]
-    fn webauthn_delete_credential(
+    fn delete_passkey(
         &self,
         user_id: &Self::UserId,
         credential_id: &[u8],
@@ -119,12 +119,12 @@ pub trait AutheryStore: Send + Sync {
 
     // password store
     #[cfg(feature = "password")]
-    fn password_get_user_by_password_id(
+    fn get_user_by_password_id(
         &self,
         password_id: &str,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
     #[cfg(feature = "password")]
-    fn password_create_user(
+    fn create_user_by_password_id(
         &self,
         password_id: &str,
         password_hash: &str,
@@ -132,24 +132,24 @@ pub trait AutheryStore: Send + Sync {
 
     // email store
     #[cfg(feature = "email")]
-    fn email_get_user_by_email_address(
+    fn get_user_by_email_address(
         &self,
         address: &str,
     ) -> impl Future<Output = Result<Option<(Self::User, Self::UserEmail)>, Self::Error>> + Send;
     #[cfg(feature = "email")]
-    fn email_create_user_by_email_address(
+    fn create_user_by_email_address(
         &self,
         address: &str,
     ) -> impl Future<Output = Result<(Self::User, Self::UserEmail), Self::Error>> + Send;
     #[cfg(feature = "email")]
-    fn email_set_verified(
+    fn set_email_verified(
         &self,
         address: &str,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Shared challenge store, used by email links, email OTP and SMS codes
     /// (keys are namespaced per flow).
     #[cfg(any(feature = "email", feature = "sms"))]
-    fn email_create_challenge(
+    fn create_challenge(
         &self,
         address: String,
         code: String,
@@ -158,19 +158,19 @@ pub trait AutheryStore: Send + Sync {
     ) -> impl Future<Output = Result<Self::EmailChallenge, Self::Error>> + Send;
     /// Fetch AND delete - challenges are single-use.
     #[cfg(any(feature = "email", feature = "sms"))]
-    fn email_consume_challenge(
+    fn consume_challenge(
         &self,
         code: String,
     ) -> impl Future<Output = Result<Option<Self::EmailChallenge>, Self::Error>> + Send;
 
     // sms store
     #[cfg(feature = "sms")]
-    fn sms_get_user_by_phone(
+    fn get_user_by_phone(
         &self,
         number: &str,
     ) -> impl Future<Output = Result<Option<(Self::User, Self::UserPhone)>, Self::Error>> + Send;
     #[cfg(feature = "sms")]
-    fn sms_create_user_by_phone(
+    fn create_user_by_phone(
         &self,
         number: &str,
     ) -> impl Future<Output = Result<(Self::User, Self::UserPhone), Self::Error>> + Send;
@@ -189,7 +189,7 @@ pub trait AutheryStore: Send + Sync {
         unmatched_token: UnmatchedOAuthToken,
     ) -> impl Future<Output = Result<Self::OAuthToken, Self::Error>> + Send;
     #[cfg(feature = "oauth")]
-    fn oauth_get_token_by_id(
+    fn get_oauth_token_by_id(
         &self,
         token_id: &Self::OAuthTokenId,
     ) -> impl Future<Output = Result<Option<Self::OAuthToken>, Self::Error>> + Send;

@@ -128,7 +128,7 @@ where
         return Ok(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let token = match auth.store.oauth_get_token_by_id(&token_id).await {
+    let token = match auth.store.get_oauth_token_by_id(&token_id).await {
         Ok(Some(token)) if token.get_user_id() == user.get_id() => token,
         Ok(_) => {
             return Ok(StatusCode::NOT_FOUND.into_response());

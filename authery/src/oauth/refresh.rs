@@ -105,7 +105,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some(old_token) = self
             .store
-            .oauth_get_token_by_id(&token_id)
+            .get_oauth_token_by_id(&token_id)
             .await
             .map_err(OAuthRefreshCallbackError::Store)?
         else {

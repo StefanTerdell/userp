@@ -1,6 +1,4 @@
 use crate::models::{MyLoginSession, MyUser};
-use std::{collections::HashMap, convert::Infallible, sync::Arc};
-use tokio::sync::RwLock;
 use authery::{
     prelude::*,
     reexports::{
@@ -8,6 +6,8 @@ use authery::{
         uuid::Uuid,
     },
 };
+use std::{collections::HashMap, convert::Infallible, sync::Arc};
+use tokio::sync::RwLock;
 
 #[derive(Clone, Default, Debug)]
 pub struct MemoryStore {
@@ -78,7 +78,7 @@ impl AutheryStore for MemoryStore {
         Ok(users.get(user_id).cloned())
     }
 
-    async fn password_get_user_by_password_id(
+    async fn get_user_by_password_id(
         &self,
         password_id: &str,
     ) -> Result<Option<MyUser>, Self::Error> {
@@ -87,7 +87,7 @@ impl AutheryStore for MemoryStore {
         Ok(users.values().find(|u| u.email == password_id).cloned())
     }
 
-    async fn password_create_user(
+    async fn create_user_by_password_id(
         &self,
         password_id: &str,
         password_hash: &str,

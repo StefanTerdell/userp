@@ -113,7 +113,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let challenge = self
             .store
-            .email_create_challenge(
+            .create_challenge(
                 address,
                 code,
                 next,

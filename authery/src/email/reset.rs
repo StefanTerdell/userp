@@ -80,7 +80,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some(challenge) = self
             .store
-            .email_consume_challenge(code)
+            .consume_challenge(code)
             .await
             .map_err(EmailResetError::Store)?
         else {
@@ -93,7 +93,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let user = match self
             .store
-            .email_get_user_by_email_address(challenge.get_address())
+            .get_user_by_email_address(challenge.get_address())
             .await?
         {
             Some((user, email))

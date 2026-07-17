@@ -32,7 +32,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         &self,
         code: String,
     ) -> Result<(String, Option<String>), EmailVerifyCallbackError<S::Error>> {
-        let Some(challenge) = self.store.email_consume_challenge(code).await? else {
+        let Some(challenge) = self.store.consume_challenge(code).await? else {
             return Err(EmailVerifyCallbackError::ChallengeNotFound);
         };
 
@@ -41,7 +41,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
 
         self.store
-            .email_set_verified(challenge.get_address())
+            .set_email_verified(challenge.get_address())
             .await?;
 
         Ok((
@@ -66,7 +66,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let owned = self
             .store
-            .email_get_user_by_email_address(&email)
+            .get_user_by_email_address(&email)
             .await
             .map_err(EmailVerifyInitError::Store)?
             .is_some_and(|(owner, _)| owner.get_id() == user.get_id());

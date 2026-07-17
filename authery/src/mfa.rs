@@ -145,11 +145,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         #[cfg(feature = "webauthn")]
         {
-            factors.webauthn = !self
-                .store
-                .webauthn_get_credentials(user_id)
-                .await?
-                .is_empty();
+            factors.webauthn = !self.store.get_passkeys(user_id).await?.is_empty();
         }
 
         #[cfg(feature = "totp")]
@@ -293,7 +289,7 @@ mod otp_factor {
             let key = challenge_key(&address, &digits);
 
             self.store
-                .email_create_challenge(
+                .create_challenge(
                     address.clone(),
                     key,
                     None,
@@ -325,7 +321,7 @@ mod otp_factor {
 
             let Some(challenge) = self
                 .store
-                .email_consume_challenge(challenge_key(&address, code))
+                .consume_challenge(challenge_key(&address, code))
                 .await
                 .map_err(MfaOtpError::Store)?
             else {
@@ -411,7 +407,7 @@ mod webauthn_factor {
 
             let passkeys = self
                 .store
-                .webauthn_get_credentials(&pending.get_user_id())
+                .get_passkeys(&pending.get_user_id())
                 .await
                 .map_err(MfaWebauthnError::Store)?;
 
@@ -463,7 +459,7 @@ mod webauthn_factor {
             // Persist counter/backup-state updates.
             let passkeys = self
                 .store
-                .webauthn_get_credentials(&user_id)
+                .get_passkeys(&user_id)
                 .await
                 .map_err(MfaWebauthnError::Store)?;
             if let Some(mut passkey) = passkeys
@@ -472,7 +468,7 @@ mod webauthn_factor {
                 && passkey.update_credential(&result).unwrap_or(false)
             {
                 self.store
-                    .webauthn_update_credential(&user_id, passkey)
+                    .update_passkey(&user_id, passkey)
                     .await
                     .map_err(MfaWebauthnError::Store)?;
             }
@@ -577,7 +573,7 @@ mod sms_factor {
             let key = challenge_key(&number, &digits);
 
             self.store
-                .email_create_challenge(
+                .create_challenge(
                     number.clone(),
                     key,
                     None,
@@ -609,7 +605,7 @@ mod sms_factor {
 
             let Some(challenge) = self
                 .store
-                .email_consume_challenge(challenge_key(&number, code))
+                .consume_challenge(challenge_key(&number, code))
                 .await
                 .map_err(MfaSmsError::Store)?
             else {

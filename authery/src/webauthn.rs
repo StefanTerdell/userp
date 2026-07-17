@@ -102,7 +102,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let existing = self
             .store
-            .webauthn_get_credentials(&user_id)
+            .get_passkeys(&user_id)
             .await
             .map_err(WebauthnRegisterError::Store)?;
 
@@ -159,7 +159,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         use crate::models::LoginSession;
         self.store
-            .webauthn_create_credential(&session.get_user_id(), passkey)
+            .create_passkey(&session.get_user_id(), passkey)
             .await
             .map_err(WebauthnRegisterError::Store)?;
 
@@ -202,7 +202,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some((user_id, passkey)) = self
             .store
-            .webauthn_get_credential_by_credential_id(cred_id)
+            .get_passkey_by_credential_id(cred_id)
             .await
             .map_err(WebauthnLoginError::Store)?
         else {
@@ -220,7 +220,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let mut updated = passkey;
         if updated.update_credential(&result).unwrap_or(false) {
             self.store
-                .webauthn_update_credential(&user_id, updated)
+                .update_passkey(&user_id, updated)
                 .await
                 .map_err(WebauthnLoginError::Store)?;
         }

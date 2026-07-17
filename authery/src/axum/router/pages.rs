@@ -271,7 +271,7 @@ where
         #[cfg(feature = "webauthn")]
         let passkey_credential_ids = auth
             .store
-            .webauthn_get_credentials(&user.get_id())
+            .get_passkeys(&user.get_id())
             .await?
             .iter()
             .map(|p| p.cred_id().iter().map(|b| format!("{b:02x}")).collect())

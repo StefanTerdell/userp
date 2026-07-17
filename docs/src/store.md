@@ -30,11 +30,11 @@ getters. `LoginMethod` should be persisted as an opaque serializable value
 
 A few store methods carry security-relevant contracts:
 
-- `email_consume_challenge` must fetch **and delete** — challenges and codes
+- `consume_challenge` must fetch **and delete** — challenges and codes
   are single-use.
 - `create_session` ids act as bearer tokens: generate them with a CSPRNG
   (`Id::new_random` on Uuid does).
-- `delete_session` / `delete_oauth_token` / `webauthn_delete_credential` are
+- `delete_session` / `delete_oauth_token` / `delete_passkey` are
   scoped by user id — verify ownership.
 - `org`-like multi-tenant logic hooks in through
   `create_user_from_unmatched_token` / `get_user_by_unmatched_token`, which

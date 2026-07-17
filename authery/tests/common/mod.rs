@@ -261,7 +261,7 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "totp")]
-    async fn totp_get(
+    async fn get_totp(
         &self,
         user_id: &Uuid,
     ) -> Result<Option<authery::models::TotpCredential>, Infallible> {
@@ -269,7 +269,7 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "totp")]
-    async fn totp_upsert(
+    async fn upsert_totp(
         &self,
         user_id: &Uuid,
         credential: authery::models::TotpCredential,
@@ -279,13 +279,13 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "totp")]
-    async fn totp_delete(&self, user_id: &Uuid) -> Result<(), Infallible> {
+    async fn delete_totp(&self, user_id: &Uuid) -> Result<(), Infallible> {
         self.totp.lock().unwrap().remove(user_id);
         Ok(())
     }
 
     #[cfg(feature = "sms")]
-    async fn sms_get_user_by_phone(
+    async fn get_user_by_phone(
         &self,
         number: &str,
     ) -> Result<Option<(TestUser, TestPhone)>, Infallible> {
@@ -307,7 +307,7 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "sms")]
-    async fn sms_create_user_by_phone(
+    async fn create_user_by_phone(
         &self,
         number: &str,
     ) -> Result<(TestUser, TestPhone), Infallible> {
@@ -340,7 +340,7 @@ impl AutheryStore for TestStore {
             .collect())
     }
 
-    async fn password_get_user_by_password_id(
+    async fn get_user_by_password_id(
         &self,
         password_id: &str,
     ) -> Result<Option<TestUser>, Infallible> {
@@ -353,7 +353,7 @@ impl AutheryStore for TestStore {
             .cloned())
     }
 
-    async fn password_create_user(
+    async fn create_user_by_password_id(
         &self,
         password_id: &str,
         password_hash: &str,
@@ -396,7 +396,7 @@ impl AutheryStore for TestStore {
         Ok(())
     }
 
-    async fn email_get_user_by_email_address(
+    async fn get_user_by_email_address(
         &self,
         address: &str,
     ) -> Result<Option<(TestUser, TestEmail)>, Infallible> {
@@ -408,7 +408,7 @@ impl AutheryStore for TestStore {
         }))
     }
 
-    async fn email_create_user_by_email_address(
+    async fn create_user_by_email_address(
         &self,
         address: &str,
     ) -> Result<(TestUser, TestEmail), Infallible> {
@@ -428,7 +428,7 @@ impl AutheryStore for TestStore {
         Ok((user, email))
     }
 
-    async fn email_set_verified(&self, address: &str) -> Result<(), Infallible> {
+    async fn set_email_verified(&self, address: &str) -> Result<(), Infallible> {
         for user in self.users.lock().unwrap().values_mut() {
             for email in &mut user.emails {
                 if email.address == address {
@@ -439,7 +439,7 @@ impl AutheryStore for TestStore {
         Ok(())
     }
 
-    async fn email_create_challenge(
+    async fn create_challenge(
         &self,
         address: String,
         code: String,
@@ -459,10 +459,7 @@ impl AutheryStore for TestStore {
         Ok(challenge)
     }
 
-    async fn email_consume_challenge(
-        &self,
-        code: String,
-    ) -> Result<Option<TestChallenge>, Infallible> {
+    async fn consume_challenge(&self, code: String) -> Result<Option<TestChallenge>, Infallible> {
         Ok(self.challenges.lock().unwrap().remove(&code))
     }
 

@@ -149,7 +149,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let challenge = self
             .store
-            .email_create_challenge(number, key, next, Utc::now() + self.sms.challenge_lifetime)
+            .create_challenge(number, key, next, Utc::now() + self.sms.challenge_lifetime)
             .await
             .map_err(SmsInitError::Store)?;
 
@@ -183,14 +183,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let user = match self
             .store
-            .sms_get_user_by_phone(challenge.get_address())
+            .get_user_by_phone(challenge.get_address())
             .await?
         {
             Some((user, phone)) if phone.get_allow_login() => Ok(user),
             Some(_) => Err(SmsVerifyError::NotAllowed),
             None if allow_signup => Ok(self
                 .store
-                .sms_create_user_by_phone(challenge.get_address())
+                .create_user_by_phone(challenge.get_address())
                 .await?
                 .0),
             None => Err(SmsVerifyError::NoUser),
@@ -218,7 +218,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let user = match self
             .store
-            .sms_get_user_by_phone(challenge.get_address())
+            .get_user_by_phone(challenge.get_address())
             .await?
         {
             Some((user, phone)) if allow_login && phone.get_allow_login() => Ok(user),
@@ -226,7 +226,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             Some(_) => Err(SmsVerifyError::UserExists),
             None => Ok(self
                 .store
-                .sms_create_user_by_phone(challenge.get_address())
+                .create_user_by_phone(challenge.get_address())
                 .await?
                 .0),
         }?;
@@ -246,7 +246,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some(challenge) = self
             .store
-            .email_consume_challenge(challenge_key(number, code))
+            .consume_challenge(challenge_key(number, code))
             .await?
         else {
             return Err(SmsVerifyError::WrongCode);

@@ -116,7 +116,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let totp = build_totp::<S::Error>(&secret, &self.totp.issuer, account_label)?;
 
         self.store
-            .totp_upsert(
+            .upsert_totp(
                 &user.get_id(),
                 TotpCredential {
                     secret: secret.clone(),
@@ -145,7 +145,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some(credential) = self
             .store
-            .totp_get(&user_id)
+            .get_totp(&user_id)
             .await
             .map_err(TotpError::Store)?
         else {
@@ -155,7 +155,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let step = self.totp_check_code(&user_id, &credential, code).await?;
 
         self.store
-            .totp_upsert(
+            .upsert_totp(
                 &user_id,
                 TotpCredential {
                     confirmed: true,
@@ -176,7 +176,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         self.store
-            .totp_delete(&user.get_id())
+            .delete_totp(&user.get_id())
             .await
             .map_err(TotpError::Store)
     }
@@ -186,7 +186,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     pub async fn totp_enabled(&self, user_id: &S::UserId) -> Result<bool, S::Error> {
         Ok(self
             .store
-            .totp_get(user_id)
+            .get_totp(user_id)
             .await?
             .is_some_and(|c| c.confirmed))
     }
@@ -200,7 +200,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     ) -> Result<(), TotpError<S::Error>> {
         let Some(credential) = self
             .store
-            .totp_get(user_id)
+            .get_totp(user_id)
             .await
             .map_err(TotpError::Store)?
         else {
@@ -214,7 +214,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let step = self.totp_check_code(user_id, &credential, code).await?;
 
         self.store
-            .totp_upsert(
+            .upsert_totp(
                 user_id,
                 TotpCredential {
                     last_used_step: Some(step),

@@ -36,7 +36,7 @@ Each takes its credentials and sender id as constructor args, e.g.
 ## Store & model
 
 Your store gains a `UserPhone` model (number, verified, allow-login flags)
-and three methods: `sms_get_user_by_phone`, `sms_create_user_by_phone`, and
+and three methods: `get_user_by_phone`, `create_user_by_phone`, and
 `get_user_phones`. Store numbers in E.164 form (`+46701234567`) — authery
 compares them as opaque strings. Challenges reuse the email challenge store
 with namespaced keys, so enabling `sms` without `email` still only requires

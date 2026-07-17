@@ -131,7 +131,7 @@ where
     };
 
     auth.store
-        .webauthn_delete_credential(&session.get_user_id(), &credential_id)
+        .delete_passkey(&session.get_user_id(), &credential_id)
         .await?;
 
     Ok(Redirect::to(&format!("{user_page}?message=Passkey deleted")).into_response())

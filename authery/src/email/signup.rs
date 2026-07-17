@@ -86,7 +86,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let Some(challenge) = self
             .store
-            .email_consume_challenge(code)
+            .consume_challenge(code)
             .await
             .map_err(EmailSignupError::Store)?
         else {
@@ -102,7 +102,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         let user = match self
             .store
-            .email_get_user_by_email_address(challenge.get_address())
+            .get_user_by_email_address(challenge.get_address())
             .await?
         {
             Some((user, email)) if allow_login && email.get_allow_link_login() => Ok(user),
@@ -110,7 +110,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             Some(_) => Err(EmailSignupError::UserExists),
             None => Ok(self
                 .store
-                .email_create_user_by_email_address(challenge.get_address())
+                .create_user_by_email_address(challenge.get_address())
                 .await?
                 .0),
         }?;
