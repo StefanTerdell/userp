@@ -1,8 +1,0 @@
-[book]
-title = "The Authery Book"
-authors = ["Stefan Terdell"]
-language = "en"
-src = "src"
-
-[build]
-build-dir = "book"
