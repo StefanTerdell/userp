@@ -99,6 +99,15 @@ where
             }),
         #[cfg(not(feature = "otp"))]
         otp: None,
+        #[cfg(feature = "sms")]
+        sms: factors
+            .sms_number
+            .map(|number| crate::pages::MfaSmsTemplateInfo {
+                action_route: &auth.routes.mfa.login_mfa_sms,
+                number_hint: mask_number(&number),
+            }),
+        #[cfg(not(feature = "sms"))]
+        sms: None,
         #[cfg(feature = "totp")]
         totp: factors
             .totp
@@ -131,7 +140,64 @@ fn mask_address(address: &str) -> String {
     }
 }
 
-#[cfg(feature = "otp")]
+/// `+46701234567` -> `+46***67`
+#[cfg(all(feature = "mfa", feature = "sms"))]
+fn mask_number(number: &str) -> String {
+    let prefix: String = number.chars().take(3).collect();
+    let suffix: String = number
+        .chars()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{prefix}***{suffix}")
+}
+
+#[cfg(feature = "sms")]
+pub async fn get_login_sms<St>(
+    auth: AxumAuthery<St>,
+    Query(query): Query<OtpPageQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::SmsTemplate;
+
+    let view = SmsTemplate {
+        number: &query.address,
+        action_route: &auth.routes.sms.login_sms,
+        next: query.next.as_deref(),
+        message: query.message.as_deref(),
+        error: query.error.as_deref(),
+    };
+    Ok(Html(auth.pages.render_sms(&view)))
+}
+
+#[cfg(feature = "sms")]
+pub async fn get_signup_sms<St>(
+    auth: AxumAuthery<St>,
+    Query(query): Query<OtpPageQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::SmsTemplate;
+
+    let view = SmsTemplate {
+        number: &query.address,
+        action_route: &auth.routes.sms.signup_sms,
+        next: query.next.as_deref(),
+        message: query.message.as_deref(),
+        error: query.error.as_deref(),
+    };
+    Ok(Html(auth.pages.render_sms(&view)))
+}
+
+#[cfg(any(feature = "otp", feature = "sms"))]
 #[derive(Deserialize)]
 pub struct OtpPageQuery {
     pub address: String,

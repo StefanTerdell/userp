@@ -26,6 +26,8 @@
 
 #![cfg_attr(not(feature = "default"), allow(unused))]
 
+#[cfg(any(feature = "otp", feature = "sms", feature = "mfa"))]
+pub(crate) mod codes;
 pub mod config;
 pub mod constants;
 pub mod core;
@@ -36,6 +38,8 @@ pub mod prelude;
 pub mod ratelimit;
 pub mod reexports;
 pub mod routes;
+#[cfg(feature = "sms")]
+pub mod sms;
 pub mod store;
 #[cfg(feature = "totp")]
 pub mod totp;

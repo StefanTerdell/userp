@@ -54,6 +54,34 @@ impl UserEmail for MyUserEmail {
 }
 
 #[derive(Debug, Clone)]
+pub struct MyUserPhone {
+    pub user_id: Uuid,
+    pub number: String,
+    pub verified: bool,
+    pub allow_login: bool,
+}
+
+impl UserPhone for MyUserPhone {
+    type UserId = Uuid;
+
+    fn get_user_id(&self) -> Uuid {
+        self.user_id
+    }
+
+    fn get_number(&self) -> &str {
+        &self.number
+    }
+
+    fn get_verified(&self) -> bool {
+        self.verified
+    }
+
+    fn get_allow_login(&self) -> bool {
+        self.allow_login
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct MyLoginSession {
     pub id: Uuid,
     pub user_id: Uuid,

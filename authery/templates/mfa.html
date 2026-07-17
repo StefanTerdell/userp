@@ -110,6 +110,34 @@
   {% endif %}
   {% endif %}
 
+  {% if let Some(sms) = sms %}
+  <div class="sms-login">
+    <form action="{{ sms.action_route }}" method="post" class="form">
+      <button type="submit">Text a code to {{ sms.number_hint }}</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+
+    <form action="{{ sms.action_route }}" method="post" id="mfa-sms-form">
+      <div class="form-group">
+        <label for="sms-code">Texted code</label>
+        <input type="text" id="sms-code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
+      </div>
+      <button type="submit">Verify</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+  </div>
+
+  {% if otp.is_some() %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  {% endif %}
+  {% endif %}
+
   {% if let Some(otp) = otp %}
   <div class="otp-login">
     <form action="{{ otp.action_route }}" method="post" class="form">

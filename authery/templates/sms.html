@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+  <h1>Enter your code</h1>
+
+  {% if let Some(message) = message %}
+  <div class="message" role="alert">
+    <strong>{{ message }}</strong>
+  </div>
+  {% endif %}
+
+  {% if let Some(error) = error %}
+  <div class="error" role="alert">
+    <strong>Something went wrong: {{ error }}</strong>
+  </div>
+  {% endif %}
+
+  <p>We sent a code to <strong>{{ number }}</strong>. Enter it below.</p>
+
+  <form action="{{ action_route }}" method="post" id="sms-form">
+    <input type="hidden" name="number" value="{{ number }}" />
+    <div class="form-group">
+      <label for="code">Code</label>
+      <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code"
+        required autofocus>
+    </div>
+    <button type="submit">Continue</button>
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% endif %}
+  </form>
+
+  <form action="{{ action_route }}" method="post" class="form">
+    <input type="hidden" name="number" value="{{ number }}" />
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% endif %}
+    <button type="submit" class="social-button">Send a new code</button>
+  </form>
+</div>
+{% endblock %}

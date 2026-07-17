@@ -60,11 +60,19 @@ pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginMethodRules, Lo
 
 #[cfg(feature = "mfa")]
 pub use crate::mfa::{MfaError, MfaFactors, MfaPolicy};
+#[cfg(feature = "sms")]
+pub use crate::models::sms::UserPhone;
 pub use crate::ratelimit::{NoRateLimit, RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};
 #[cfg(feature = "mfa")]
 pub use crate::routes::mfa::MfaRoutes;
+#[cfg(feature = "sms")]
+pub use crate::routes::sms::SmsActionRoutes;
 #[cfg(feature = "webauthn")]
 pub use crate::routes::webauthn::WebauthnRoutes;
+#[cfg(feature = "sms-providers")]
+pub use crate::sms::providers::*;
+#[cfg(feature = "sms")]
+pub use crate::sms::{SmsConfig, SmsInitError, SmsSendFuture, SmsSender, SmsVerifyError};
 #[cfg(feature = "totp")]
 pub use crate::totp::{TotpConfig, TotpEnrollment, TotpError};
 #[cfg(feature = "webauthn")]

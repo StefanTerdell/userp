@@ -175,3 +175,66 @@ mod totp_factor {
         }
     }
 }
+
+#[cfg(feature = "sms")]
+pub(crate) use sms_factor::post_login_mfa_sms;
+
+#[cfg(feature = "sms")]
+mod sms_factor {
+    use super::*;
+    use crate::mfa::MfaSmsError;
+    use axum::Form;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct MfaSmsForm {
+        pub code: Option<String>,
+        pub next: Option<String>,
+    }
+
+    /// Without `code`: text a code to the pending user's verified number.
+    /// With `code`: verify it and complete the login.
+    pub(crate) async fn post_login_mfa_sms<St>(
+        auth: AxumAuthery<St>,
+        Form(MfaSmsForm { code, next }): Form<MfaSmsForm>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        let mfa_route = auth.routes.mfa.login_mfa.clone();
+        let login_route = auth.routes.pages.login.clone();
+
+        let with_query = |key: &str, value: &str| {
+            let mut url = format!("{mfa_route}?{key}={}", urlencoding::encode(value));
+            if let Some(next) = next.as_deref() {
+                url.push_str(&format!("&next={}", urlencoding::encode(next)));
+            }
+            url
+        };
+
+        match code.filter(|code| !code.is_empty()) {
+            None => match auth.mfa_sms_init().await {
+                Ok(_number) => {
+                    Ok(Redirect::to(&with_query("message", "Code sent!")).into_response())
+                }
+                Err(MfaSmsError::Store(err)) => Err(err),
+                Err(MfaSmsError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
+                Err(err) => {
+                    Ok(Redirect::to(&with_query("error", &err.to_string())).into_response())
+                }
+            },
+            Some(code) => match auth.mfa_sms_verify(&code).await {
+                Ok(auth) => {
+                    let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
+                    Ok((auth, Redirect::to(&next)).into_response())
+                }
+                Err(MfaSmsError::Store(err)) => Err(err),
+                Err(MfaSmsError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
+                Err(err) => {
+                    Ok(Redirect::to(&with_query("error", &err.to_string())).into_response())
+                }
+            },
+        }
+    }
+}

@@ -1,7 +1,9 @@
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "sms"))]
 pub mod email;
 #[cfg(feature = "oauth")]
 pub mod oauth;
+#[cfg(feature = "sms")]
+pub mod sms;
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;

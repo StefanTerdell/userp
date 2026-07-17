@@ -39,6 +39,8 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub webauthn: crate::webauthn::WebauthnConfig,
     #[cfg(feature = "totp")]
     pub totp: crate::totp::TotpConfig,
+    #[cfg(feature = "sms")]
+    pub sms: crate::sms::SmsConfig,
     #[cfg(feature = "mfa")]
     pub mfa_policy: crate::mfa::MfaPolicy,
     #[cfg(feature = "pages")]

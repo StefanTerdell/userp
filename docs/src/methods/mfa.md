@@ -6,10 +6,13 @@ only). When such a login succeeds *and the user has a second factor
 registered*, the created session is **pending**: treated as logged-out
 everywhere except the MFA completion flow, which offers
 
-- a passkey ceremony scoped to the user's registered credentials, or
+- a passkey ceremony scoped to the user's registered credentials,
+- a code from the user's authenticator app (`totp`),
 - a one-time code mailed to the user's **own verified address** — never one
   supplied in the request. Emailed codes are not offered when the first
-  factor already proved control of the mailbox.
+  factor already proved control of the mailbox, or
+- a one-time code texted to the user's **own verified phone number** (`sms`),
+  with the same rules as emailed codes.
 
 Completing the second factor replaces the pending session with one whose
 method records both factors: `LoginMethod::Mfa { first, second }`.

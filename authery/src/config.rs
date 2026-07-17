@@ -9,6 +9,8 @@ use crate::pages::{AskamaPages, Pages};
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
 use crate::ratelimit::{NoRateLimit, RateLimiter};
+#[cfg(feature = "sms")]
+use crate::sms::SmsConfig;
 #[cfg(feature = "totp")]
 use crate::totp::TotpConfig;
 #[cfg(feature = "webauthn")]
@@ -60,6 +62,8 @@ pub struct AutheryConfig {
     pub webauthn: WebauthnConfig,
     #[cfg(feature = "totp")]
     pub totp: TotpConfig,
+    #[cfg(feature = "sms")]
+    pub sms: SmsConfig,
     /// Which first factors demand a second one; see [`crate::mfa`]. Defaults
     /// to requiring MFA for password logins when the user has a factor
     /// registered.
@@ -72,6 +76,9 @@ pub struct AutheryConfig {
 }
 
 impl AutheryConfig {
+    // One cfg-gated positional arg per enabled method beats a builder that
+    // can silently miss one.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         key: String,
         routes: impl Into<Routes<String>>,
@@ -80,6 +87,7 @@ impl AutheryConfig {
         #[cfg(feature = "oauth")] oauth: OAuthConfig,
         #[cfg(feature = "webauthn")] webauthn: WebauthnConfig,
         #[cfg(feature = "totp")] totp: TotpConfig,
+        #[cfg(feature = "sms")] sms: SmsConfig,
     ) -> Result<Self, AutheryConfigError> {
         if key.len() < MIN_KEY_LEN {
             return Err(AutheryConfigError::KeyTooShort(key.len()));
@@ -105,6 +113,8 @@ impl AutheryConfig {
             webauthn,
             #[cfg(feature = "totp")]
             totp,
+            #[cfg(feature = "sms")]
+            sms,
             #[cfg(feature = "mfa")]
             mfa_policy: MfaPolicy::default(),
             #[cfg(feature = "pages")]

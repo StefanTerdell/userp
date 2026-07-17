@@ -61,6 +61,32 @@ impl UserEmail for TestEmail {
     }
 }
 
+#[cfg(feature = "sms")]
+#[derive(Debug, Clone)]
+pub struct TestPhone {
+    pub user_id: Uuid,
+    pub number: String,
+    pub verified: bool,
+    pub allow_login: bool,
+}
+
+#[cfg(feature = "sms")]
+impl authery::models::sms::UserPhone for TestPhone {
+    type UserId = Uuid;
+    fn get_user_id(&self) -> Uuid {
+        self.user_id
+    }
+    fn get_number(&self) -> &str {
+        &self.number
+    }
+    fn get_verified(&self) -> bool {
+        self.verified
+    }
+    fn get_allow_login(&self) -> bool {
+        self.allow_login
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TestChallenge {
     pub address: String,
@@ -116,6 +142,8 @@ pub struct TestStore {
     pub challenges: Arc<Mutex<HashMap<String, TestChallenge>>>,
     #[cfg(feature = "totp")]
     pub totp: Arc<Mutex<HashMap<Uuid, authery::models::TotpCredential>>>,
+    #[cfg(feature = "sms")]
+    pub phones: Arc<Mutex<Vec<TestPhone>>>,
 }
 
 impl TestStore {
@@ -152,6 +180,17 @@ impl TestStore {
         );
     }
 
+    /// Attach a verified, login-enabled phone number to an existing user.
+    #[cfg(feature = "sms")]
+    pub fn seed_phone(&self, user_id: Uuid, number: &str) {
+        self.phones.lock().unwrap().push(TestPhone {
+            user_id,
+            number: number.to_string(),
+            verified: true,
+            allow_login: true,
+        });
+    }
+
     pub fn session_count(&self, user_id: Uuid) -> usize {
         self.sessions
             .lock()
@@ -170,6 +209,8 @@ impl AutheryStore for TestStore {
     type LoginSession = TestSession;
     type UserEmail = TestEmail;
     type EmailChallenge = TestChallenge;
+    #[cfg(feature = "sms")]
+    type UserPhone = TestPhone;
 
     async fn get_user(&self, user_id: &Uuid) -> Result<Option<TestUser>, Infallible> {
         Ok(self.users.lock().unwrap().get(user_id).cloned())
@@ -241,6 +282,62 @@ impl AutheryStore for TestStore {
     async fn totp_delete(&self, user_id: &Uuid) -> Result<(), Infallible> {
         self.totp.lock().unwrap().remove(user_id);
         Ok(())
+    }
+
+    #[cfg(feature = "sms")]
+    async fn sms_get_user_by_phone(
+        &self,
+        number: &str,
+    ) -> Result<Option<(TestUser, TestPhone)>, Infallible> {
+        let phone = self
+            .phones
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|p| p.number == number)
+            .cloned();
+        Ok(phone.and_then(|p| {
+            self.users
+                .lock()
+                .unwrap()
+                .get(&p.user_id)
+                .cloned()
+                .map(|u| (u, p))
+        }))
+    }
+
+    #[cfg(feature = "sms")]
+    async fn sms_create_user_by_phone(
+        &self,
+        number: &str,
+    ) -> Result<(TestUser, TestPhone), Infallible> {
+        let id = Uuid::new_v4();
+        let user = TestUser {
+            id,
+            password_hash: None,
+            emails: vec![],
+        };
+        let phone = TestPhone {
+            user_id: id,
+            number: number.to_string(),
+            verified: true,
+            allow_login: true,
+        };
+        self.users.lock().unwrap().insert(id, user.clone());
+        self.phones.lock().unwrap().push(phone.clone());
+        Ok((user, phone))
+    }
+
+    #[cfg(feature = "sms")]
+    async fn get_user_phones(&self, user_id: &Uuid) -> Result<Vec<TestPhone>, Infallible> {
+        Ok(self
+            .phones
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|p| p.user_id == *user_id)
+            .cloned()
+            .collect())
     }
 
     async fn password_get_user_by_password_id(
@@ -451,12 +548,47 @@ impl authery::prelude::PasswordHasher for PlaintextHasher {
     }
 }
 
+/// Collects sent texts instead of hitting a gateway - unlike SMTP this makes
+/// the init step fully testable.
+#[cfg(feature = "sms")]
+#[derive(Debug, Clone, Default)]
+pub struct TestSmsSender {
+    pub sent: Arc<Mutex<Vec<(String, String)>>>,
+}
+
+#[cfg(feature = "sms")]
+impl TestSmsSender {
+    /// The code in the last text sent (codes lead the message body).
+    pub fn last_code(&self) -> String {
+        self.sent
+            .lock()
+            .unwrap()
+            .last()
+            .and_then(|(_, message)| message.split_whitespace().next())
+            .expect("no sms sent")
+            .to_string()
+    }
+}
+
+#[cfg(feature = "sms")]
+impl authery::sms::SmsSender for TestSmsSender {
+    fn send<'a>(&'a self, to: &'a str, message: &'a str) -> authery::sms::SmsSendFuture<'a> {
+        self.sent
+            .lock()
+            .unwrap()
+            .push((to.to_string(), message.to_string()));
+        Box::pin(async { Ok(()) })
+    }
+}
+
 pub struct AuthBuilder {
     pub store: TestStore,
     pub session_lifetime: Duration,
     pub max_concurrent_sessions: Option<usize>,
     pub rate_limiter: Arc<dyn RateLimiter>,
     pub mfa_policy: authery::mfa::MfaPolicy,
+    #[cfg(feature = "sms")]
+    pub sms_sender: TestSmsSender,
 }
 
 impl AuthBuilder {
@@ -466,10 +598,11 @@ impl AuthBuilder {
             session_lifetime: Duration::days(1),
             max_concurrent_sessions: None,
             rate_limiter: Arc::new(NoRateLimit),
+            #[cfg(feature = "sms")]
+            sms_sender: TestSmsSender::default(),
             mfa_policy: authery::mfa::MfaPolicy {
                 require_for_password: false,
-                require_for_email: false,
-                require_for_otp: false,
+                ..Default::default()
             },
         }
     }
@@ -488,6 +621,8 @@ impl AuthBuilder {
             pass: PasswordConfig::new().with_hasher(PlaintextHasher),
             #[cfg(feature = "totp")]
             totp: authery::totp::TotpConfig::new("authery-tests"),
+            #[cfg(feature = "sms")]
+            sms: authery::sms::SmsConfig::new(self.sms_sender.clone()),
             email: EmailConfig::new(
                 Url::parse("http://localhost:3000").unwrap(),
                 SmtpSettings::new("smtp://localhost:1", "test@example.com"),

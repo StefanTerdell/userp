@@ -10,7 +10,10 @@
 | `otp` | Six-digit emailed codes as an alternative to links (implies `email`) | — (reuses challenges) |
 | `oauth` | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution | oauth token entities & lookups |
 | `webauthn` | Passkeys: usernameless login, account-page registration | passkey blobs keyed by credential id |
-| `mfa` | Second-factor policy over any first factor (passkey or emailed code) | — (rides on `LoginMethod`) |
+| `totp` | Authenticator-app codes (RFC 6238) as a second factor, QR enrollment | one TOTP credential per user |
+| `sms` | Texted six-digit codes: login, signup, MFA; bring-your-own `SmsSender` | user-phone entities (challenges shared with `email`) |
+| `sms-providers` | Ready-made senders: Twilio, Vonage, MessageBird, Telnyx, 46elks (implies `sms`, pulls in an HTTP client) | — |
+| `mfa` | Second-factor policy over any first factor (passkey, TOTP, emailed or texted code) | — (rides on `LoginMethod`) |
 | `pages` | Bundled Askama pages + the `Pages` replacement trait | — |
 | `axum` | The extractor, router and cookie layer | — |
 
@@ -34,9 +37,22 @@ AutheryConfig::new(key, Routes::default(), /* method configs */)?
     .with_mfa_policy(MfaPolicy { require_for_password: true, ..Default::default() })
     // Replace the bundled templates (pages feature).
     .with_pages(MyPages)
+    // Accept `Authorization: Bearer {session_id}` and expose fresh session
+    // ids via an `X-Auth-Token` response header — for API/mobile clients.
+    .with_bearer_auth(true)
     // Local development only!
     .with_https_only(false)
 ```
+
+## Bearer tokens
+
+With `with_bearer_auth(true)`, clients that can't use cookies authenticate by
+sending the session id back as `Authorization: Bearer {token}`; the token is
+handed out in an `X-Auth-Token` response header whenever a login creates a
+fresh session. Tokens are opaque server-side session ids — revocable via
+logout/session deletion and subject to the same lifetime and concurrency caps
+as cookie sessions. Nothing is signed client-side; there is no JWT to leak or
+mis-validate.
 
 ## Routes
 
@@ -58,7 +74,8 @@ impl RateLimiter for MyLimiter {
                 RateLimitOp::PasswordAttempt { password_id } => { /* count, maybe Err(RateLimited)... */ }
                 RateLimitOp::EmailSend { address } => { /* cap mail per recipient */ }
                 RateLimitOp::OtpAttempt { address } => { /* six digits are guessable: be tight */ }
-                _ => Ok(()),
+                RateLimitOp::SmsSend { number } => { /* every text costs money */ }
+                _ => Ok(()), // TotpAttempt, SmsAttempt, future ops (non_exhaustive)
             }
         })
     }

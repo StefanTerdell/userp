@@ -30,6 +30,24 @@ Note the trailing slash (the redirect_uri builder appends it).
 | LinkedIn  | `LINKEDIN`  | linkedin.com/developers/apps | New. Add product "Sign In with LinkedIn using OpenID Connect" |
 | X         | `X`         | developer.x.com (Projects & Apps) | New. OAuth 2.0, type "Web App" (confidential). Free tier is heavily rate-limited but enough for a login test |
 
+## SMS providers
+
+The `sms-providers` feature ships ready-made senders (Twilio, Vonage,
+MessageBird, Telnyx, 46elks); any `SmsSender` impl works too. The example
+wires up two of them by env, falling back to a dev sender that just prints
+the text to stdout (so SMS login is fully testable with no account at all —
+the code also shows up in the challenges on `/store`):
+
+| Provider | Env vars | Console | Notes |
+|----------|----------|---------|-------|
+| Twilio   | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | console.twilio.com | Trial accounts can only text verified numbers |
+| 46elks   | `ELKS_USERNAME`, `ELKS_PASSWORD`, `ELKS_FROM` | 46elks.com/account | Swedish, cheap, no from-number needed (alphanumeric sender works) |
+
+The other three (`VonageSmsSender`, `MessageBirdSmsSender`,
+`TelnyxSmsSender`) are exported from the prelude and take their credentials
+as plain constructor args — add an env branch in `main.rs` if you want one
+of them live-tested.
+
 Deliberately deferred:
 
 - **Apple** — "Sign in with Apple" needs a JWT client secret generated from a

@@ -51,6 +51,27 @@
     </form>
   </div>
 
+  {% if password.is_some() || oauth.is_some() || sms.is_some() %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if let Some(sms) = sms %}
+  <div class="sms-login">
+    <form action="{{ sms.action_route }}" method="post" class="form">
+      <div class="form-group">
+        <label for="sms-number">Phone number for a text code</label>
+        <input type="tel" id="sms-number" name="number" placeholder="+46701234567" required>
+      </div>
+      <button type="submit">Sign up with a text code</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+  </div>
+
   {% if password.is_some() || oauth.is_some() %}
   <div class="or-divider">
     <span>or</span>

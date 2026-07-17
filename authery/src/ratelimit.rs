@@ -32,6 +32,12 @@ pub enum RateLimitOp<'a> {
     /// A TOTP (authenticator-app) verification attempt, keyed on the user id
     /// in its string representation. Same guessability caveat as OtpAttempt.
     TotpAttempt { user_id: &'a str },
+    /// An outgoing SMS. Key of interest: the number - SMS costs money, cap
+    /// sends per recipient tightly.
+    SmsSend { number: &'a str },
+    /// An SMS code verification attempt. Same guessability caveat as
+    /// OtpAttempt.
+    SmsAttempt { number: &'a str },
 }
 
 /// Refusal returned by a limiter. `retry_after` is advisory and surfaced to the

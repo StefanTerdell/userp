@@ -77,6 +77,8 @@ where
             webauthn: config.webauthn,
             #[cfg(feature = "totp")]
             totp: config.totp,
+            #[cfg(feature = "sms")]
+            sms: config.sms,
             #[cfg(feature = "mfa")]
             mfa_policy: config.mfa_policy,
             #[cfg(feature = "pages")]

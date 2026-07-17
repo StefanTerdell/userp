@@ -1,5 +1,7 @@
+#[cfg(any(feature = "email", feature = "sms"))]
+use crate::models::email::EmailChallenge;
 #[cfg(feature = "email")]
-use crate::models::email::{EmailChallenge, UserEmail};
+use crate::models::email::UserEmail;
 #[cfg(feature = "oauth")]
 use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
 use crate::models::{Id, LoginMethod, LoginSession, User};
@@ -19,8 +21,10 @@ pub trait AutheryStore: Send + Sync {
     type LoginSession: LoginSession<Id = Self::SessionId, UserId = Self::UserId>;
     #[cfg(feature = "email")]
     type UserEmail: UserEmail<UserId = Self::UserId>;
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "sms"))]
     type EmailChallenge: EmailChallenge;
+    #[cfg(feature = "sms")]
+    type UserPhone: crate::models::sms::UserPhone<UserId = Self::UserId>;
     #[cfg(feature = "oauth")]
     type OAuthToken: OAuthToken<Id = Self::OAuthTokenId, UserId = Self::UserId>;
 
@@ -142,7 +146,9 @@ pub trait AutheryStore: Send + Sync {
         &self,
         address: &str,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    #[cfg(feature = "email")]
+    /// Shared challenge store, used by email links, email OTP and SMS codes
+    /// (keys are namespaced per flow).
+    #[cfg(any(feature = "email", feature = "sms"))]
     fn email_create_challenge(
         &self,
         address: String,
@@ -150,11 +156,30 @@ pub trait AutheryStore: Send + Sync {
         next: Option<String>,
         expires: DateTime<Utc>,
     ) -> impl Future<Output = Result<Self::EmailChallenge, Self::Error>> + Send;
-    #[cfg(feature = "email")]
+    /// Fetch AND delete - challenges are single-use.
+    #[cfg(any(feature = "email", feature = "sms"))]
     fn email_consume_challenge(
         &self,
         code: String,
     ) -> impl Future<Output = Result<Option<Self::EmailChallenge>, Self::Error>> + Send;
+
+    // sms store
+    #[cfg(feature = "sms")]
+    fn sms_get_user_by_phone(
+        &self,
+        number: &str,
+    ) -> impl Future<Output = Result<Option<(Self::User, Self::UserPhone)>, Self::Error>> + Send;
+    #[cfg(feature = "sms")]
+    fn sms_create_user_by_phone(
+        &self,
+        number: &str,
+    ) -> impl Future<Output = Result<(Self::User, Self::UserPhone), Self::Error>> + Send;
+    /// The user's phone numbers (used by the MFA factor discovery).
+    #[cfg(feature = "sms")]
+    fn get_user_phones(
+        &self,
+        user_id: &Self::UserId,
+    ) -> impl Future<Output = Result<Vec<Self::UserPhone>, Self::Error>> + Send;
 
     // oauth store
     #[cfg(feature = "oauth")]

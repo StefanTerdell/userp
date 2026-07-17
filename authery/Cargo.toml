@@ -70,6 +70,7 @@ otp = ["email"]
 mfa = []
 totp = ["dep:totp-rs"]
 sms = []
+sms-providers = ["sms", "dep:reqwest", "dep:serde_json"]
 webauthn = [
   "dep:webauthn-rs",
   "dep:webauthn-rs-proto",

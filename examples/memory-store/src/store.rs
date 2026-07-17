@@ -1,13 +1,7 @@
 use crate::models::{
     AppOrg, AppOrgMember, AppOrgProvider, MyEmailChallenge, MyLoginSession, MyOAuthToken, MyUser,
-    MyUserEmail,
+    MyUserEmail, MyUserPhone,
 };
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::RwLock;
 use authery::{
     prelude::*,
     reexports::{
@@ -17,6 +11,12 @@ use authery::{
         webauthn_rs::prelude::Passkey,
     },
 };
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 
 #[derive(Clone, Default, Debug)]
 pub struct MemoryStore {
@@ -28,6 +28,7 @@ pub struct MemoryStore {
     #[allow(clippy::type_complexity)]
     passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
     totp: Arc<RwLock<HashMap<Uuid, TotpCredential>>>,
+    phones: Arc<RwLock<Vec<MyUserPhone>>>,
     /// App-level org tables - authery knows nothing about these.
     pub orgs: Arc<RwLock<HashMap<Uuid, AppOrg>>>,
     pub org_members: Arc<RwLock<Vec<AppOrgMember>>>,
@@ -53,6 +54,7 @@ impl IntoResponse for MemoryStoreError {
 impl AutheryStore for MemoryStore {
     type User = MyUser;
     type UserEmail = MyUserEmail;
+    type UserPhone = MyUserPhone;
     type LoginSession = MyLoginSession;
     type EmailChallenge = MyEmailChallenge;
     type OAuthToken = MyOAuthToken;
@@ -262,7 +264,10 @@ impl AutheryStore for MemoryStore {
             .collect())
     }
 
-    async fn get_user_oauth_tokens(&self, user_id: &Uuid) -> Result<Vec<MyOAuthToken>, Self::Error> {
+    async fn get_user_oauth_tokens(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<MyOAuthToken>, Self::Error> {
         let tokens = self.oauth_tokens.read().await;
 
         Ok(tokens
@@ -384,6 +389,56 @@ impl AutheryStore for MemoryStore {
             .emails
             .retain(|e| e.email != address);
         Ok(())
+    }
+
+    async fn sms_get_user_by_phone(
+        &self,
+        number: &str,
+    ) -> Result<Option<(Self::User, Self::UserPhone)>, Self::Error> {
+        let phones = self.phones.read().await;
+        let users = self.users.read().await;
+
+        Ok(phones
+            .iter()
+            .find(|p| p.number == number)
+            .and_then(|p| users.get(&p.user_id).map(|u| (u.clone(), p.clone()))))
+    }
+
+    async fn sms_create_user_by_phone(
+        &self,
+        number: &str,
+    ) -> Result<(Self::User, Self::UserPhone), Self::Error> {
+        let mut users = self.users.write().await;
+        let mut phones = self.phones.write().await;
+
+        let user = Self::User {
+            id: Uuid::new_v4(),
+            password_hash: None,
+            emails: vec![],
+        };
+
+        // The user just proved control of the number, so it starts verified.
+        let phone = MyUserPhone {
+            user_id: user.id,
+            number: number.to_string(),
+            verified: true,
+            allow_login: true,
+        };
+
+        users.insert(user.id, user.clone());
+        phones.push(phone.clone());
+
+        Ok((user, phone))
+    }
+
+    async fn get_user_phones(&self, user_id: &Uuid) -> Result<Vec<MyUserPhone>, Self::Error> {
+        let phones = self.phones.read().await;
+
+        Ok(phones
+            .iter()
+            .filter(|p| p.user_id == *user_id)
+            .cloned()
+            .collect())
     }
 
     async fn password_get_user_by_password_id(

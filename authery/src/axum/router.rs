@@ -10,6 +10,8 @@ pub mod otp;
 pub mod pages;
 #[cfg(feature = "password")]
 pub mod password;
+#[cfg(feature = "sms")]
+pub mod sms;
 #[cfg(feature = "user")]
 pub mod user;
 #[cfg(feature = "webauthn")]
@@ -502,6 +504,14 @@ pub trait AxumRouter {
                 );
             }
 
+            #[cfg(feature = "sms")]
+            {
+                router = router.route(
+                    self.routes().mfa.login_mfa_sms.as_str(),
+                    post(mfa::post_login_mfa_sms::<St>),
+                );
+            }
+
             #[cfg(feature = "webauthn")]
             {
                 router = router
@@ -514,6 +524,21 @@ pub trait AxumRouter {
                         post(mfa::post_login_mfa_webauthn_finish::<St>),
                     );
             }
+        }
+
+        #[cfg(feature = "sms")]
+        {
+            let login_sms = post(sms::post_login_sms::<St>);
+            let signup_sms = post(sms::post_signup_sms::<St>);
+
+            #[cfg(feature = "pages")]
+            let login_sms = login_sms.get(pages::get_login_sms::<St>);
+            #[cfg(feature = "pages")]
+            let signup_sms = signup_sms.get(pages::get_signup_sms::<St>);
+
+            router = router
+                .route(self.routes().sms.login_sms.as_str(), login_sms)
+                .route(self.routes().sms.signup_sms.as_str(), signup_sms);
         }
 
         #[cfg(feature = "email")]

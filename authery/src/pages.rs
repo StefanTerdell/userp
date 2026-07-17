@@ -313,9 +313,14 @@ pub struct LoginTemplate<'a> {
     pub password: Option<TemplatePasswordInfo<'a>>,
     pub email: Option<TemplateEmailInfo<'a>>,
     pub otp: Option<TemplateOtpInfo<'a>>,
+    pub sms: Option<TemplateSmsInfo<'a>>,
     pub webauthn: Option<TemplateWebauthnInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub signup_route: &'a str,
+}
+
+pub struct TemplateSmsInfo<'a> {
+    pub action_route: &'a str,
 }
 
 impl LoginTemplate<'_> {
@@ -357,6 +362,12 @@ impl LoginTemplate<'_> {
             }),
             #[cfg(not(feature = "otp"))]
             otp: None,
+            #[cfg(feature = "sms")]
+            sms: Some(TemplateSmsInfo {
+                action_route: &auth.routes.sms.login_sms,
+            }),
+            #[cfg(not(feature = "sms"))]
+            sms: None,
             #[cfg(feature = "webauthn")]
             webauthn: Some(TemplateWebauthnInfo {
                 start_route: &auth.routes.webauthn.login_webauthn_start,
@@ -403,6 +414,7 @@ pub struct SignupTemplate<'a> {
     pub password: Option<TemplatePasswordInfo<'a>>,
     pub email: Option<TemplateEmailInfo<'a>>,
     pub otp: Option<TemplateOtpInfo<'a>>,
+    pub sms: Option<TemplateSmsInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub login_route: &'a str,
 }
@@ -445,6 +457,12 @@ impl SignupTemplate<'_> {
             }),
             #[cfg(not(feature = "otp"))]
             otp: None,
+            #[cfg(feature = "sms")]
+            sms: Some(TemplateSmsInfo {
+                action_route: &auth.routes.sms.signup_sms,
+            }),
+            #[cfg(not(feature = "sms"))]
+            sms: None,
             #[cfg(feature = "oauth")]
             oauth: ({
                 if oauth_signup_providers.is_empty() {
@@ -496,6 +514,13 @@ pub struct MfaOtpTemplateInfo<'a> {
 }
 
 #[cfg(feature = "mfa")]
+pub struct MfaSmsTemplateInfo<'a> {
+    pub action_route: &'a str,
+    /// A masked rendering of the number the code goes to, e.g. `+46***89`.
+    pub number_hint: String,
+}
+
+#[cfg(feature = "mfa")]
 pub struct MfaWebauthnTemplateInfo<'a> {
     pub start_route: &'a str,
     pub finish_route: &'a str,
@@ -511,9 +536,23 @@ pub struct MfaTemplate<'a> {
     pub message: Option<&'a str>,
     pub error: Option<&'a str>,
     pub otp: Option<MfaOtpTemplateInfo<'a>>,
+    /// The SMS second-factor form, when the user has a verified number.
+    pub sms: Option<MfaSmsTemplateInfo<'a>>,
     /// The action route for authenticator-app codes, when the user has one.
     pub totp: Option<&'a str>,
     pub webauthn: Option<MfaWebauthnTemplateInfo<'a>>,
+}
+
+/// The SMS code entry page, mirroring [`OtpTemplate`] for phone numbers.
+#[cfg(feature = "sms")]
+#[derive(Template)]
+#[template(path = "sms.html")]
+pub struct SmsTemplate<'a> {
+    pub number: &'a str,
+    pub action_route: &'a str,
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
 }
 
 /// The one-time-code entry page: the user has been sent a code and types it
@@ -541,6 +580,8 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
     #[cfg(feature = "otp")]
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
+    #[cfg(feature = "sms")]
+    fn render_sms(&self, view: &SmsTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
     #[cfg(feature = "totp")]
@@ -574,6 +615,11 @@ impl Pages for AskamaPages {
 
     #[cfg(feature = "otp")]
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "sms")]
+    fn render_sms(&self, view: &SmsTemplate<'_>) -> String {
         render_or_err(view)
     }
 

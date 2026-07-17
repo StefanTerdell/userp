@@ -31,8 +31,12 @@ jobs:
           - "oauth"
           - "webauthn"
           - "otp,mfa,password"
+          - "totp,mfa,password"
+          - "sms"
+          - "sms,mfa"
+          - "sms-providers"
           - "oauth,axum,pages"
-          - "oauth,axum,pages,user,email,password,otp,webauthn,mfa"
+          - "oauth,axum,pages,user,email,password,otp,webauthn,mfa,totp,sms"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -46,7 +50,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Core flow tests (no external services needed).
-      - run: cargo test -p authery --no-default-features --features password,email,otp,mfa,user
+      - run: cargo test -p authery --no-default-features --features password,email,otp,mfa,user,totp,sms
       # Default features; the Keycloak-dependent test self-skips when it is
       # not reachable.
       - run: cargo test -p authery

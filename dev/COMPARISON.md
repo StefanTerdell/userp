@@ -19,15 +19,15 @@ assemble it · ❌ not offered · — not applicable
 | Email + password | ✅ argon2, enumeration-resistant | ✅ | ✅ (credentials, DIY hashing) | 🧱 (backend trait) | ✅ | ✅ |
 | Magic links | ✅ | 🧩 | ✅ | ❌ | ✅ | ✅ |
 | Email OTP codes | ✅ (`otp`) | 🧩 | ❌ | ❌ | ✅ | ✅ |
-| SMS / phone | ❌ (deferred) | 🧩 | ❌ | ❌ | ✅ | ✅ |
+| SMS / phone | ✅ (`sms`, sender trait + 5 built-in gateways) | 🧩 | ❌ | ❌ | ✅ | ✅ |
 | OAuth providers | ✅ 11 built-in + custom + any OIDC | ✅ many + generic OAuth | ✅ 80+ | ❌ (pair with `oauth2` crate) | ✅ social sign-in | ✅ |
 | OIDC id_token validation (JWKS + nonce) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | PKCE everywhere | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | Runtime / per-tenant SSO providers | ✅ resolver primitive | 🧩 SSO plugin (incl. SAML) | ❌ (static config) | ❌ | 🧩 (Ory Network B2B orgs) | ✅ per-org enterprise SSO |
 | Passkeys / WebAuthn | ✅ usernameless login + registration | 🧩 | 🔬 experimental | ❌ | ✅ | ✅ |
-| MFA / 2FA | ✅ policy layer; factors: passkey, email code | 🧩 TOTP, OTP, backup codes | ❌ (DIY) | ❌ | ✅ TOTP, WebAuthn, lookup codes | ✅ |
-| TOTP (authenticator apps) | ❌ **gap** | 🧩 | ❌ | ❌ | ✅ | ✅ |
-| Server-side sessions | ✅ expiry, eviction, caps, listing | ✅ (+ multi-session 🧩) | ✅ or JWT | ✅ (tower-sessions) | ✅ | ✅ |
+| MFA / 2FA | ✅ policy layer; factors: passkey, TOTP, email code, SMS code | 🧩 TOTP, OTP, backup codes | ❌ (DIY) | ❌ | ✅ TOTP, WebAuthn, lookup codes | ✅ |
+| TOTP (authenticator apps) | ✅ QR enrollment, replay-guarded | 🧩 | ❌ | ❌ | ✅ | ✅ |
+| Server-side sessions | ✅ expiry, eviction, caps, listing, opt-in bearer tokens | ✅ (+ multi-session 🧩) | ✅ or JWT | ✅ (tower-sessions) | ✅ | ✅ |
 | Account linking | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | OAuth token storage + refresh for API integrations | ✅ ownership-checked | ✅ | partial | ❌ | ❌ (different scope) | ✅ |
 | Organizations / teams | 🧱 recipe on resolver + store + `LoginMethodRules` | 🧩 orgs, roles, teams, invites, dynamic AC | ❌ | ❌ | 🧩 (Ory Network) | ✅ built-in |
@@ -61,11 +61,13 @@ assemble it · ❌ not offered · — not applicable
 
 **Honest gaps** (candidates for the roadmap, roughly by impact):
 
-1. **TOTP** — the table's most visible hole; every non-Auth.js competitor has
-   authenticator-app codes. Would slot into the existing MFA factor model.
-2. **SMS/phone OTP** — deferred by design; the messaging module idea covers it.
-3. **Bearer/JWT session mode** — cookie-only today; API/mobile clients want
-   token auth (better-auth: bearer + JWT plugins).
+1. ~~**TOTP**~~ — done: RFC 6238 with QR enrollment and a matched-step replay
+   guard, slotted into the MFA factor model.
+2. ~~**SMS/phone OTP**~~ — done: vendor-neutral `SmsSender` trait, five
+   built-in gateway senders behind `sms-providers`, login/signup/MFA flows.
+3. ~~**Bearer session mode**~~ — done: opaque session ids via
+   `Authorization: Bearer` + `X-Auth-Token`, opt-in. (A stateless *JWT* mode
+   remains deliberately unbuilt — server-side revocable tokens only.)
 4. **SAML / SCIM** — enterprise SSO checkboxes; big lift, likely never-list
    or separate crate.
 5. **Framework breadth** — Axum only (Leptos was the original ambition);

@@ -8,13 +8,14 @@ use self::store::MemoryStore;
 use self::templates::{IndexTemplate, ProtectedTemplate};
 
 use askama::Template;
+use axum::response::Redirect;
 use axum::{
+    Router,
     extract::State,
     response::{Html, IntoResponse},
     routing::get,
-    serve, Router,
+    serve,
 };
-use axum::response::Redirect;
 use axum_macros::FromRef;
 use dotenv::var;
 use tokio::net::TcpListener;
@@ -37,7 +38,9 @@ async fn main() {
 
     let base_url = Url::parse("http://localhost:3000").unwrap();
 
-    let key = String::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let key = String::from(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    );
 
     let store = MemoryStore::default();
 
@@ -103,6 +106,24 @@ async fn main() {
         store: store.clone(),
     });
 
+    // A real gateway when its env credentials are present, otherwise codes
+    // are just logged (they also show up in the challenges on /store).
+    let sms = if let (Ok(sid), Ok(token), Ok(from)) = (
+        var("TWILIO_ACCOUNT_SID"),
+        var("TWILIO_AUTH_TOKEN"),
+        var("TWILIO_FROM"),
+    ) {
+        println!("sms sender enabled: twilio");
+        SmsConfig::new(TwilioSmsSender::new(sid, token, from))
+    } else if let (Ok(username), Ok(password), Ok(from)) =
+        (var("ELKS_USERNAME"), var("ELKS_PASSWORD"), var("ELKS_FROM"))
+    {
+        println!("sms sender enabled: 46elks");
+        SmsConfig::new(FortySixElksSmsSender::new(username, password, from))
+    } else {
+        SmsConfig::new(DevSmsSender)
+    };
+
     let auth = AutheryConfig::new(
         key,
         Routes::default(),
@@ -117,6 +138,7 @@ async fn main() {
         oauth,
         WebauthnConfig::new(base_url, "Authery example").expect("valid webauthn config"),
         TotpConfig::new("Authery example"),
+        sms,
     )
     .expect("valid auth config")
     .with_https_only(false)
@@ -133,10 +155,7 @@ async fn main() {
         .route("/store", get(get_store))
         .route("/", get(get_index))
         .route("/protected", get(get_protected))
-        .route(
-            "/login/{org}",
-            get(get_org_login).post(post_org_login),
-        )
+        .route("/login/{org}", get(get_org_login).post(post_org_login))
         .route("/orgs/{org}/protected", get(get_org_protected))
         .with_state(state)
         .layer(TraceLayer::new_for_http());
@@ -144,6 +163,18 @@ async fn main() {
     println!("Authery example listening at http://localhost:3000 :)");
     let tcp = TcpListener::bind("0.0.0.0:3000").await.unwrap();
     serve(tcp, app.into_make_service()).await.unwrap();
+}
+
+/// Logs texts instead of sending them. The pending challenges (code included)
+/// are also visible on the /store debug page.
+#[derive(Debug, Clone)]
+struct DevSmsSender;
+
+impl SmsSender for DevSmsSender {
+    fn send<'a>(&'a self, to: &'a str, message: &'a str) -> SmsSendFuture<'a> {
+        println!("=== SMS to {to}: {message} ===");
+        Box::pin(async { Ok(()) })
+    }
 }
 
 async fn get_index(auth: Authery<MemoryStore>) -> impl IntoResponse {

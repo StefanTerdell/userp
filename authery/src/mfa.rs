@@ -16,9 +16,12 @@
 //! Available second factors:
 //! - a passkey ceremony scoped to the user's registered credentials
 //!   (`webauthn` feature)
+//! - a code from the user's authenticator app (`totp` feature)
 //! - a one-time code mailed to the user's own verified address (`otp`
 //!   feature) - never to an address supplied in the request, and not offered
 //!   when the first factor already proved control of the mailbox
+//! - a one-time code texted to the user's own verified phone number (`sms`
+//!   feature), with the same rules as emailed codes
 
 use crate::{
     core::CoreAuthery,
@@ -38,6 +41,8 @@ pub struct MfaPolicy {
     pub require_for_email: bool,
     #[cfg(feature = "otp")]
     pub require_for_otp: bool,
+    #[cfg(feature = "sms")]
+    pub require_for_sms: bool,
     #[cfg(feature = "oauth")]
     pub require_for_oauth: bool,
 }
@@ -50,6 +55,8 @@ impl Default for MfaPolicy {
             require_for_email: false,
             #[cfg(feature = "otp")]
             require_for_otp: false,
+            #[cfg(feature = "sms")]
+            require_for_sms: false,
             #[cfg(feature = "oauth")]
             require_for_oauth: false,
         }
@@ -65,6 +72,8 @@ impl MfaPolicy {
             LoginMethod::Email { .. } => self.require_for_email,
             #[cfg(feature = "otp")]
             LoginMethod::Otp { .. } => self.require_for_otp,
+            #[cfg(feature = "sms")]
+            LoginMethod::Sms { .. } => self.require_for_sms,
             #[cfg(feature = "oauth")]
             LoginMethod::OAuth { .. } => self.require_for_oauth,
             // Webauthn is already possession + user verification; purpose-bound
@@ -83,11 +92,13 @@ pub struct MfaFactors {
     pub totp: bool,
     /// A code can be mailed to this (verified) address.
     pub otp_address: Option<String>,
+    /// A code can be texted to this (verified) number.
+    pub sms_number: Option<String>,
 }
 
 impl MfaFactors {
     pub fn any(&self) -> bool {
-        self.webauthn || self.totp || self.otp_address.is_some()
+        self.webauthn || self.totp || self.otp_address.is_some() || self.sms_number.is_some()
     }
 }
 
@@ -164,7 +175,26 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             }
         }
 
-        #[cfg(not(feature = "otp"))]
+        #[cfg(feature = "sms")]
+        {
+            use crate::models::sms::UserPhone;
+
+            // A texted code proves nothing extra when the first factor
+            // already proved possession of the number.
+            let sms_first = matches!(first, LoginMethod::Sms { .. });
+
+            if !sms_first {
+                factors.sms_number = self
+                    .store
+                    .get_user_phones(user_id)
+                    .await?
+                    .iter()
+                    .find(|p| p.get_verified())
+                    .map(|p| p.get_number().to_owned());
+            }
+        }
+
+        #[cfg(not(any(feature = "otp", feature = "sms")))]
         let _ = first;
 
         Ok(factors)
@@ -259,7 +289,7 @@ mod otp_factor {
                 .await
                 .map_err(MfaOtpError::RateLimited)?;
 
-            let digits = crate::email::otp::generate_code();
+            let digits = crate::codes::generate_code();
             let key = challenge_key(&address, &digits);
 
             self.store
@@ -503,3 +533,124 @@ mod totp_factor {
 
 #[cfg(feature = "totp")]
 pub use totp_factor::MfaTotpError;
+
+#[cfg(feature = "sms")]
+mod sms_factor {
+    use super::*;
+    use crate::models::email::EmailChallenge;
+    use crate::ratelimit::{RateLimitOp, RateLimited};
+    use crate::sms::SmsSendError;
+    use chrono::Utc;
+
+    fn challenge_key(number: &str, code: &str) -> String {
+        format!("mfasms:{number}:{code}")
+    }
+
+    #[derive(Debug, Error)]
+    pub enum MfaSmsError<StoreError: std::error::Error> {
+        #[error("No MFA login in progress")]
+        NoPending,
+        #[error("This second factor is not available")]
+        FactorUnavailable,
+        #[error("Wrong or expired code")]
+        WrongCode,
+        #[error("Sending failed: {0}")]
+        Send(#[from] SmsSendError),
+        #[error(transparent)]
+        RateLimited(RateLimited),
+        #[error(transparent)]
+        Store(StoreError),
+    }
+
+    impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+        /// Text a second-factor code to the pending user's own verified
+        /// number. The number is never taken from the request.
+        pub async fn mfa_sms_init(&self) -> Result<String, MfaSmsError<S::Error>> {
+            let (_pending, number) = self.mfa_sms_target().await?;
+
+            self.rate_limiter
+                .check(RateLimitOp::SmsSend { number: &number })
+                .await
+                .map_err(MfaSmsError::RateLimited)?;
+
+            let digits = crate::codes::generate_code();
+            let key = challenge_key(&number, &digits);
+
+            self.store
+                .email_create_challenge(
+                    number.clone(),
+                    key,
+                    None,
+                    Utc::now() + self.sms.challenge_lifetime,
+                )
+                .await
+                .map_err(MfaSmsError::Store)?;
+
+            self.sms
+                .sender
+                .send(
+                    &number,
+                    &format!("{digits} is your verification code. It expires shortly."),
+                )
+                .await?;
+
+            Ok(number)
+        }
+
+        /// Verify the texted code and upgrade the pending session.
+        #[must_use = "Don't forget to return the auth session as part of the response!"]
+        pub async fn mfa_sms_verify(self, code: &str) -> Result<Self, MfaSmsError<S::Error>> {
+            let (pending, number) = self.mfa_sms_target().await?;
+
+            self.rate_limiter
+                .check(RateLimitOp::SmsAttempt { number: &number })
+                .await
+                .map_err(MfaSmsError::RateLimited)?;
+
+            let Some(challenge) = self
+                .store
+                .email_consume_challenge(challenge_key(&number, code))
+                .await
+                .map_err(MfaSmsError::Store)?
+            else {
+                return Err(MfaSmsError::WrongCode);
+            };
+
+            if challenge.get_expires() < Utc::now() {
+                return Err(MfaSmsError::WrongCode);
+            }
+
+            self.mfa_upgrade(pending, LoginMethod::Sms { number })
+                .await
+                .map_err(MfaSmsError::Store)
+        }
+
+        /// The pending session and the verified number codes go to.
+        async fn mfa_sms_target(&self) -> Result<(S::LoginSession, String), MfaSmsError<S::Error>> {
+            let Some(pending) = self
+                .mfa_pending_session()
+                .await
+                .map_err(MfaSmsError::Store)?
+            else {
+                return Err(MfaSmsError::NoPending);
+            };
+
+            let LoginMethod::MfaPending { first } = pending.get_method() else {
+                return Err(MfaSmsError::NoPending);
+            };
+
+            let factors = self
+                .mfa_factors(&pending.get_user_id(), &first)
+                .await
+                .map_err(MfaSmsError::Store)?;
+
+            match factors.sms_number {
+                Some(number) => Ok((pending, number)),
+                None => Err(MfaSmsError::FactorUnavailable),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "sms")]
+pub use sms_factor::MfaSmsError;

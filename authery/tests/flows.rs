@@ -210,8 +210,7 @@ async fn otp_codes_are_bound_to_their_address() {
 fn mfa_for_password() -> MfaPolicy {
     MfaPolicy {
         require_for_password: true,
-        require_for_email: false,
-        require_for_otp: false,
+        ..Default::default()
     }
 }
 
@@ -312,6 +311,160 @@ fn login_method_rules_judge_first_factor_and_mfa() {
     assert!(no_password.satisfies(&LoginMethod::Email {
         address: "a@x.com".into()
     }));
+}
+
+#[cfg(feature = "sms")]
+mod sms_tests {
+    use super::*;
+    use authery::sms::SmsVerifyError;
+
+    /// Init texts a code through the sender, verify logs the user in. The
+    /// code is single-use.
+    #[tokio::test]
+    async fn sms_login_init_and_verify() {
+        let store = TestStore::default();
+        let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+        store.seed_phone(user_id, "+46701234567");
+
+        let builder = AuthBuilder::new(store.clone());
+        let sender = builder.sms_sender.clone();
+        let authery = builder.build();
+
+        authery
+            .sms_login_init("+46701234567".into(), None)
+            .await
+            .unwrap();
+        let (to, message) = sender.sent.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(to, "+46701234567");
+        assert!(message.contains("login code"));
+
+        let code = sender.last_code();
+        let (logged_in, _next) = authery
+            .sms_login_verify("+46701234567", &code)
+            .await
+            .unwrap();
+        let session = logged_in.session().await.unwrap().expect("logged in");
+        assert_eq!(session.get_user_id(), user_id);
+        assert_eq!(
+            session.get_method(),
+            LoginMethod::Sms {
+                number: "+46701234567".into()
+            }
+        );
+
+        // Consumed: the same code must not work again.
+        let replay = auth(&store)
+            .sms_login_verify("+46701234567", &code)
+            .await
+            .unwrap_err();
+        assert!(matches!(replay, SmsVerifyError::WrongCode));
+    }
+
+    /// Signup on a fresh number creates the user; wrong codes and other
+    /// numbers' codes are rejected.
+    #[tokio::test]
+    async fn sms_signup_creates_user_and_rejects_wrong_codes() {
+        let store = TestStore::default();
+        let builder = AuthBuilder::new(store.clone());
+        let sender = builder.sms_sender.clone();
+        let authery = builder.build();
+
+        authery
+            .sms_signup_init("+46700000001".into(), None)
+            .await
+            .unwrap();
+        let code = sender.last_code();
+
+        // A guessed code and the right code against another number both fail.
+        let wrong = auth(&store)
+            .sms_signup_verify("+46700000001", "000000")
+            .await
+            .unwrap_err();
+        assert!(matches!(wrong, SmsVerifyError::WrongCode));
+        let cross = auth(&store)
+            .sms_signup_verify("+46700000002", &code)
+            .await
+            .unwrap_err();
+        assert!(matches!(cross, SmsVerifyError::WrongCode));
+
+        let (logged_in, _next) = authery
+            .sms_signup_verify("+46700000001", &code)
+            .await
+            .unwrap();
+        let session = logged_in.session().await.unwrap().expect("signed up");
+        let user_id = session.get_user_id();
+        assert!(store.users.lock().unwrap().contains_key(&user_id));
+        assert_eq!(
+            store.phones.lock().unwrap()[0].number,
+            "+46700000001".to_string()
+        );
+    }
+
+    /// A verified phone is a second factor: with the policy requiring MFA
+    /// for passwords, login pends until the texted code is verified.
+    #[tokio::test]
+    async fn mfa_sms_factor_upgrades_pending_session() {
+        let store = TestStore::default();
+
+        // Signup creates an UNVERIFIED email, so the phone is the user's
+        // only second factor.
+        let signed_up = auth(&store)
+            .password_signup("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        let user_id = signed_up
+            .session()
+            .await
+            .unwrap()
+            .expect("signed up")
+            .get_user_id();
+        store.seed_phone(user_id, "+46701234567");
+
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let sender = builder.sms_sender.clone();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        assert!(pending.session().await.unwrap().is_none(), "pending");
+
+        // The factor discovery offers the number, init texts it a code.
+        let factors = pending
+            .mfa_factors(&user_id, &LoginMethod::Password)
+            .await
+            .unwrap();
+        assert_eq!(factors.sms_number.as_deref(), Some("+46701234567"));
+        let number = pending.mfa_sms_init().await.unwrap();
+        assert_eq!(number, "+46701234567");
+
+        // A wrong code is rejected (and consumes the pending handle)...
+        assert!(pending.mfa_sms_verify("000000").await.is_err());
+
+        // ...so log in again: the texted code completes the fresh attempt.
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let sender = builder.sms_sender.clone();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        pending.mfa_sms_init().await.unwrap();
+        let upgraded = pending.mfa_sms_verify(&sender.last_code()).await.unwrap();
+        let session = upgraded.session().await.unwrap().expect("logged in");
+        let LoginMethod::Mfa { first, second } = session.get_method() else {
+            panic!("expected Mfa session");
+        };
+        assert_eq!(*first, LoginMethod::Password);
+        assert_eq!(
+            *second,
+            LoginMethod::Sms {
+                number: "+46701234567".into()
+            }
+        );
+    }
 }
 
 #[cfg(feature = "totp")]
