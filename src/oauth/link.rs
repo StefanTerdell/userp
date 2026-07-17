@@ -3,7 +3,6 @@ use crate::models::{
     AutheryCookies, User,
     oauth::{OAuthToken, UnmatchedOAuthToken},
 };
-use oauth2::{AuthorizationCode, CsrfToken};
 use std::sync::Arc;
 use thiserror::Error;
 use url::Url;
@@ -72,11 +71,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthLinkInitError::NotAllowed);
         };
 
-        let path = self.routes.oauth.callbacks.user_oauth_link_provider.clone();
-
         Ok(self
             .oauth_init(
-                path,
                 provider,
                 OAuthFlow::Link {
                     next,
@@ -120,24 +116,5 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }?;
 
         Ok(next)
-    }
-
-    pub async fn oauth_link_callback(
-        &mut self,
-        provider_name: String,
-        code: AuthorizationCode,
-        state: CsrfToken,
-    ) -> Result<Option<String>, OAuthLinkCallbackError<S::Error>> {
-        let (unmatched_token, flow, provider) = self
-            .oauth_callback_inner(
-                provider_name.clone(),
-                code,
-                state,
-                self.routes.oauth.callbacks.user_oauth_link_provider.clone(),
-            )
-            .await?;
-
-        self.oauth_link_callback_inner(provider, unmatched_token, flow)
-            .await
     }
 }

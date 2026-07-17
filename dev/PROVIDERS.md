@@ -6,15 +6,11 @@ at startup for each one it found). Nothing is required — configure whichever
 you want tested and start the example; the login page will show a button per
 enabled provider.
 
-Redirect/callback URL to register with every provider (the generic callback
-handles login/signup/link/refresh in one):
+Redirect/callback URL to register with every provider — there is exactly one
+(the single callback dispatches login/signup/link/refresh from the encrypted
+state cookie):
 
-    http://localhost:3000/login/oauth/{provider}/
-    http://localhost:3000/signup/oauth/{provider}/
-
-…where `{provider}` is the name in the table below. Some consoles only accept
-one URL — register both if allowed, or just the login one for a login test.
-Note the trailing slash (the redirect_uri builder appends it).
+    http://localhost:3000/oauth
 
 | Provider  | Env var prefix | Console | Notes |
 |-----------|----------------|---------|-------|

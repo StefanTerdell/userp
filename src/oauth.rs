@@ -248,33 +248,33 @@ pub enum OAuthGenericCallbackError<StoreError: std::error::Error> {
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
-    fn redirect_uri(&self, path: String, provider_name: &str) -> RedirectUrl {
-        let path = if path.ends_with('/') {
-            path
-        } else {
-            format!("{path}/")
-        };
-
-        let path = path.replace("{provider}", provider_name);
-
-        RedirectUrl::from_url(self.oauth.base_url.join(path.as_str()).unwrap())
+    pub(crate) fn redirect_uri(&self) -> RedirectUrl {
+        RedirectUrl::from_url(
+            self.oauth
+                .base_url
+                .join(self.routes.oauth.callback.as_str())
+                .unwrap(),
+        )
     }
 
     pub(crate) async fn oauth_init(
         mut self,
-        path: String,
         provider: Arc<dyn OAuthProvider>,
         oauth_flow: OAuthFlow,
     ) -> (Self, Url) {
-        let (auth_url, csrf_state, pkce_verifier, nonce) = provider
-            .get_authorization_url_and_state(
-                &self.redirect_uri(path, provider.name()),
-                provider.scopes(),
-            );
+        let (auth_url, csrf_state, pkce_verifier, nonce) =
+            provider.get_authorization_url_and_state(&self.redirect_uri(), provider.scopes());
 
         self.cookies.add(
             &oauth_data_key(csrf_state.secret()),
-            &json!((csrf_state, pkce_verifier.secret(), nonce, oauth_flow)).to_string(),
+            &json!((
+                csrf_state,
+                pkce_verifier.secret(),
+                nonce,
+                provider.name(),
+                oauth_flow
+            ))
+            .to_string(),
         );
 
         (self, auth_url)
@@ -282,10 +282,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
     async fn oauth_callback_inner(
         &mut self,
-        provider_name: String,
         code: AuthorizationCode,
         csrf_token: CsrfToken,
-        path: String,
     ) -> Result<(UnmatchedOAuthToken, OAuthFlow, Arc<dyn OAuthProvider>), OAuthCallbackError> {
         let data_key = oauth_data_key(csrf_token.secret());
         let oauth_data = self
@@ -296,8 +294,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         // The state cookie is single-use.
         self.cookies.remove(&data_key);
 
-        let (prev_csrf_token, pkce_verifier, nonce, oauth_flow) =
-            serde_json::from_str::<(CsrfToken, String, Option<String>, OAuthFlow)>(&oauth_data)?;
+        let (prev_csrf_token, pkce_verifier, nonce, provider_name, oauth_flow) =
+            serde_json::from_str::<(CsrfToken, String, Option<String>, String, OAuthFlow)>(
+                &oauth_data,
+            )?;
 
         if csrf_token.secret() != prev_csrf_token.secret() {
             return Err(OAuthCallbackError::CsrfMismatch);
@@ -312,7 +312,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let mut unmatched_token = provider
             .exchange_authorization_code(
                 provider.name(),
-                &self.redirect_uri(path, &provider_name),
+                &self.redirect_uri(),
                 &code,
                 Some(PkceCodeVerifier::new(pkce_verifier)),
                 nonce,
@@ -351,21 +351,15 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
     }
 
+    /// Complete any OAuth flow: the flow type, provider and PKCE/nonce
+    /// material all come from the encrypted state cookie selected by `state`.
     #[must_use = "Don't forget to return the auth session as part of the response!"]
-    pub async fn oauth_generic_callback(
+    pub async fn oauth_callback(
         mut self,
-        provider_name: String,
         code: AuthorizationCode,
         state: CsrfToken,
     ) -> Result<(Self, Option<String>), OAuthGenericCallbackError<S::Error>> {
-        let (unmatched_token, flow, provider) = self
-            .oauth_callback_inner(
-                provider_name.clone(),
-                code,
-                state,
-                self.routes.oauth.callbacks.signup_oauth_provider.clone(),
-            )
-            .await?;
+        let (unmatched_token, flow, provider) = self.oauth_callback_inner(code, state).await?;
 
         Ok(match &flow {
             OAuthFlow::LogIn { .. } => {

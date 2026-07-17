@@ -13,7 +13,7 @@ use crate::{
 };
 use axum::{
     Form,
-    extract::{Path, Query},
+    extract::Query,
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
@@ -34,82 +34,6 @@ pub struct ProviderNextForm {
 pub struct CodeStateQuery {
     pub code: AuthorizationCode,
     pub state: CsrfToken,
-}
-
-#[derive(Deserialize)]
-pub struct ProviderPath {
-    pub provider: String,
-}
-
-pub async fn get_login_oauth<St>(
-    auth: AxumAuthery<St>,
-    Path(ProviderPath { provider }): Path<ProviderPath>,
-    Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
-) -> Result<impl IntoResponse, St::Error>
-where
-    St: AutheryStore,
-    St::Error: IntoResponse,
-{
-    let login_route = auth.routes.pages.login.clone();
-
-    match auth.oauth_login_callback(provider, code, state).await {
-        Ok((auth, next)) => {
-            #[cfg(feature = "mfa")]
-            if auth.mfa_pending_session().await?.is_some() {
-                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                return Ok((auth, Redirect::to(&url)).into_response());
-            }
-
-            let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
-        Err(err) => match err {
-            OAuthLoginCallbackError::Store(err) => Err(err),
-            _ => {
-                let next = format!(
-                    "{login_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
-        },
-    }
-}
-
-pub async fn get_user_oauth_refresh<St>(
-    mut auth: AxumAuthery<St>,
-    Path(ProviderPath { provider }): Path<ProviderPath>,
-    Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
-) -> Result<impl IntoResponse, St::Error>
-where
-    St: AutheryStore,
-    St::Error: IntoResponse,
-{
-    #[cfg(feature = "user")]
-    let user_route = auth.routes.pages.user.clone();
-    #[cfg(not(feature = "user"))]
-    let user_route = auth.routes.pages.post_login.clone();
-
-    match auth
-        .oauth_refresh_callback(provider.clone(), code, state)
-        .await
-    {
-        Ok(next) => {
-            let fallback = format!("{user_route}?message={} token refreshed!", provider);
-            let next = crate::axum::router::safe_next(next, &fallback);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
-        Err(err) => match err {
-            OAuthRefreshCallbackError::Store(err) => Err(err),
-            _ => {
-                let next = format!(
-                    "{user_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok((auth, Redirect::to(&next)).into_response())
-            }
-        },
-    }
 }
 
 pub async fn post_user_oauth_refresh<St>(
@@ -173,9 +97,10 @@ where
     )
 }
 
-pub async fn get_generic_oauth<St>(
+/// The single OAuth callback: the flow type and provider ride the encrypted
+/// state cookie, so this dispatches login/signup/link/refresh on its own.
+pub async fn get_oauth<St>(
     auth: AxumAuthery<St>,
-    Path(ProviderPath { provider }): Path<ProviderPath>,
     Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
 ) -> Result<impl IntoResponse, St::Error>
 where
@@ -183,8 +108,13 @@ where
     St::Error: IntoResponse,
 {
     let login_route = auth.routes.pages.login.clone();
+    let signup_route = auth.routes.pages.signup.clone();
+    #[cfg(feature = "user")]
+    let user_route = auth.routes.pages.user.clone();
+    #[cfg(not(feature = "user"))]
+    let user_route = auth.routes.pages.post_login.clone();
 
-    match auth.oauth_generic_callback(provider, code, state).await {
+    match auth.oauth_callback(code, state).await {
         Ok((auth, next)) => {
             #[cfg(feature = "mfa")]
             if auth.mfa_pending_session().await?.is_some() {
@@ -200,46 +130,16 @@ where
             | OAuthGenericCallbackError::Login(OAuthLoginCallbackError::Store(err))
             | OAuthGenericCallbackError::Refresh(OAuthRefreshCallbackError::Store(err))
             | OAuthGenericCallbackError::Link(OAuthLinkCallbackError::Store(err)) => Err(err),
-            _ => {
-                let next = format!(
-                    "{login_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
-        },
-    }
-}
-
-pub async fn get_signup_oauth<St>(
-    auth: AxumAuthery<St>,
-    Path(ProviderPath { provider }): Path<ProviderPath>,
-    Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
-) -> Result<impl IntoResponse, St::Error>
-where
-    St: AutheryStore,
-    St::Error: IntoResponse,
-{
-    let signup_route = auth.routes.pages.signup.clone();
-
-    match auth.oauth_signup_callback(provider, code, state).await {
-        Ok((auth, next)) => {
-            #[cfg(feature = "mfa")]
-            if auth.mfa_pending_session().await?.is_some() {
-                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                return Ok((auth, Redirect::to(&url)).into_response());
-            }
-
-            let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
-        Err(err) => match err {
-            OAuthSignupCallbackError::Store(err) => Err(err),
-            _ => {
-                let next = format!(
-                    "{signup_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
+            // Errors land back on the page the flow started from.
+            err => {
+                let target = match &err {
+                    OAuthGenericCallbackError::Signup(_) => &signup_route,
+                    OAuthGenericCallbackError::Link(_) | OAuthGenericCallbackError::Refresh(_) => {
+                        &user_route
+                    }
+                    _ => &login_route,
+                };
+                let next = format!("{target}?error={}", urlencoding::encode(&err.to_string()));
                 Ok(Redirect::to(&next).into_response())
             }
         },
@@ -273,34 +173,6 @@ where
                     urlencoding::encode(&err.to_string())
                 );
                 Ok(Redirect::to(&next).into_response())
-            }
-        },
-    }
-}
-
-pub async fn get_user_oauth_link<St>(
-    mut auth: AxumAuthery<St>,
-    Path(ProviderPath { provider }): Path<ProviderPath>,
-    Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
-) -> Result<impl IntoResponse, St::Error>
-where
-    St: AutheryStore,
-    St::Error: IntoResponse,
-{
-    match auth.oauth_link_callback(provider, code, state).await {
-        Ok(next) => {
-            let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
-        Err(err) => match err {
-            OAuthLinkCallbackError::Store(err) => Err(err),
-            _ => {
-                let next = format!(
-                    "{}?error={}",
-                    auth.routes.pages.signup,
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok((auth, Redirect::to(&next)).into_response())
             }
         },
     }

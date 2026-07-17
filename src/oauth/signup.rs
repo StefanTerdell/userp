@@ -5,7 +5,6 @@ use crate::models::{
     AutheryCookies, User,
     oauth::{OAuthToken, UnmatchedOAuthToken},
 };
-use oauth2::{AuthorizationCode, CsrfToken};
 use std::sync::Arc;
 use thiserror::Error;
 use url::Url;
@@ -66,11 +65,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthSignupInitError::NotAllowed);
         };
 
-        let path = self.routes.oauth.callbacks.signup_oauth_provider.clone();
-
         Ok(self
             .oauth_init(
-                path,
                 provider,
                 OAuthFlow::SignUp {
                     next,
@@ -103,11 +99,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthSignupInitError::NotAllowed);
         };
 
-        let path = self.routes.oauth.callbacks.signup_oauth_provider.clone();
-
         Ok(self
             .oauth_init(
-                path,
                 provider,
                 OAuthFlow::SignUp {
                     next,
@@ -115,26 +108,6 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 },
             )
             .await)
-    }
-
-    #[must_use = "Don't forget to return the auth session as part of the response!"]
-    pub async fn oauth_signup_callback(
-        mut self,
-        provider_name: String,
-        code: AuthorizationCode,
-        state: CsrfToken,
-    ) -> Result<(Self, Option<String>), OAuthSignupCallbackError<S::Error>> {
-        let (unmatched_token, flow, provider) = self
-            .oauth_callback_inner(
-                provider_name.clone(),
-                code,
-                state,
-                self.routes.oauth.callbacks.signup_oauth_provider.clone(),
-            )
-            .await?;
-
-        self.oauth_signup_callback_inner(provider, unmatched_token, flow)
-            .await
     }
 
     pub(crate) async fn oauth_signup_callback_inner(

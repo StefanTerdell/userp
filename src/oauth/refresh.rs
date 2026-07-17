@@ -2,7 +2,7 @@ use super::{CoreAuthery, OAuthCallbackError, OAuthFlow, RefreshInitResult};
 use crate::models::AutheryCookies;
 use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
 use crate::store::AutheryStore;
-use oauth2::{AuthorizationCode, CsrfToken, RefreshToken};
+use oauth2::RefreshToken;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -50,14 +50,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             let res = provider
                 .exchange_refresh_token(
                     provider.name(),
-                    &self.redirect_uri(
-                        self.routes
-                            .oauth
-                            .callbacks
-                            .user_oauth_refresh_provider
-                            .clone(),
-                        provider.name(),
-                    ),
+                    &self.redirect_uri(),
                     &RefreshToken::new(refresh_token.to_string()),
                 )
                 .await?;
@@ -69,15 +62,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
             Ok((self, RefreshInitResult::Ok))
         } else {
-            let path = self
-                .routes
-                .oauth
-                .callbacks
-                .user_oauth_refresh_provider
-                .clone();
             let (new_self, url) = self
                 .oauth_init(
-                    path,
                     provider,
                     OAuthFlow::Refresh {
                         token_id: token.get_id().to_string(),
@@ -118,28 +104,5 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .map_err(OAuthRefreshCallbackError::Store)?;
 
         Ok(next)
-    }
-
-    pub async fn oauth_refresh_callback(
-        &mut self,
-        provider_name: String,
-        code: AuthorizationCode,
-        state: CsrfToken,
-    ) -> Result<Option<String>, OAuthRefreshCallbackError<S::Error>> {
-        let (unmatched_token, flow, _provider) = self
-            .oauth_callback_inner(
-                provider_name.clone(),
-                code,
-                state,
-                self.routes
-                    .oauth
-                    .callbacks
-                    .user_oauth_refresh_provider
-                    .clone(),
-            )
-            .await?;
-
-        self.oauth_refresh_callback_inner(unmatched_token, flow)
-            .await
     }
 }

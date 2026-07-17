@@ -41,7 +41,7 @@ pub struct Routes<T = String> {
     /// PageRoutes contain all the routes the user may visit to for instance log in or manage their account
     pub pages: PageRoutes<T>,
     #[cfg(feature = "oauth")]
-    /// Contains the OAuthCallbackRouts and - if the `oauth` feature is enabled - the OAuthActionRoutes (login, signup etc.)
+    /// The OAuth action routes (login, signup etc.) and the single callback route
     pub oauth: OAuthRoutes<T>,
     #[cfg(feature = "email")]
     /// Contains routes used in the Email login and signup (and - if the password feature is active - reset) flows
