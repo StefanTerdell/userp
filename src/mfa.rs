@@ -163,8 +163,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         {
             use crate::models::email::UserEmail;
 
+            #[cfg(feature = "email")]
             let email_based_first =
                 matches!(first, LoginMethod::Email { .. } | LoginMethod::Otp { .. });
+            #[cfg(not(feature = "email"))]
+            let email_based_first = matches!(first, LoginMethod::Otp { .. });
 
             if !email_based_first {
                 factors.otp_address = self

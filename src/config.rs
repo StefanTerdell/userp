@@ -1,4 +1,4 @@
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 use crate::email::EmailConfig;
 #[cfg(feature = "mfa")]
 use crate::mfa::MfaPolicy;
@@ -73,7 +73,7 @@ pub struct AutheryConfig {
     pub routes: Routes<String>,
     #[cfg(feature = "password")]
     pub pass: PasswordConfig,
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     pub email: EmailConfig,
     #[cfg(feature = "oauth")]
     pub oauth: OAuthConfig,
@@ -102,7 +102,7 @@ impl AutheryConfig {
         key: String,
         routes: impl Into<Routes<String>>,
         #[cfg(feature = "password")] pass: PasswordConfig,
-        #[cfg(feature = "email")] email: EmailConfig,
+        #[cfg(any(feature = "email", feature = "otp"))] email: EmailConfig,
         #[cfg(feature = "oauth")] oauth: OAuthConfig,
         #[cfg(feature = "webauthn")] webauthn: WebauthnConfig,
         #[cfg(feature = "totp")] totp: TotpConfig,
@@ -128,7 +128,7 @@ impl AutheryConfig {
             routes: routes.into(),
             #[cfg(feature = "password")]
             pass,
-            #[cfg(feature = "email")]
+            #[cfg(any(feature = "email", feature = "otp"))]
             email,
             #[cfg(feature = "oauth")]
             oauth,

@@ -1,6 +1,6 @@
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 use crate::models::email::EmailChallenge;
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 use crate::models::email::UserEmail;
 #[cfg(feature = "oauth")]
 use crate::models::oauth::{OAuthToken, UnmatchedOAuthToken};
@@ -19,9 +19,9 @@ pub trait AutheryStore: Send + Sync {
 
     type User: User<Id = Self::UserId>;
     type LoginSession: LoginSession<Id = Self::SessionId, UserId = Self::UserId>;
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     type UserEmail: UserEmail<UserId = Self::UserId>;
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     type EmailChallenge: EmailChallenge;
     #[cfg(feature = "sms")]
     type UserPhone: crate::models::sms::UserPhone<UserId = Self::UserId>;
@@ -145,12 +145,12 @@ pub trait AutheryStore: Send + Sync {
     ) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
 
     // email store
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     fn get_user_by_email_address(
         &self,
         address: &str,
     ) -> impl Future<Output = Result<Option<(Self::User, Self::UserEmail)>, Self::Error>> + Send;
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     fn create_user_by_email_address(
         &self,
         address: &str,
@@ -162,7 +162,7 @@ pub trait AutheryStore: Send + Sync {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Shared challenge store, used by email links, email OTP and SMS codes
     /// (keys are namespaced per flow).
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     fn create_challenge(
         &self,
         address: String,
@@ -171,7 +171,7 @@ pub trait AutheryStore: Send + Sync {
         expires: DateTime<Utc>,
     ) -> impl Future<Output = Result<Self::EmailChallenge, Self::Error>> + Send;
     /// Fetch AND delete - challenges are single-use.
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     fn consume_challenge(
         &self,
         code: String,
@@ -276,7 +276,7 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
         session_id: &Self::SessionId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     fn get_user_emails(
         &self,
         user_id: &Self::UserId,

@@ -1,4 +1,4 @@
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 pub mod email;
 #[cfg(feature = "oauth")]
 pub mod oauth;

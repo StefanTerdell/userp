@@ -37,7 +37,7 @@ pub struct MyUserEmail {
     pub allow_link_login: bool,
 }
 
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 impl UserEmail for MyUserEmail {
     type UserId = Uuid;
 
@@ -122,7 +122,7 @@ impl LoginSession for MyLoginSession {
     }
 }
 
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 #[derive(Clone, Debug)]
 pub struct MyEmailChallenge {
     pub address: String,
@@ -131,7 +131,7 @@ pub struct MyEmailChallenge {
     pub expires: DateTime<Utc>,
 }
 
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 impl EmailChallenge for MyEmailChallenge {
     fn get_address(&self) -> &str {
         &self.address

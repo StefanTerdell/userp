@@ -9,11 +9,11 @@
 //! - `LoginMethod`, `Passkey` and `TotpCredential` are persisted as opaque
 //!   jsonb - the store never inspects them.
 
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 use crate::models::PgChallenge;
 #[cfg(feature = "oauth")]
 use crate::models::PgOAuthToken;
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 use crate::models::PgUserEmail;
 #[cfg(feature = "sms")]
 use crate::models::PgUserPhone;
@@ -74,12 +74,12 @@ impl AutheryStore for PgStore {
     #[cfg(feature = "oauth")]
     type OAuthTokenId = Uuid;
     type User = PgUser;
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     type UserEmail = PgUserEmail;
     #[cfg(feature = "sms")]
     type UserPhone = PgUserPhone;
     type LoginSession = PgSession;
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     type EmailChallenge = PgChallenge;
     #[cfg(feature = "oauth")]
     type OAuthToken = PgOAuthToken;
@@ -323,7 +323,7 @@ impl AutheryStore for PgStore {
 
     // --- email store ---
 
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     async fn get_user_by_email_address(
         &self,
         address: &str,
@@ -342,7 +342,7 @@ impl AutheryStore for PgStore {
         Ok(self.get_user(&email.user_id).await?.map(|u| (u, email)))
     }
 
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     async fn create_user_by_email_address(
         &self,
         address: &str,
@@ -388,7 +388,7 @@ impl AutheryStore for PgStore {
         Ok(())
     }
 
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     async fn create_challenge(
         &self,
         address: String,
@@ -408,7 +408,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     async fn consume_challenge(&self, code: String) -> Result<Option<PgChallenge>, PgStoreError> {
         // Fetch AND delete in one statement: single-use under concurrency.
         Ok(sqlx::query_as(
@@ -419,7 +419,7 @@ impl AutheryStore for PgStore {
         .await?)
     }
 
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<PgUserEmail>, PgStoreError> {
         Ok(sqlx::query_as(
             "SELECT user_id, address, verified, allow_link_login FROM user_emails

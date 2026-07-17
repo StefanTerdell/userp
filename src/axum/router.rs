@@ -497,6 +497,23 @@ pub trait AxumRouter {
                 .route(self.routes().sms.signup_sms.as_str(), signup_sms);
         }
 
+        #[cfg(feature = "otp")]
+        {
+            let login_otp = post(otp::post_login_otp::<St>);
+            let signup_otp = post(otp::post_signup_otp::<St>);
+
+            // With pages active, GET on the same paths renders the
+            // code-entry form.
+            #[cfg(feature = "pages")]
+            let login_otp = login_otp.get(pages::get_login_otp::<St>);
+            #[cfg(feature = "pages")]
+            let signup_otp = signup_otp.get(pages::get_signup_otp::<St>);
+
+            router = router
+                .route(self.routes().email.login_otp.as_str(), login_otp)
+                .route(self.routes().email.signup_otp.as_str(), signup_otp);
+        }
+
         #[cfg(feature = "email")]
         {
             router = router
@@ -513,23 +530,6 @@ pub trait AxumRouter {
                     post(email::post_user_email_verify::<St>)
                         .get(email::get_user_email_verify::<St>),
                 );
-
-            #[cfg(feature = "otp")]
-            {
-                let login_otp = post(otp::post_login_otp::<St>);
-                let signup_otp = post(otp::post_signup_otp::<St>);
-
-                // With pages active, GET on the same paths renders the
-                // code-entry form.
-                #[cfg(feature = "pages")]
-                let login_otp = login_otp.get(pages::get_login_otp::<St>);
-                #[cfg(feature = "pages")]
-                let signup_otp = signup_otp.get(pages::get_signup_otp::<St>);
-
-                router = router
-                    .route(self.routes().email.login_otp.as_str(), login_otp)
-                    .route(self.routes().email.signup_otp.as_str(), signup_otp);
-            }
 
             #[cfg(feature = "password")]
             {

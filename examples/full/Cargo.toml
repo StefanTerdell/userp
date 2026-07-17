@@ -9,15 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
-authery = { path = "../..", features = [
-  "axum",
-  "pages",
-  "otp",
-  "webauthn",
-  "mfa",
-  "totp",
-  "sms",
-] }
+authery = { path = "../..", features = ["axum"] }
 memory-store = { path = "../memory-store", features = [
   "user",
   "password",

@@ -43,6 +43,7 @@ jobs:
           - "email"
           - "oauth"
           - "webauthn"
+          - "otp"
           - "otp,mfa,password"
           - "totp,mfa,password"
           - "sms"

@@ -1,6 +1,11 @@
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 use crate::models::MyEmailChallenge;
-#[cfg(any(feature = "email", feature = "password", feature = "oauth"))]
+#[cfg(any(
+    feature = "email",
+    feature = "otp",
+    feature = "password",
+    feature = "oauth"
+))]
 use crate::models::MyUserEmail;
 #[cfg(feature = "sms")]
 use crate::models::MyUserPhone;
@@ -28,7 +33,7 @@ use tokio::sync::RwLock;
 pub struct MemoryStore {
     sessions: Arc<RwLock<HashMap<Uuid, MyLoginSession>>>,
     users: Arc<RwLock<HashMap<Uuid, MyUser>>>,
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     challenges: Arc<RwLock<HashMap<String, MyEmailChallenge>>>,
     #[cfg(feature = "oauth")]
     oauth_tokens: Arc<RwLock<HashMap<Uuid, MyOAuthToken>>>,
@@ -70,12 +75,12 @@ impl IntoResponse for MemoryStoreError {
 
 impl AutheryStore for MemoryStore {
     type User = MyUser;
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     type UserEmail = MyUserEmail;
     #[cfg(feature = "sms")]
     type UserPhone = MyUserPhone;
     type LoginSession = MyLoginSession;
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     type EmailChallenge = MyEmailChallenge;
     #[cfg(feature = "oauth")]
     type OAuthToken = MyOAuthToken;
@@ -248,7 +253,7 @@ impl AutheryStore for MemoryStore {
         Ok(())
     }
 
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     async fn create_challenge(
         &self,
 
@@ -270,7 +275,7 @@ impl AutheryStore for MemoryStore {
         Ok(challenge)
     }
 
-    #[cfg(any(feature = "email", feature = "sms"))]
+    #[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
     async fn consume_challenge(
         &self,
         code: String,
@@ -283,7 +288,7 @@ impl AutheryStore for MemoryStore {
         Ok(challenge)
     }
 
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<MyUserEmail>, Self::Error> {
         let users = self.users.read().await;
 
@@ -574,7 +579,7 @@ impl AutheryStore for MemoryStore {
     }
 
     // user store
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     async fn get_user_by_email_address(
         &self,
         address: &str,
@@ -589,7 +594,7 @@ impl AutheryStore for MemoryStore {
         }))
     }
 
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     async fn create_user_by_email_address(
         &self,
         address: &str,

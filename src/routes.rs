@@ -7,9 +7,9 @@ use pages::*;
 pub mod user;
 #[cfg(feature = "user")]
 use user::*;
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 pub mod email;
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 use email::*;
 #[cfg(feature = "oauth")]
 pub mod oauth;
@@ -43,7 +43,7 @@ pub struct Routes<T = String> {
     #[cfg(feature = "oauth")]
     /// The OAuth action routes (login, signup etc.) and the single callback route
     pub oauth: OAuthRoutes<T>,
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     /// Contains routes used in the Email login and signup (and - if the password feature is active - reset) flows
     pub email: EmailActionRoutes<T>,
     #[cfg(feature = "password")]
@@ -73,7 +73,7 @@ impl Default for Routes<&'static str> {
             pages: PageRoutes::default(),
             #[cfg(feature = "oauth")]
             oauth: OAuthRoutes::default(),
-            #[cfg(feature = "email")]
+            #[cfg(any(feature = "email", feature = "otp"))]
             email: EmailActionRoutes::default(),
             #[cfg(feature = "password")]
             password: PasswordActionRoutes::default(),
@@ -109,7 +109,7 @@ impl<'a> From<&'a Routes<String>> for Routes<&'a str> {
             pages: value.pages.as_ref().into(),
             #[cfg(feature = "oauth")]
             oauth: value.oauth.as_ref().into(),
-            #[cfg(feature = "email")]
+            #[cfg(any(feature = "email", feature = "otp"))]
             email: value.email.as_ref().into(),
             #[cfg(feature = "password")]
             password: value.password.as_ref().into(),
@@ -134,7 +134,7 @@ impl<T: Display> Routes<T> {
             pages: self.pages.with_prefix(&prefix),
             #[cfg(feature = "oauth")]
             oauth: self.oauth.with_prefix(&prefix),
-            #[cfg(feature = "email")]
+            #[cfg(any(feature = "email", feature = "otp"))]
             email: self.email.with_prefix(&prefix),
             #[cfg(feature = "password")]
             password: self.password.with_prefix(&prefix),

@@ -1,4 +1,4 @@
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 use crate::email::EmailConfig;
 #[cfg(feature = "oauth")]
 use crate::oauth::OAuthConfig;
@@ -34,7 +34,7 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     pub store: S,
     #[cfg(feature = "password")]
     pub pass: PasswordConfig,
-    #[cfg(feature = "email")]
+    #[cfg(any(feature = "email", feature = "otp"))]
     pub email: EmailConfig,
     #[cfg(feature = "oauth")]
     pub oauth: OAuthConfig,

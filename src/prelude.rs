@@ -24,10 +24,10 @@ pub use crate::email::reset::*;
 #[cfg(all(feature = "email", feature = "password"))]
 pub use crate::password::PasswordReset;
 
+#[cfg(any(feature = "email", feature = "otp"))]
+pub use crate::email::{EmailConfig, SendEmailChallengeError, SmtpSettings};
 #[cfg(feature = "email")]
-pub use crate::email::{
-    EmailConfig, SendEmailChallengeError, SmtpSettings, login::*, signup::*, verify::*,
-};
+pub use crate::email::{login::*, signup::*, verify::*};
 
 #[cfg(feature = "password")]
 pub use crate::password::{PasswordConfig, hasher::*, login::*, signup::*};
@@ -52,9 +52,9 @@ pub use crate::pages::*;
 
 #[cfg(feature = "totp")]
 pub use crate::models::TotpCredential;
-#[cfg(any(feature = "email", feature = "sms"))]
+#[cfg(any(feature = "email", feature = "otp", feature = "sms"))]
 pub use crate::models::email::EmailChallenge;
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 pub use crate::models::email::*;
 #[cfg(feature = "oauth")]
 pub use crate::models::oauth::*;

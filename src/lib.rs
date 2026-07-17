@@ -111,7 +111,7 @@
 //! | `user` | Account management: session listing, email/password management, account deletion | user-scoped queries & mutations |
 //! | `password` | Password login/signup, pluggable hasher | password-id lookup & user creation |
 //! | `email` | Magic links: login, signup, verification, password reset (with `password`); async SMTP | user-email entities, single-use challenges |
-//! | `otp` | Six-digit emailed codes as an alternative to links (implies `email`) | - (reuses challenges) |
+//! | `otp` | One-time emailed codes; standalone, or alongside `email` links | user-email entities, challenges (shared with `email`) |
 //! | `sms` | Texted six-digit codes: login, signup, MFA; five ready-made gateway senders or bring-your-own `SmsSender` | user-phone entities (challenges shared with `email`) |
 //! | `oauth` | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution | oauth token entities & lookups |
 //! | `webauthn` | Passkeys: usernameless login, account-page registration | passkey blobs keyed by credential id |
@@ -175,8 +175,10 @@
 //!
 //! ## Email links & one-time codes (`email`, `otp`)
 //!
-//! Magic links for signup/login, address verification and password reset
-//! delivery. SMTP is async (lettre) and configured with a single URL:
+//! Two independent features over the same email infrastructure: `email` is
+//! magic links (signup/login links, address verification, password-reset
+//! delivery), `otp` is one-time codes - enable either or both. SMTP is
+//! async (lettre) and configured with a single URL:
 //!
 //! ```text
 //! smtps://user:pass@smtp.example.com:465                implicit TLS
@@ -454,7 +456,7 @@ pub mod totp;
 #[cfg(feature = "webauthn")]
 pub mod webauthn;
 
-#[cfg(feature = "email")]
+#[cfg(any(feature = "email", feature = "otp"))]
 pub mod email;
 #[cfg(feature = "oauth")]
 pub mod oauth;

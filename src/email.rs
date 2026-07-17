@@ -1,17 +1,23 @@
+#[cfg(feature = "email")]
 pub mod login;
 #[cfg(feature = "otp")]
 pub mod otp;
-#[cfg(feature = "password")]
+#[cfg(all(feature = "email", feature = "password"))]
 pub mod reset;
+#[cfg(feature = "email")]
 pub mod signup;
+#[cfg(feature = "email")]
 pub mod verify;
 
-use chrono::{Duration, Utc};
+use chrono::Duration;
+#[cfg(feature = "email")]
+use chrono::Utc;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
 };
 use thiserror::Error;
 use url::Url;
+#[cfg(feature = "email")]
 use uuid::Uuid;
 
 use crate::models::Allow;
@@ -94,6 +100,7 @@ pub struct DefaultEmailMessages;
 impl EmailMessages for DefaultEmailMessages {}
 
 /// Which link email a challenge send composes; see [`EmailMessages`].
+#[cfg(feature = "email")]
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum EmailLinkKind {
     LogIn,
@@ -203,6 +210,7 @@ pub enum SendEmailChallengeError<StoreError: std::error::Error> {
 }
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    #[cfg(feature = "email")]
     async fn send_email_challenge(
         &self,
         path: String,
