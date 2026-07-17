@@ -120,6 +120,9 @@ where
             .then_some(auth.routes.mfa.login_mfa_totp.as_str()),
         #[cfg(not(feature = "totp"))]
         totp: None,
+        recovery: factors
+            .recovery_codes
+            .then_some(auth.routes.mfa.login_mfa_recovery.as_str()),
         #[cfg(feature = "webauthn")]
         webauthn: factors
             .webauthn
@@ -292,6 +295,8 @@ where
             .collect();
         #[cfg(feature = "totp")]
         let totp_enabled = auth.totp_enabled(&user.get_id()).await?;
+        #[cfg(feature = "mfa")]
+        let recovery_codes_count = auth.store.count_recovery_codes(&user.get_id()).await?;
 
         let view = UserTemplate::with(
             &auth,
@@ -308,6 +313,8 @@ where
             passkey_credential_ids,
             #[cfg(feature = "totp")]
             totp_enabled,
+            #[cfg(feature = "mfa")]
+            recovery_codes_count,
         );
         Html(auth.pages.render_user(&view)).into_response()
     } else {

@@ -110,6 +110,27 @@
   {% endif %}
   {% endif %}
 
+  {% if let Some(recovery_route) = recovery %}
+  <div class="recovery-login">
+    <form action="{{ recovery_route }}" method="post" id="mfa-recovery-form">
+      <div class="form-group">
+        <label for="recovery-code">Or use a recovery code</label>
+        <input type="text" id="recovery-code" name="code" autocomplete="off" required>
+      </div>
+      <button type="submit">Use recovery code</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+  </div>
+
+  {% if sms.is_some() %}
+  <div class="or-divider">
+    <span>or</span>
+  </div>
+  {% endif %}
+  {% endif %}
+
   {% if let Some(sms) = sms %}
   <div class="sms-login">
     <form action="{{ sms.action_route }}" method="post" class="form">

@@ -32,6 +32,10 @@ pub enum RateLimitOp<'a> {
     /// A TOTP (authenticator-app) verification attempt, keyed on the user id
     /// in its string representation. Same guessability caveat as OtpAttempt.
     TotpAttempt { user_id: &'a str },
+    /// A recovery-code verification attempt, keyed on the user id in its
+    /// string representation. Codes are high-entropy but hashed with a fast
+    /// hash, so still cap attempts.
+    RecoveryAttempt { user_id: &'a str },
     /// An outgoing SMS. Key of interest: the number - SMS costs money, cap
     /// sends per recipient tightly.
     SmsSend { number: &'a str },

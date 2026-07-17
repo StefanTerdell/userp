@@ -144,6 +144,8 @@ pub struct TestStore {
     pub totp: Arc<Mutex<HashMap<Uuid, authery::models::TotpCredential>>>,
     #[cfg(feature = "sms")]
     pub phones: Arc<Mutex<Vec<TestPhone>>>,
+    #[cfg(feature = "mfa")]
+    pub recovery: Arc<Mutex<HashMap<Uuid, Vec<String>>>>,
 }
 
 impl TestStore {
@@ -338,6 +340,42 @@ impl AutheryStore for TestStore {
             .filter(|p| p.user_id == *user_id)
             .cloned()
             .collect())
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn set_recovery_code_hashes(
+        &self,
+        user_id: &Uuid,
+        hashes: Vec<String>,
+    ) -> Result<(), Infallible> {
+        self.recovery.lock().unwrap().insert(*user_id, hashes);
+        Ok(())
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn consume_recovery_code_hash(
+        &self,
+        user_id: &Uuid,
+        hash: &str,
+    ) -> Result<bool, Infallible> {
+        let mut recovery = self.recovery.lock().unwrap();
+        let Some(hashes) = recovery.get_mut(user_id) else {
+            return Ok(false);
+        };
+        let before = hashes.len();
+        hashes.retain(|h| h != hash);
+        Ok(hashes.len() < before)
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn count_recovery_codes(&self, user_id: &Uuid) -> Result<usize, Infallible> {
+        Ok(self
+            .recovery
+            .lock()
+            .unwrap()
+            .get(user_id)
+            .map(Vec::len)
+            .unwrap_or(0))
     }
 
     async fn get_user_by_password_id(

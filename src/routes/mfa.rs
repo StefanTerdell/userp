@@ -14,6 +14,8 @@ pub struct MfaRoutes<T = &'static str> {
     #[cfg(feature = "totp")]
     /// Post - verifies an authenticator-app code and completes the login
     pub login_mfa_totp: T,
+    /// Post - consumes a single-use recovery code and completes the login
+    pub login_mfa_recovery: T,
     #[cfg(feature = "sms")]
     /// Post without `code` - texts a code to the pending user's verified number
     /// Post with `code` - verifies it and completes the login
@@ -34,6 +36,7 @@ impl Default for MfaRoutes {
             login_mfa_otp: "/login/mfa/otp",
             #[cfg(feature = "totp")]
             login_mfa_totp: "/login/mfa/totp",
+            login_mfa_recovery: "/login/mfa/recovery",
             #[cfg(feature = "sms")]
             login_mfa_sms: "/login/mfa/sms",
             #[cfg(feature = "webauthn")]
@@ -52,6 +55,7 @@ impl<'a> From<&'a MfaRoutes<String>> for MfaRoutes<&'a str> {
             login_mfa_otp: &value.login_mfa_otp,
             #[cfg(feature = "totp")]
             login_mfa_totp: &value.login_mfa_totp,
+            login_mfa_recovery: &value.login_mfa_recovery,
             #[cfg(feature = "sms")]
             login_mfa_sms: &value.login_mfa_sms,
             #[cfg(feature = "webauthn")]
@@ -83,6 +87,7 @@ impl<T: Display> MfaRoutes<T> {
             login_mfa_otp: format!("{prefix}{}", self.login_mfa_otp),
             #[cfg(feature = "totp")]
             login_mfa_totp: format!("{prefix}{}", self.login_mfa_totp),
+            login_mfa_recovery: format!("{prefix}{}", self.login_mfa_recovery),
             #[cfg(feature = "sms")]
             login_mfa_sms: format!("{prefix}{}", self.login_mfa_sms),
             #[cfg(feature = "webauthn")]

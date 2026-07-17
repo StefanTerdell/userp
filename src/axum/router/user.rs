@@ -398,3 +398,39 @@ mod totp_handlers {
         }
     }
 }
+
+#[cfg(all(feature = "mfa", feature = "pages"))]
+pub(crate) use recovery_handlers::post_user_recovery_codes;
+
+#[cfg(all(feature = "mfa", feature = "pages"))]
+mod recovery_handlers {
+    use super::*;
+    use crate::mfa::RecoveryCodesError;
+
+    /// Generate a fresh batch (replacing any previous one) and render the
+    /// codes - this is the only time they exist in plaintext.
+    pub(crate) async fn post_user_recovery_codes<St>(
+        auth: AxumAuthery<St>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        use crate::pages::RecoveryCodesTemplate;
+        use axum::response::Html;
+
+        let login_route = auth.routes.pages.login.clone();
+
+        match auth.recovery_codes_generate().await {
+            Ok(codes) => {
+                let view = RecoveryCodesTemplate {
+                    codes,
+                    user_page_route: &auth.routes.pages.user,
+                };
+                Ok(Html(auth.pages.render_recovery_codes(&view)).into_response())
+            }
+            Err(RecoveryCodesError::Store(err)) => Err(err),
+            Err(RecoveryCodesError::NotLoggedIn) => Ok(Redirect::to(&login_route).into_response()),
+        }
+    }
+}

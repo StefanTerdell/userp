@@ -238,3 +238,50 @@ mod sms_factor {
         }
     }
 }
+
+pub(crate) use recovery_factor::post_login_mfa_recovery;
+
+mod recovery_factor {
+    use super::*;
+    use crate::mfa::MfaRecoveryError;
+    use axum::Form;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct MfaRecoveryForm {
+        pub code: String,
+        pub next: Option<String>,
+    }
+
+    /// Consume a single-use recovery code and complete the login.
+    pub(crate) async fn post_login_mfa_recovery<St>(
+        auth: AxumAuthery<St>,
+        Form(MfaRecoveryForm { code, next }): Form<MfaRecoveryForm>,
+    ) -> Result<impl IntoResponse, St::Error>
+    where
+        St: AutheryStore,
+        St::Error: IntoResponse,
+    {
+        let mfa_route = auth.routes.mfa.login_mfa.clone();
+        let login_route = auth.routes.pages.login.clone();
+
+        match auth.mfa_recovery_verify(&code).await {
+            Ok(auth) => {
+                let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
+                Ok((auth, Redirect::to(&next)).into_response())
+            }
+            Err(MfaRecoveryError::Store(err)) => Err(err),
+            Err(MfaRecoveryError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
+            Err(err) => {
+                let mut url = format!(
+                    "{mfa_route}?error={}",
+                    urlencoding::encode(&err.to_string())
+                );
+                if let Some(next) = next.as_deref() {
+                    url.push_str(&format!("&next={}", urlencoding::encode(next)));
+                }
+                Ok(Redirect::to(&url).into_response())
+            }
+        }
+    }
+}

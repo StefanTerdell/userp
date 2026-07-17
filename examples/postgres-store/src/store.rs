@@ -149,6 +149,59 @@ impl AutheryStore for PgStore {
         )
     }
 
+    // --- mfa store ---
+
+    #[cfg(feature = "mfa")]
+    async fn set_recovery_code_hashes(
+        &self,
+        user_id: &Uuid,
+        hashes: Vec<String>,
+    ) -> Result<(), PgStoreError> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query("DELETE FROM recovery_codes WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+        for hash in hashes {
+            sqlx::query("INSERT INTO recovery_codes (user_id, hash) VALUES ($1, $2)")
+                .bind(user_id)
+                .bind(hash)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn consume_recovery_code_hash(
+        &self,
+        user_id: &Uuid,
+        hash: &str,
+    ) -> Result<bool, PgStoreError> {
+        // Fetch AND delete in one statement: single-use under concurrency.
+        Ok(sqlx::query(
+            "DELETE FROM recovery_codes WHERE user_id = $1 AND hash = $2 RETURNING hash",
+        )
+        .bind(user_id)
+        .bind(hash)
+        .fetch_optional(&self.pool)
+        .await?
+        .is_some())
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn count_recovery_codes(&self, user_id: &Uuid) -> Result<usize, PgStoreError> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM recovery_codes WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(count as usize)
+    }
+
     // --- password store ---
 
     #[cfg(feature = "password")]

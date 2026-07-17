@@ -63,7 +63,7 @@ pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginMethodRules, Lo
 #[cfg(any(feature = "otp", feature = "sms"))]
 pub use crate::codes::{CodeGenerator, NumericCode};
 #[cfg(feature = "mfa")]
-pub use crate::mfa::{MfaError, MfaFactors, MfaPolicy};
+pub use crate::mfa::{MfaError, MfaFactors, MfaPolicy, MfaRecoveryError, RecoveryCodesError};
 #[cfg(feature = "sms")]
 pub use crate::models::sms::UserPhone;
 pub use crate::ratelimit::{NoRateLimit, RateLimitFuture, RateLimitOp, RateLimited, RateLimiter};

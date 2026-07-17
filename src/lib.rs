@@ -116,7 +116,7 @@
 //! | `oauth` | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution | oauth token entities & lookups |
 //! | `webauthn` | Passkeys: usernameless login, account-page registration | passkey blobs keyed by credential id |
 //! | `totp` | Authenticator-app codes (RFC 6238) as a second factor, QR enrollment | one TOTP credential per user |
-//! | `mfa` | Second-factor policy over any first factor | - (rides on `LoginMethod`) |
+//! | `mfa` | Second-factor policy over any first factor; single-use recovery codes | recovery-code hashes |
 //! | `pages` | Bundled Askama pages + the `Pages` replacement trait | - |
 //! | `axum` | The extractor, router and cookie layer | - |
 //!
@@ -260,10 +260,15 @@
 //! by a second one (default: passwords only). When such a login succeeds
 //! *and the user has a factor registered*, the session is **pending** -
 //! treated as logged-out everywhere except the completion flow, which offers
-//! a passkey ceremony, an authenticator code, or a one-time code sent to the
+//! a passkey ceremony, an authenticator code, a one-time code sent to the
 //! user's **own verified** address or number (never one supplied in the
-//! request, and never the channel the first factor already proved).
-//! Completing it mints a session whose method records both factors.
+//! request, and never the channel the first factor already proved), or a
+//! single-use recovery code. Completing it mints a session whose method
+//! records both factors.
+//!
+//! Recovery codes are the lockout escape hatch: the account page generates a
+//! batch of ten (shown exactly once; only SHA-256 hashes reach your store),
+//! each usable a single time. Generating a new batch replaces the old one.
 //!
 //! Users without a registered factor log in normally - hard-requiring MFA at
 //! login would lock out every fresh signup. Apps wanting mandatory MFA gate

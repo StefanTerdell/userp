@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+  <h1>Your recovery codes</h1>
+
+  <div class="message" role="alert">
+    <strong>Save these somewhere safe - they are shown only once.</strong>
+  </div>
+
+  <p>Each code logs you in exactly once if you lose access to your other
+    second factors. Generating a new batch replaces these.</p>
+
+  <ul style="font-family: monospace; font-size: 1.2em; list-style: none; padding: 0;">
+    {% for code in codes %}
+    <li>{{ code }}</li>
+    {% endfor %}
+  </ul>
+
+  <div class="links">
+    <a href="{{ user_page_route }}">Back to your account</a>
+  </div>
+</div>
+{% endblock %}

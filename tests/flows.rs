@@ -467,6 +467,75 @@ mod sms_tests {
     }
 }
 
+mod recovery_tests {
+    use super::*;
+    use authery::mfa::MfaRecoveryError;
+
+    /// Generate a batch while logged in, then complete an MFA login with one
+    /// of the codes. Codes are single-use and a new batch replaces the old.
+    #[tokio::test]
+    async fn recovery_codes_generate_and_upgrade_pending_session() {
+        let store = TestStore::default();
+
+        // Password signup: unverified email, so recovery codes will be the
+        // user's only second factor.
+        let logged_in = auth(&store)
+            .password_signup("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        let codes = logged_in.recovery_codes_generate().await.unwrap();
+        assert_eq!(codes.len(), 10);
+        assert_eq!(logged_in.recovery_codes_count().await.unwrap(), 10);
+
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        assert!(pending.session().await.unwrap().is_none(), "pending");
+
+        // A wrong code is rejected...
+        assert!(matches!(
+            pending.mfa_recovery_verify("nope-nope").await,
+            Err(MfaRecoveryError::WrongCode)
+        ));
+
+        // ...the real one (typed messily: case and dashes are normalized)
+        // completes the login.
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        let messy = codes[0].to_uppercase().replace('-', " ");
+        let upgraded = pending.mfa_recovery_verify(&messy).await.unwrap();
+        let session = upgraded.session().await.unwrap().expect("logged in");
+        let LoginMethod::Mfa { first, second } = session.get_method() else {
+            panic!("expected Mfa session");
+        };
+        assert_eq!(*first, LoginMethod::Password);
+        assert_eq!(*second, LoginMethod::RecoveryCode);
+        assert_eq!(upgraded.recovery_codes_count().await.unwrap(), 9);
+
+        // The consumed code must not work again.
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let pending = builder
+            .build()
+            .password_login("alice@x.com", "hunter2")
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.mfa_recovery_verify(&codes[0]).await,
+            Err(MfaRecoveryError::WrongCode)
+        ));
+    }
+}
+
 #[cfg(feature = "totp")]
 mod totp_tests {
     use super::*;

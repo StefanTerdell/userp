@@ -37,6 +37,9 @@
     {% if totp.is_some() %}
     <button id="totp-tab-button" class="tab-button" onclick="openTab('totp')">Authenticator</button>
     {% endif %}
+    {% if recovery.is_some() %}
+    <button id="recovery-tab-button" class="tab-button" onclick="openTab('recovery')">Recovery codes</button>
+    {% endif %}
     <button id="danger-tab-button" class="tab-button" onclick="openTab('danger')">Danger Zone</button>
   </div>
 
@@ -283,6 +286,24 @@
         <button type="submit">Set up authenticator app</button>
       </form>
       {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if let Some(recovery) = recovery %}
+  <div id="recovery" class="tab">
+    <div class="section">
+      <h2>Recovery codes</h2>
+      {% if recovery.count > 0 %}
+      <p>{{ recovery.count }} unused recovery codes remain. Generating a new
+        batch replaces them.</p>
+      {% else %}
+      <p>Single-use codes that can complete a two-factor login if you lose
+        access to your other second factors.</p>
+      {% endif %}
+      <form action="{{ recovery.generate_action_route }}" method="post" class="form">
+        <button type="submit">Generate recovery codes</button>
+      </form>
     </div>
   </div>
   {% endif %}

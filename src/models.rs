@@ -80,6 +80,9 @@ pub enum LoginMethod {
     /// An authenticator-app code (TOTP) was used - as an MFA second factor,
     /// since TOTP is not a standalone login method
     Totp,
+    #[cfg(feature = "mfa")]
+    /// A single-use recovery code was consumed - as an MFA second factor
+    RecoveryCode,
     #[cfg(feature = "sms")]
     /// The login session was created with a one-time code sent by SMS
     Sms {

@@ -137,6 +137,14 @@ pub struct UserTemplate<'a> {
     pub oauth: Option<UserTemplateOAuthInfo<'a>>,
     pub webauthn: Option<UserTemplateWebauthnInfo<'a>>,
     pub totp: Option<UserTemplateTotpInfo<'a>>,
+    pub recovery: Option<UserTemplateRecoveryInfo<'a>>,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateRecoveryInfo<'a> {
+    /// Unused codes remaining.
+    pub count: usize,
+    pub generate_action_route: &'a str,
 }
 
 #[cfg(feature = "user")]
@@ -162,6 +170,7 @@ impl UserTemplate<'_> {
         #[cfg(feature = "oauth")] oauth_tokens: &'a [S::OAuthToken],
         #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
         #[cfg(feature = "totp")] totp_enabled: bool,
+        #[cfg(feature = "mfa")] recovery_codes_count: usize,
     ) -> UserTemplate<'a> {
         UserTemplate {
             message,
@@ -235,6 +244,13 @@ impl UserTemplate<'_> {
             }),
             #[cfg(not(feature = "totp"))]
             totp: None,
+            #[cfg(feature = "mfa")]
+            recovery: Some(UserTemplateRecoveryInfo {
+                count: recovery_codes_count,
+                generate_action_route: &auth.routes.user.user_recovery_codes,
+            }),
+            #[cfg(not(feature = "mfa"))]
+            recovery: None,
         }
     }
 
@@ -251,6 +267,7 @@ impl UserTemplate<'_> {
         #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
         #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
         #[cfg(feature = "totp")] totp_enabled: bool,
+        #[cfg(feature = "mfa")] recovery_codes_count: usize,
     ) -> Result<String, askama::Error> {
         Self::with(
             auth,
@@ -267,6 +284,8 @@ impl UserTemplate<'_> {
             passkey_credential_ids,
             #[cfg(feature = "totp")]
             totp_enabled,
+            #[cfg(feature = "mfa")]
+            recovery_codes_count,
         )
         .render()
     }
@@ -542,6 +561,8 @@ pub struct MfaTemplate<'a> {
     pub sms: Option<MfaSmsTemplateInfo<'a>>,
     /// The action route for authenticator-app codes, when the user has one.
     pub totp: Option<&'a str>,
+    /// The action route for recovery codes, when the user has unused ones.
+    pub recovery: Option<&'a str>,
     pub webauthn: Option<MfaWebauthnTemplateInfo<'a>>,
 }
 
@@ -599,6 +620,15 @@ pub struct OtpTemplate<'a> {
     pub code_input: CodeInputHints,
 }
 
+/// The freshly generated recovery codes, shown exactly once.
+#[cfg(feature = "mfa")]
+#[derive(Template)]
+#[template(path = "recovery-codes.html")]
+pub struct RecoveryCodesTemplate<'a> {
+    pub codes: Vec<String>,
+    pub user_page_route: &'a str,
+}
+
 /// Renders the built-in pages to HTML. Implement this and register it with
 /// [`crate::config::AutheryConfig::with_pages`] to replace the bundled Askama
 /// templates with your own markup while keeping the built-in router and flows.
@@ -613,6 +643,8 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
     #[cfg(feature = "sms")]
     fn render_sms(&self, view: &SmsTemplate<'_>) -> String;
+    #[cfg(feature = "mfa")]
+    fn render_recovery_codes(&self, view: &RecoveryCodesTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
     fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
     #[cfg(feature = "totp")]
@@ -651,6 +683,11 @@ impl Pages for AskamaPages {
 
     #[cfg(feature = "sms")]
     fn render_sms(&self, view: &SmsTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "mfa")]
+    fn render_recovery_codes(&self, view: &RecoveryCodesTemplate<'_>) -> String {
         render_or_err(view)
     }
 

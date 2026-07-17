@@ -227,6 +227,14 @@ pub trait AxumRouter {
                 }
             }
 
+            #[cfg(all(feature = "mfa", feature = "pages"))]
+            {
+                router = router.route(
+                    self.routes().user.user_recovery_codes.as_str(),
+                    post(user::post_user_recovery_codes::<St>),
+                );
+            }
+
             #[cfg(feature = "email")]
             {
                 router = router
@@ -356,6 +364,11 @@ pub trait AxumRouter {
                     post(mfa::post_login_mfa_sms::<St>),
                 );
             }
+
+            router = router.route(
+                self.routes().mfa.login_mfa_recovery.as_str(),
+                post(mfa::post_login_mfa_recovery::<St>),
+            );
 
             #[cfg(feature = "webauthn")]
             {

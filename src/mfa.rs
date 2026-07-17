@@ -94,11 +94,17 @@ pub struct MfaFactors {
     pub otp_address: Option<String>,
     /// A code can be texted to this (verified) number.
     pub sms_number: Option<String>,
+    /// The user has unused single-use recovery codes.
+    pub recovery_codes: bool,
 }
 
 impl MfaFactors {
     pub fn any(&self) -> bool {
-        self.webauthn || self.totp || self.otp_address.is_some() || self.sms_number.is_some()
+        self.webauthn
+            || self.totp
+            || self.otp_address.is_some()
+            || self.sms_number.is_some()
+            || self.recovery_codes
     }
 }
 
@@ -192,6 +198,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         #[cfg(not(any(feature = "otp", feature = "sms")))]
         let _ = first;
+
+        factors.recovery_codes = self.store.count_recovery_codes(user_id).await? > 0;
 
         Ok(factors)
     }
@@ -661,3 +669,140 @@ mod sms_factor {
 
 #[cfg(feature = "sms")]
 pub use sms_factor::MfaSmsError;
+
+pub use recovery::{MfaRecoveryError, RecoveryCodesError, hash_recovery_code};
+
+mod recovery {
+    use super::*;
+    use crate::ratelimit::{RateLimitOp, RateLimited};
+    use sha2::{Digest, Sha256};
+
+    /// How many codes a batch contains.
+    const BATCH_SIZE: usize = 10;
+
+    /// The canonical hash of a recovery code: SHA-256 hex over the
+    /// normalized form (lowercased, separators stripped). Codes carry ~50
+    /// bits of CSPRNG entropy, so a fast hash suffices against offline
+    /// attack on a leaked store - unlike passwords, which are chosen.
+    pub fn hash_recovery_code(code: &str) -> String {
+        let normalized: String = code
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+
+        format!("{:x}", Sha256::digest(normalized.as_bytes()))
+    }
+
+    /// Ten random base32 characters as `xxxxx-xxxxx`, from the CSPRNG behind
+    /// UUIDv4. The alphabet avoids `0/1/8/9` lookalike ambiguity.
+    fn generate_code() -> String {
+        const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+        let mut bits = uuid::Uuid::new_v4().as_u128();
+        let mut chars = Vec::with_capacity(11);
+
+        for i in 0..10 {
+            if i == 5 {
+                chars.push(b'-');
+            }
+            chars.push(ALPHABET[(bits & 31) as usize]);
+            bits >>= 5;
+        }
+
+        String::from_utf8(chars).expect("ascii")
+    }
+
+    #[derive(Debug, Error)]
+    pub enum RecoveryCodesError<StoreError: std::error::Error> {
+        #[error("Not logged in")]
+        NotLoggedIn,
+        #[error(transparent)]
+        Store(StoreError),
+    }
+
+    #[derive(Debug, Error)]
+    pub enum MfaRecoveryError<StoreError: std::error::Error> {
+        #[error("No MFA login in progress")]
+        NoPending,
+        #[error("Wrong or already-used code")]
+        WrongCode,
+        #[error(transparent)]
+        RateLimited(RateLimited),
+        #[error(transparent)]
+        Store(StoreError),
+    }
+
+    impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+        /// Generate a fresh batch of recovery codes for the logged-in user,
+        /// replacing any previous batch. The plaintext codes are returned
+        /// exactly once - only their hashes are stored.
+        pub async fn recovery_codes_generate(
+            &self,
+        ) -> Result<Vec<String>, RecoveryCodesError<S::Error>> {
+            let Some(session) = self.session().await.map_err(RecoveryCodesError::Store)? else {
+                return Err(RecoveryCodesError::NotLoggedIn);
+            };
+
+            let codes: Vec<String> = (0..BATCH_SIZE).map(|_| generate_code()).collect();
+            let hashes = codes.iter().map(|c| hash_recovery_code(c)).collect();
+
+            self.store
+                .set_recovery_code_hashes(&session.get_user_id(), hashes)
+                .await
+                .map_err(RecoveryCodesError::Store)?;
+
+            Ok(codes)
+        }
+
+        /// How many unused recovery codes the logged-in user has left.
+        pub async fn recovery_codes_count(&self) -> Result<usize, RecoveryCodesError<S::Error>> {
+            let Some(session) = self.session().await.map_err(RecoveryCodesError::Store)? else {
+                return Err(RecoveryCodesError::NotLoggedIn);
+            };
+
+            self.store
+                .count_recovery_codes(&session.get_user_id())
+                .await
+                .map_err(RecoveryCodesError::Store)
+        }
+
+        /// Consume a recovery code as the second factor and upgrade the
+        /// pending session. Each code works exactly once.
+        #[must_use = "Don't forget to return the auth session as part of the response!"]
+        pub async fn mfa_recovery_verify(
+            self,
+            code: &str,
+        ) -> Result<Self, MfaRecoveryError<S::Error>> {
+            let Some(pending) = self
+                .mfa_pending_session()
+                .await
+                .map_err(MfaRecoveryError::Store)?
+            else {
+                return Err(MfaRecoveryError::NoPending);
+            };
+
+            let user_id = pending.get_user_id();
+
+            self.rate_limiter
+                .check(RateLimitOp::RecoveryAttempt {
+                    user_id: &user_id.to_string(),
+                })
+                .await
+                .map_err(MfaRecoveryError::RateLimited)?;
+
+            let consumed = self
+                .store
+                .consume_recovery_code_hash(&user_id, &hash_recovery_code(code))
+                .await
+                .map_err(MfaRecoveryError::Store)?;
+
+            if !consumed {
+                return Err(MfaRecoveryError::WrongCode);
+            }
+
+            self.mfa_upgrade(pending, LoginMethod::RecoveryCode)
+                .await
+                .map_err(MfaRecoveryError::Store)
+        }
+    }
+}

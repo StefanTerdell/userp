@@ -181,6 +181,30 @@ pub trait AutheryStore: Send + Sync {
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Vec<Self::UserPhone>, Self::Error>> + Send;
 
+    // mfa store
+    /// Replace the user's recovery-code hashes wholesale (generating a new
+    /// batch invalidates the old one).
+    #[cfg(feature = "mfa")]
+    fn set_recovery_code_hashes(
+        &self,
+        user_id: &Self::UserId,
+        hashes: Vec<String>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    /// Delete the hash if present and report whether it was - single-use
+    /// consumption, like challenges.
+    #[cfg(feature = "mfa")]
+    fn consume_recovery_code_hash(
+        &self,
+        user_id: &Self::UserId,
+        hash: &str,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    /// How many unused codes remain (factor discovery + account page).
+    #[cfg(feature = "mfa")]
+    fn count_recovery_codes(
+        &self,
+        user_id: &Self::UserId,
+    ) -> impl Future<Output = Result<usize, Self::Error>> + Send;
+
     // oauth store
     #[cfg(feature = "oauth")]
     fn update_token_by_unmatched_token(

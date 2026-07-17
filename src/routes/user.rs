@@ -9,6 +9,9 @@ use std::fmt::Display;
 pub struct UserActionRoutes<T = &'static str> {
     /// Post route to delete a user account
     pub user_delete: T,
+    #[cfg(feature = "mfa")]
+    /// Post - generates a fresh batch of recovery codes (shown once)
+    pub user_recovery_codes: T,
     #[cfg(feature = "totp")]
     /// Post - begins TOTP enrollment; renders the QR/confirm page
     pub user_totp_enroll: T,
@@ -49,6 +52,8 @@ impl Default for UserActionRoutes {
             user_delete: "/user/delete",
             #[cfg(feature = "totp")]
             user_totp_enroll: "/user/totp/enroll",
+            #[cfg(feature = "mfa")]
+            user_recovery_codes: "/user/recovery-codes",
             #[cfg(feature = "totp")]
             user_totp_confirm: "/user/totp/confirm",
             #[cfg(feature = "totp")]
@@ -78,6 +83,8 @@ impl<'a> From<&'a UserActionRoutes<String>> for UserActionRoutes<&'a str> {
             user_delete: &value.user_delete,
             #[cfg(feature = "totp")]
             user_totp_enroll: &value.user_totp_enroll,
+            #[cfg(feature = "mfa")]
+            user_recovery_codes: &value.user_recovery_codes,
             #[cfg(feature = "totp")]
             user_totp_confirm: &value.user_totp_confirm,
             #[cfg(feature = "totp")]
@@ -120,6 +127,8 @@ impl<T: Display> UserActionRoutes<T> {
             user_delete: format!("{prefix}{}", self.user_delete),
             #[cfg(feature = "totp")]
             user_totp_enroll: format!("{prefix}{}", self.user_totp_enroll),
+            #[cfg(feature = "mfa")]
+            user_recovery_codes: format!("{prefix}{}", self.user_recovery_codes),
             #[cfg(feature = "totp")]
             user_totp_confirm: format!("{prefix}{}", self.user_totp_confirm),
             #[cfg(feature = "totp")]

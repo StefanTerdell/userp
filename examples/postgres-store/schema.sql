@@ -63,3 +63,10 @@ CREATE TABLE IF NOT EXISTS totp_credentials (
     user_id    uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     credential jsonb NOT NULL
 );
+
+-- Single-use MFA recovery codes; only hashes are stored.
+CREATE TABLE IF NOT EXISTS recovery_codes (
+    user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    hash    text NOT NULL,
+    PRIMARY KEY (user_id, hash)
+);

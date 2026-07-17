@@ -40,6 +40,8 @@ pub struct MemoryStore {
     totp: Arc<RwLock<HashMap<Uuid, TotpCredential>>>,
     #[cfg(feature = "sms")]
     phones: Arc<RwLock<Vec<MyUserPhone>>>,
+    #[cfg(feature = "mfa")]
+    recovery: Arc<RwLock<HashMap<Uuid, Vec<String>>>>,
     /// App-level org tables - authery knows nothing about these; see the
     /// multi-tenant example.
     #[cfg(feature = "oauth")]
@@ -474,6 +476,42 @@ impl AutheryStore for MemoryStore {
             .filter(|p| p.user_id == *user_id)
             .cloned()
             .collect())
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn set_recovery_code_hashes(
+        &self,
+        user_id: &Uuid,
+        hashes: Vec<String>,
+    ) -> Result<(), MemoryStoreError> {
+        self.recovery.write().await.insert(*user_id, hashes);
+        Ok(())
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn consume_recovery_code_hash(
+        &self,
+        user_id: &Uuid,
+        hash: &str,
+    ) -> Result<bool, MemoryStoreError> {
+        let mut recovery = self.recovery.write().await;
+        let Some(hashes) = recovery.get_mut(user_id) else {
+            return Ok(false);
+        };
+        let before = hashes.len();
+        hashes.retain(|h| h != hash);
+        Ok(hashes.len() < before)
+    }
+
+    #[cfg(feature = "mfa")]
+    async fn count_recovery_codes(&self, user_id: &Uuid) -> Result<usize, MemoryStoreError> {
+        Ok(self
+            .recovery
+            .write()
+            .await
+            .get(user_id)
+            .map(Vec::len)
+            .unwrap_or(0))
     }
 
     #[cfg(feature = "password")]
