@@ -280,6 +280,19 @@
 //! their routes with `LoginMethodRules { require_mfa: true, .. }` instead
 //! (single-factor passkeys count: possession + user verification).
 //!
+//! # JSON clients
+//!
+//! The flows speak browser by default: outcomes are redirects, with errors
+//! riding `?error=` query params. Send `Accept: application/json` and the
+//! transport layer translates every flow redirect uniformly instead:
+//!
+//! - `200 {"next": "..."}` on success (plus `"message"` when one rides along)
+//! - `422 {"error": "...", "next": "..."}` on flow errors
+//!
+//! Cookies and the `X-Auth-Token` header behave identically, so a mobile
+//! client logs in by POSTing the same form with the JSON accept header,
+//! keeps the token, and sends it as `Authorization: Bearer` from then on.
+//!
 //! # Sessions & bearer tokens
 //!
 //! Sessions live in your store with CSPRNG ids, absolute expiry

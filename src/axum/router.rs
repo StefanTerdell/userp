@@ -64,6 +64,8 @@ where
             let shared = SharedCookieJar(Arc::new(Mutex::new(jar)));
             req.extensions_mut().insert(shared.clone());
 
+            let wants_json = wants_json(req.headers());
+
             let res = next.run(req).await;
 
             let jar = shared.0.lock().unwrap().clone();
@@ -84,9 +86,89 @@ where
                 res.headers_mut().insert("x-auth-token", value);
             }
 
+            if wants_json {
+                res = jsonify_redirect(res);
+            }
+
             res
         }
     }))
+}
+
+/// `Accept: application/json` (without `text/html` outranking it) marks an
+/// API client.
+fn wants_json(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|accept| accept.contains("application/json") && !accept.contains("text/html"))
+}
+
+/// The flows speak browser: outcomes are redirects, with errors and messages
+/// riding `?error=`/`?message=` query params. For JSON clients the transport
+/// layer translates that uniformly - EVERY flow redirect becomes:
+///
+/// - `200 {"next": "..."}` on success (with `"message"` when one rides along)
+/// - `422 {"error": "...", "next": "..."}` when the redirect carries an error
+///
+/// Cookies and the `X-Auth-Token` header are preserved, so bearer clients
+/// log in by POSTing the same forms with `Accept: application/json`.
+fn jsonify_redirect(res: axum::response::Response) -> axum::response::Response {
+    use axum::http::{StatusCode, header};
+
+    if !res.status().is_redirection() {
+        return res;
+    }
+
+    let Some(location) = res
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+    else {
+        return res;
+    };
+
+    let mut error = None;
+    let mut message = None;
+    if let Some(query) = location.split_once('?').map(|(_, q)| q) {
+        for pair in query.split('&') {
+            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+            let v = || urlencoding::decode(v).unwrap_or_default().into_owned();
+            match k {
+                "error" => error = Some(v()),
+                "message" => message = Some(v()),
+                _ => {}
+            }
+        }
+    }
+
+    let mut body = serde_json::Map::new();
+    body.insert("next".into(), location.clone().into());
+    if let Some(message) = message {
+        body.insert("message".into(), message.into());
+    }
+    let status = match &error {
+        Some(error) => {
+            body.insert("error".into(), error.clone().into());
+            StatusCode::UNPROCESSABLE_ENTITY
+        }
+        None => StatusCode::OK,
+    };
+
+    let (mut parts, _) = res.into_parts();
+    parts.status = status;
+    parts.headers.remove(header::LOCATION);
+    parts.headers.insert(
+        header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/json"),
+    );
+    parts.headers.remove(header::CONTENT_LENGTH);
+
+    axum::response::Response::from_parts(
+        parts,
+        axum::body::Body::from(serde_json::Value::Object(body).to_string()),
+    )
 }
 
 /// Guards against open redirects: only local paths pass through,

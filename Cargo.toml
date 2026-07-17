@@ -95,7 +95,7 @@ oauth = [
   "dep:jsonwebtoken",
 ]
 pages = ["dep:askama"]
-axum = ["dep:axum", "dep:axum-extra", "dep:urlencoding"]
+axum = ["dep:axum", "dep:axum-extra", "dep:urlencoding", "dep:serde_json"]
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
