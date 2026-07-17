@@ -32,8 +32,8 @@ Note the trailing slash (the redirect_uri builder appends it).
 
 ## SMS providers
 
-The `sms-providers` feature ships ready-made senders (Twilio, Vonage,
-MessageBird, Telnyx, 46elks); any `SmsSender` impl works too. The example
+The `sms` feature ships ready-made senders (Twilio, Vonage, MessageBird,
+Telnyx, 46elks); any `SmsSender` impl works too. The example
 wires up two of them by env, falling back to a dev sender that just prints
 the text to stdout (so SMS login is fully testable with no account at all —
 the code also shows up in the challenges on `/store`):

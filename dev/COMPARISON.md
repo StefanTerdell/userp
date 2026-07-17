@@ -64,7 +64,7 @@ assemble it · ❌ not offered · — not applicable
 1. ~~**TOTP**~~ — done: RFC 6238 with QR enrollment and a matched-step replay
    guard, slotted into the MFA factor model.
 2. ~~**SMS/phone OTP**~~ — done: vendor-neutral `SmsSender` trait, five
-   built-in gateway senders behind `sms-providers`, login/signup/MFA flows.
+   built-in gateway senders included with the feature, login/signup/MFA flows.
 3. ~~**Bearer session mode**~~ — done: opaque session ids via
    `Authorization: Bearer` + `X-Auth-Token`, opt-in. (A stateless *JWT* mode
    remains deliberately unbuilt — server-side revocable tokens only.)

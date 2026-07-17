@@ -12,7 +12,6 @@
 //! proved possession). Store numbers in a canonical form (E.164) - authery
 //! compares them verbatim.
 
-#[cfg(feature = "sms-providers")]
 pub mod providers;
 
 use crate::codes::generate_code;

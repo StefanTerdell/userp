@@ -1,5 +1,4 @@
-//! Ready-made [`SmsSender`] implementations for popular SMS providers
-//! (enabled by the `sms-providers` feature, which pulls in an HTTP client).
+//! Ready-made [`SmsSender`] implementations for popular SMS providers.
 //! Each is a thin call to the provider's HTTP API - bring your own
 //! implementation for anything not covered, or for provider SDKs.
 //!

@@ -69,7 +69,7 @@ pub use crate::routes::mfa::MfaRoutes;
 pub use crate::routes::sms::SmsActionRoutes;
 #[cfg(feature = "webauthn")]
 pub use crate::routes::webauthn::WebauthnRoutes;
-#[cfg(feature = "sms-providers")]
+#[cfg(feature = "sms")]
 pub use crate::sms::providers::*;
 #[cfg(feature = "sms")]
 pub use crate::sms::{SmsConfig, SmsInitError, SmsSendFuture, SmsSender, SmsVerifyError};

@@ -19,6 +19,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt -p authery --check
       - run: cargo clippy -p authery --all-features -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-rdme
+      # README.md is generated from the crate docs in src/lib.rs.
+      - run: cargo rdme --check
 
   feature-matrix:
     runs-on: ubuntu-latest
@@ -34,7 +39,6 @@ jobs:
           - "totp,mfa,password"
           - "sms"
           - "sms,mfa"
-          - "sms-providers"
           - "oauth,axum,pages"
           - "oauth,axum,pages,user,email,password,otp,webauthn,mfa,totp,sms"
     steps:
