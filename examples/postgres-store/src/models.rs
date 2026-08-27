@@ -97,6 +97,8 @@ pub struct PgSession {
     pub method: Json<LoginMethod>,
     pub expires: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
 }
 
 impl LoginSession for PgSession {
@@ -121,6 +123,14 @@ impl LoginSession for PgSession {
 
     fn get_last_seen(&self) -> Option<DateTime<Utc>> {
         Some(self.last_seen)
+    }
+
+    fn get_user_agent(&self) -> Option<&str> {
+        self.user_agent.as_deref()
+    }
+
+    fn get_ip_address(&self) -> Option<&str> {
+        self.ip_address.as_deref()
     }
 }
 

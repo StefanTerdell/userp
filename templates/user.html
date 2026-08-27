@@ -50,10 +50,18 @@
       <div class="session-item">
         <div>
           <strong>{{ session.method }}</strong>
+          {% if let Some(user_agent) = session.user_agent %}
+          <p class="text-muted">{{ user_agent }}</p>
+          {% endif %}
+          {% if let Some(ip) = session.ip_address %}
+          <p class="text-muted">{{ ip }}</p>
+          {% endif %}
           {% if session_id == session.id %}
           <p class="text-muted">⭐ Current session</p>
+          {% else if let Some(last_seen) = session.last_seen %}
+          <p class="text-muted">Last active: {{ last_seen.format("%-d %b %Y %H:%M") }} UTC</p>
           {% else %}
-          <p class="text-muted">Last active: Unknown</p>
+          <p class="text-muted">Expires: {{ session.expires.format("%-d %b %Y") }}</p>
           {% endif %}
         </div>
         <form action="{{ session_delete_action_route }}" method="post" class="form">
@@ -62,6 +70,11 @@
         </form>
       </div>
       {% endfor %}
+      {% if sessions.len() > 1 %}
+      <form action="{{ sessions_delete_others_action_route }}" method="post" class="form">
+        <button type="submit" class="social-button">Sign out everywhere else</button>
+      </form>
+      {% endif %}
     </div>
   </div>
 
@@ -75,7 +88,7 @@
           <strong>{{ email.address }}</strong>
           <div>
             {% if email.verified %}
-            <span class="badge badge-verified">Verified</span>
+            <span class="badge badge-verified">Verified{% if let Some(at) = email.verified_at %} {{ at.format("%-d %b %Y") }}{% endif %}</span>
             {% else %}
             <span class="badge" onclick="verifyEmail('{{ email.address }}')">Not verified - click to verify</span>
             {% endif %}
@@ -150,7 +163,8 @@
       <form action="{{ password.set_action_route }}" method="post" class="form">
         <h3>Set New Password</h3>
         <div class="single-field-form">
-          <input type="password" name="new_password" placeholder="New password" required>
+          <input type="password" name="new_password" placeholder="New password" autocomplete="new-password"
+            {% if let Some(pattern) = password.pattern %}pattern="{{ pattern }}" {% endif %}required>
           {% if password.has_password %}
           <button type="submit">Change password</button>
           {% else %}
@@ -169,6 +183,12 @@
       {% for token in oauth.tokens %}
       <div class="social-item">
         <strong>{{ token.provider_name }}</strong>
+        {% if let Some(scopes) = token.scopes %}
+        <span class="text-muted">{{ scopes.join(", ") }}</span>
+        {% endif %}
+        {% if let Some(created) = token.created %}
+        <span class="text-muted">linked {{ created.format("%-d %b %Y") }}</span>
+        {% endif %}
         <form action="{{ oauth.delete_action_route }}" method="post" class="form" style="display: inline;">
           <input type="hidden" value="{{ token.id }}" name="id" />
           <button type="submit">Disconnect</button>
@@ -194,18 +214,26 @@
   <div id="passkeys" class="tab">
     <div class="section">
       <h2>Passkeys</h2>
-      {% for cred_id in webauthn.credential_ids %}
+      {% for passkey in webauthn.passkeys %}
       <div class="session-item">
         <div>
-          <strong><code>{{ cred_id }}</code></strong>
+          {% if let Some(name) = passkey.name %}
+          <strong>{{ name }}</strong>
+          {% else %}
+          <strong><code>{{ passkey.credential_id }}</code></strong>
+          {% endif %}
+          <p class="text-muted">Added {{ passkey.created.format("%-d %b %Y") }}{% if let Some(used) = passkey.last_used %} · last used {{ used.format("%-d %b %Y") }}{% endif %}</p>
         </div>
         <form action="{{ webauthn.delete_action_route }}" method="post" class="form">
-          <input type="hidden" value="{{ cred_id }}" name="credential_id" />
+          <input type="hidden" value="{{ passkey.credential_id }}" name="credential_id" />
           <button type="submit">Delete</button>
         </form>
       </div>
       {% endfor %}
-      <button type="button" id="add-passkey-button">Add a passkey</button>
+      <div class="single-field-form">
+        <input type="text" id="passkey-name" placeholder="Name this passkey (optional)" maxlength="64">
+        <button type="button" id="add-passkey-button">Add a passkey</button>
+      </div>
       <div class="error" id="add-passkey-error" role="alert" style="display: none;"></div>
     </div>
   </div>
@@ -235,7 +263,10 @@
           var res = await fetch('{{ webauthn.register_start_route }}', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ display_name: displayName })
+            body: JSON.stringify({
+              display_name: displayName,
+              name: document.getElementById('passkey-name').value || null
+            })
           });
           var ccr = await res.json();
           if (!res.ok) { return fail(ccr.error || res.status); }

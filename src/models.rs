@@ -83,6 +83,10 @@ pub enum LoginMethod {
     #[cfg(feature = "mfa")]
     /// A single-use recovery code was consumed - as an MFA second factor
     RecoveryCode,
+    #[cfg(feature = "mfa")]
+    /// A device the user chose to trust stood in for the second factor
+    /// ([`MfaPolicy::trusted_device_lifetime`](crate::mfa::MfaPolicy::trusted_device_lifetime))
+    TrustedDevice,
     #[cfg(feature = "sms")]
     /// The login session was created with a one-time code sent by SMS
     Sms {
@@ -201,6 +205,49 @@ pub struct TotpCredential {
     pub last_used_step: Option<u64>,
 }
 
+/// Request details recorded when a session is created, for the account
+/// page's device list. Populated by the transport layer; empty in core-only
+/// use.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionMeta {
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
+}
+
+/// A stored passkey plus the metadata the account page shows.
+#[cfg(feature = "webauthn")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasskeyRecord {
+    pub passkey: webauthn_rs::prelude::Passkey,
+    /// User-chosen label, e.g. "Laptop Touch ID".
+    pub name: Option<String>,
+    pub created: chrono::DateTime<chrono::Utc>,
+    pub last_used: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(feature = "webauthn")]
+impl PasskeyRecord {
+    pub fn new(passkey: webauthn_rs::prelude::Passkey, name: Option<String>) -> Self {
+        Self {
+            passkey,
+            name: name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()),
+            created: chrono::Utc::now(),
+            last_used: None,
+        }
+    }
+
+    pub fn credential_id(&self) -> &[u8] {
+        self.passkey.cred_id().as_slice()
+    }
+
+    pub fn credential_id_hex(&self) -> String {
+        self.credential_id()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+}
+
 pub trait LoginSession: Send + Sync + Sized {
     type Id: Id;
     type UserId: Id;
@@ -208,6 +255,16 @@ pub trait LoginSession: Send + Sync + Sized {
     fn get_id(&self) -> Self::Id;
     fn get_user_id(&self) -> Self::UserId;
     fn get_method(&self) -> LoginMethod;
+
+    /// The `User-Agent` the session was created with, if stored.
+    fn get_user_agent(&self) -> Option<&str> {
+        None
+    }
+
+    /// The client address the session was created from, if stored.
+    fn get_ip_address(&self) -> Option<&str> {
+        None
+    }
 
     /// When this session expires. Also used to order sessions by age when
     /// enforcing the concurrent-session cap (all sessions share one lifetime,
@@ -240,6 +297,12 @@ pub trait User: Send + Sync + Sized {
 
 pub trait AutheryCookies {
     fn add(&mut self, key: &str, value: &str);
+    /// Like [`add`](Self::add) but the cookie outlives the browser session by
+    /// `max_age`. The default ignores `max_age`.
+    fn add_persistent(&mut self, key: &str, value: &str, max_age: chrono::Duration) {
+        let _ = max_age;
+        self.add(key, value);
+    }
     fn get(&self, key: &str) -> Option<String>;
     fn remove(&mut self, key: &str);
     fn list_encoded(&self) -> Vec<String>;

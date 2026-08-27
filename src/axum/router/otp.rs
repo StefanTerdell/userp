@@ -27,19 +27,21 @@ where
     St::Error: IntoResponse,
 {
     let otp_route = auth.routes.email.login_otp.clone();
-    let login_route = auth.routes.pages.login.clone();
+    let routes = auth.routes.clone();
 
     match code {
-        None => match auth.otp_login_init(email.clone(), next).await {
+        None => match auth.otp_login_init(email.clone(), next.clone()).await {
             Ok(()) => Ok(Redirect::to(&format!(
                 "{otp_route}?address={}&message=Code sent!",
                 urlencoding::encode(&email)
             ))
             .into_response()),
             Err(OtpInitError::SendingEmail(SendEmailChallengeError::Store(err))) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{login_route}?error={}",
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.login,
+                next.as_deref(),
             ))
             .into_response()),
         },
@@ -56,10 +58,11 @@ where
                 Ok((auth, Redirect::to(&next)).into_response())
             }
             Err(OtpVerifyError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{otp_route}?address={}&error={}",
-                urlencoding::encode(&email),
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &format!("{otp_route}?address={}", urlencoding::encode(&email)),
+                next.as_deref(),
             ))
             .into_response()),
         },
@@ -75,19 +78,21 @@ where
     St::Error: IntoResponse,
 {
     let otp_route = auth.routes.email.signup_otp.clone();
-    let signup_route = auth.routes.pages.signup.clone();
+    let routes = auth.routes.clone();
 
     match code {
-        None => match auth.otp_signup_init(email.clone(), next).await {
+        None => match auth.otp_signup_init(email.clone(), next.clone()).await {
             Ok(()) => Ok(Redirect::to(&format!(
                 "{otp_route}?address={}&message=Code sent!",
                 urlencoding::encode(&email)
             ))
             .into_response()),
             Err(OtpInitError::SendingEmail(SendEmailChallengeError::Store(err))) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{signup_route}?error={}",
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.signup,
+                next.as_deref(),
             ))
             .into_response()),
         },
@@ -104,10 +109,11 @@ where
                 Ok((auth, Redirect::to(&next)).into_response())
             }
             Err(OtpVerifyError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{otp_route}?address={}&error={}",
-                urlencoding::encode(&email),
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &format!("{otp_route}?address={}", urlencoding::encode(&email)),
+                next.as_deref(),
             ))
             .into_response()),
         },

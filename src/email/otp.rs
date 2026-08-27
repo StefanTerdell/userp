@@ -34,6 +34,15 @@ pub enum OtpInitError<StoreError: std::error::Error> {
     NotAllowed,
 }
 
+impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for OtpInitError<E> {
+    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
+        match self {
+            Self::SendingEmail(inner) => inner.rate_limited(),
+            Self::NotAllowed => None,
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum OtpVerifyError<StoreError: std::error::Error> {
     #[error("Otp login not allowed")]
@@ -49,6 +58,8 @@ pub enum OtpVerifyError<StoreError: std::error::Error> {
     #[error(transparent)]
     Store(#[from] StoreError),
 }
+
+crate::ratelimit::impl_maybe_rate_limited!(OtpVerifyError, RateLimited);
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     fn emit_otp_code_rejected(&self, address: &str) {

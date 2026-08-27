@@ -16,6 +16,39 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+/// The "check your inbox" page for a link that was just sent.
+fn email_sent_url(
+    routes: &crate::routes::Routes<String>,
+    purpose: &str,
+    address: &str,
+    next: Option<&str>,
+) -> String {
+    let mut url = format!(
+        "{}?purpose={purpose}&address={}&message={}",
+        routes.pages.email_sent,
+        urlencoding::encode(address),
+        urlencoding::encode("Link sent")
+    );
+    if let Some(next) = next {
+        url.push_str(&format!("&next={}", urlencoding::encode(next)));
+    }
+    url
+}
+
+/// The "link expired" page, carrying `error` so JSON clients get a 422.
+fn email_expired_url(
+    routes: &crate::routes::Routes<String>,
+    purpose: &str,
+    address: &str,
+) -> String {
+    format!(
+        "{}?purpose={purpose}&address={}&error={}",
+        routes.pages.email_expired,
+        urlencoding::encode(address),
+        urlencoding::encode("Link expired")
+    )
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmailNextForm {
     pub email: String,
@@ -40,26 +73,22 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let login_route = auth.routes.pages.login.clone();
+    let routes = auth.routes.clone();
 
-    match auth.email_login_init(email.clone(), next).await {
-        Ok(()) => {
-            let next = format!(
-                "{login_route}?message=Login link sent to {}!",
-                urlencoding::encode(&email)
-            );
-
-            Ok(Redirect::to(&next).into_response())
-        }
+    match auth.email_login_init(email.clone(), next.clone()).await {
+        Ok(()) => Ok(
+            Redirect::to(&email_sent_url(&routes, "login", &email, next.as_deref()))
+                .into_response(),
+        ),
         Err(err) => match err {
             EmailLoginInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
-            _ => {
-                let next = format!(
-                    "{login_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
+            _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.login,
+                next.as_deref(),
+            ))
+            .into_response()),
         },
     }
 }
@@ -73,6 +102,7 @@ where
     St::Error: IntoResponse,
 {
     let login_route = auth.routes.pages.login.clone();
+    let routes = auth.routes.clone();
 
     match auth.email_login_callback(code).await {
         Ok((auth, next)) => {
@@ -88,6 +118,9 @@ where
         Err(err) => match err {
             EmailLoginCallbackError::Store(err) => Err(err),
             EmailLoginCallbackError::EmailLoginError(EmailLoginError::Store(err)) => Err(err),
+            EmailLoginCallbackError::ChallengeExpired { address } => {
+                Ok(Redirect::to(&email_expired_url(&routes, "login", &address)).into_response())
+            }
             _ => {
                 let next = format!(
                     "{login_route}?error={}",
@@ -107,26 +140,22 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let signup_route = auth.routes.pages.signup.clone();
+    let routes = auth.routes.clone();
 
-    match auth.email_signup_init(email.clone(), next).await {
-        Ok(()) => {
-            let next = format!(
-                "{signup_route}?message=Signup email sent to {}!",
-                urlencoding::encode(&email)
-            );
-
-            Ok(Redirect::to(&next).into_response())
-        }
+    match auth.email_signup_init(email.clone(), next.clone()).await {
+        Ok(()) => Ok(
+            Redirect::to(&email_sent_url(&routes, "signup", &email, next.as_deref()))
+                .into_response(),
+        ),
         Err(err) => match err {
             EmailSignupInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
-            _ => {
-                let next = format!(
-                    "{signup_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
+            _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.signup,
+                next.as_deref(),
+            ))
+            .into_response()),
         },
     }
 }
@@ -140,6 +169,7 @@ where
     St::Error: IntoResponse,
 {
     let signup_route = auth.routes.pages.signup.clone();
+    let routes = auth.routes.clone();
 
     match auth.email_signup_callback(code).await {
         Ok((auth, next)) => {
@@ -154,6 +184,9 @@ where
         }
         Err(err) => match err {
             EmailSignupCallbackError::Store(err) => Err(err),
+            EmailSignupCallbackError::ChallengeExpired { address } => {
+                Ok(Redirect::to(&email_expired_url(&routes, "signup", &address)).into_response())
+            }
             _ => {
                 let next = format!(
                     "{signup_route}?error={}",
@@ -203,6 +236,9 @@ where
         }
         Err(err) => match err {
             EmailVerifyCallbackError::Store(err) => Err(err),
+            EmailVerifyCallbackError::ChallengeExpired { address } => Ok(Redirect::to(
+                &email_expired_url(&auth.routes, "verify", &address),
+            )),
             _ => {
                 let next = format!(
                     "{login_route}?error={}",
@@ -243,13 +279,13 @@ where
         Err(err) => match err {
             EmailVerifyInitError::Store(err)
             | EmailVerifyInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
-            _ => {
-                let next = format!(
-                    "{user_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
+            _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &auth.routes,
+                &err,
+                &user_route,
+                None,
+            ))
+            .into_response()),
         },
     }
 }
@@ -265,12 +301,14 @@ where
 {
     let password_send_reset_route = auth.routes.pages.password_send_reset.clone();
 
+    let routes = auth.routes.clone();
+
     if let Err(err) = auth.email_reset_init(email.clone(), next).await {
-        let next = format!(
-            "{password_send_reset_route}?error={}&address={}",
-            urlencoding::encode(&err.to_string()),
+        let fallback = format!(
+            "{password_send_reset_route}?address={}",
             urlencoding::encode(&email)
         );
+        let next = crate::axum::router::error_redirect(&routes, &err, &fallback, None);
 
         Ok(Redirect::to(&next).into_response())
     } else {
@@ -295,15 +333,26 @@ where
     use crate::models::{LoginSession, User};
 
     if let Some((user, session)) = auth.reset_user_session().await? {
-        let new_password_hash = auth.pass.hasher.generate_hash(new_password).await;
+        let new_password_hash = match auth.new_password_hash(&new_password).await {
+            Ok(hash) => hash,
+            Err(err) => {
+                return Ok(Redirect::to(&format!(
+                    "{}?error={}",
+                    auth.routes.pages.password_reset,
+                    urlencoding::encode(&err.to_string())
+                ))
+                .into_response());
+            }
+        };
         auth.store
             .set_user_password_hash(&user.get_id(), new_password_hash, &session.get_id())
             .await?;
 
         let login_route = auth.routes.pages.login.clone();
 
-        // The reset session is single-use - drop it now that the password is set.
-        let auth = auth.log_out().await?;
+        // A reset means the old credential may be compromised: end every
+        // session, the single-use reset session included.
+        let auth = auth.log_out_everywhere().await?;
 
         Ok((
             auth,
@@ -326,6 +375,8 @@ where
 {
     use crate::email::reset::{EmailResetCallbackError, EmailResetError};
 
+    let routes = auth.routes.clone();
+
     let login_route = auth.routes.pages.login.clone();
 
     match auth.email_reset_callback(query.code).await {
@@ -337,6 +388,9 @@ where
         Err(err) => match err {
             EmailResetCallbackError::Store(err) => Err(err),
             EmailResetCallbackError::EmailResetError(EmailResetError::Store(err)) => Err(err),
+            EmailResetCallbackError::ChallengeExpired { address } => {
+                Ok(Redirect::to(&email_expired_url(&routes, "reset", &address)).into_response())
+            }
             _ => Ok(Redirect::to(&format!(
                 "{login_route}?err={}",
                 urlencoding::encode(&err.to_string())

@@ -124,7 +124,7 @@ response.
 | `email` | Everything email: magic links, one-time codes, verification, password reset (with `password`); async SMTP. Links and codes can each be withheld by config | user-email entities, single-use challenges |
 | `sms` | Texted six-digit codes: login, signup, MFA; five ready-made gateway senders or bring-your-own `SmsSender` | user-phone entities (challenges shared with `email`) |
 | `oauth` | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution | oauth token entities & lookups |
-| `webauthn` | Passkeys: usernameless login, account-page registration | passkey blobs keyed by credential id |
+| `webauthn` | Passkeys: usernameless login, account-page registration | passkey records keyed by credential id |
 | `totp` | Authenticator-app codes (RFC 6238) as a second factor, QR enrollment | one TOTP credential per user |
 | `mfa` | Second-factor policy over any first factor; single-use recovery codes | recovery-code hashes |
 | `pages` | Bundled Askama pages + the `Pages` replacement trait | - |
@@ -176,7 +176,9 @@ each.
 on a blocking thread pool; swap the hasher with `.with_hasher(...)`.
 Login is enumeration-resistant: unknown users and wrong passwords return
 the same error, and comparable hash work is burned on the miss paths so
-timing doesn't reveal account existence.
+timing doesn't reveal account existence. New passwords must match
+`.with_pattern(...)` - a regex plus a hint, handed to the pages as the
+input's `pattern` attribute (default: at least 8 characters).
 
 With `email` also enabled, password reset works over emailed links
 (`.with_allow_reset(...)`, verified-only by default). Reset links create
@@ -246,10 +248,11 @@ Two ceremonies wired end to end (JSON endpoints + inline page scripts):
 registration from the account page (resident keys required) and
 usernameless login - authery resolves the credential and user by
 credential id, so your user-id type is never embedded in authenticator
-hardware. Credentials are stored as opaque `Passkey` blobs; signature
-counters and backup state are persisted after each login for clone
-detection. Ceremony state rides the encrypted cookie jar, keyed per
-ceremony.
+hardware. Credentials are stored as `PasskeyRecord`s - the opaque
+`Passkey` blob plus an optional user-chosen name, creation and last-used
+times; signature counters and backup state are persisted after each login
+for clone detection. Ceremony state rides the encrypted cookie jar, keyed
+per ceremony.
 
 ### Authenticator apps (`totp`)
 
@@ -284,6 +287,11 @@ request, and never the channel the first factor already proved), or a
 single-use recovery code. Completing it mints a session whose method
 records both factors.
 
+Completing MFA can also mark the browser as trusted
+(`MfaPolicy::trusted_device_lifetime`, off by default): later logins from
+it skip the challenge for that long, recorded as `LoginMethod::TrustedDevice`
+in the session's second factor, so `LoginMethodRules` can still tell.
+
 Recovery codes are the lockout escape hatch: the account page generates a
 batch of ten (shown exactly once; only SHA-256 hashes reach your store),
 each usable a single time. Generating a new batch replaces the old one.
@@ -316,6 +324,12 @@ requires the store to track activity via `LoginSession::get_last_seen`
 and `touch_session`; touches are throttled to once a minute). Logout is
 POST-only.
 
+Each new session carries a `SessionMeta` (user agent, and the client
+address from `with_client_ip_header` or axum's `ConnectInfo`) for the
+account page's device list; stores may ignore it. Users can end every
+other session from the account page, and a password reset ends all of
+them.
+
 Rotating the cookie-encryption key doesn't have to be a mass logout:
 `.with_previous_keys([old_key])` accepts cookies sealed under previous
 keys during a grace window and re-encrypts them with the current key on
@@ -333,7 +347,8 @@ and secret scanners, GitHub-`ghp_` style.
 ## Pages
 
 The `pages` feature bundles plain Askama templates for login, signup, the
-account page, password reset, code entry and the MFA picker. Restyle
+account page, password reset, code entry, the MFA picker, "check your
+inbox", expired links and rate-limit refusals. Restyle
 them, or implement the `Pages` trait to render the same
 view-models with your own templating - you keep the router and flows
 while owning the markup. Or skip `pages` entirely and the router serves

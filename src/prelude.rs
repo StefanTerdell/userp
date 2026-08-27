@@ -58,7 +58,9 @@ pub use crate::models::email::EmailChallenge;
 pub use crate::models::email::*;
 #[cfg(feature = "oauth")]
 pub use crate::models::oauth::*;
-pub use crate::models::{Allow, AutheryCookies, LoginMethod, LoginMethodRules, LoginSession, User};
+pub use crate::models::{
+    Allow, AutheryCookies, LoginMethod, LoginMethodRules, LoginSession, SessionMeta, User,
+};
 
 #[cfg(any(feature = "email", feature = "sms"))]
 pub use crate::codes::{CodeGenerator, NumericCode};
@@ -85,4 +87,4 @@ pub use crate::sms::{
 pub use crate::totp::{TotpConfig, TotpEnrollment, TotpError};
 #[cfg(feature = "webauthn")]
 pub use crate::webauthn::{WebauthnConfig, WebauthnLoginError, WebauthnRegisterError};
-pub use crate::{Authery, config::*, constants::*, core::*, store::*};
+pub use crate::{Authery, config::*, cookie_names::*, core::*, store::*};

@@ -33,11 +33,14 @@ pub trait AutheryStore: Send + Sync {
         &self,
         user_id: &Self::UserId,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
+    /// `meta` carries the request's user agent and address for the device
+    /// list; stores may ignore it.
     fn create_session(
         &self,
         user_id: &Self::UserId,
         method: LoginMethod,
         expires: DateTime<Utc>,
+        meta: crate::models::SessionMeta,
     ) -> impl Future<Output = Result<Self::LoginSession, Self::Error>> + Send;
     fn get_session(
         &self,
@@ -91,14 +94,14 @@ pub trait AutheryStore: Send + Sync {
 
     // webauthn store
     //
-    // Passkeys are stored as opaque `webauthn_rs::prelude::Passkey` blobs
+    // Passkeys are stored as [`PasskeyRecord`](crate::models::PasskeyRecord)s
     // (serde-serializable) keyed by their credential id and owning user.
     /// Persist a newly registered passkey for the user.
     #[cfg(feature = "webauthn")]
     fn create_passkey(
         &self,
         user_id: &Self::UserId,
-        passkey: webauthn_rs::prelude::Passkey,
+        passkey: crate::models::PasskeyRecord,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// All of the user's passkeys (used to exclude re-registration and for
     /// listing on the account page).
@@ -106,22 +109,22 @@ pub trait AutheryStore: Send + Sync {
     fn get_passkeys(
         &self,
         user_id: &Self::UserId,
-    ) -> impl Future<Output = Result<Vec<webauthn_rs::prelude::Passkey>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<crate::models::PasskeyRecord>, Self::Error>> + Send;
     /// Look up a passkey - and the user owning it - by raw credential id.
     #[cfg(feature = "webauthn")]
     fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
     ) -> impl Future<
-        Output = Result<Option<(Self::UserId, webauthn_rs::prelude::Passkey)>, Self::Error>,
+        Output = Result<Option<(Self::UserId, crate::models::PasskeyRecord)>, Self::Error>,
     > + Send;
-    /// Replace the stored passkey blob (called after logins to persist
-    /// counter updates and backup-state changes).
+    /// Replace the stored record (called after logins to persist counter
+    /// updates, backup-state changes and `last_used`).
     #[cfg(feature = "webauthn")]
     fn update_passkey(
         &self,
         user_id: &Self::UserId,
-        passkey: webauthn_rs::prelude::Passkey,
+        passkey: crate::models::PasskeyRecord,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Delete a passkey owned by the user.
     #[cfg(all(feature = "webauthn", feature = "user"))]

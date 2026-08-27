@@ -172,6 +172,10 @@ async fn main() {
     .with_https_only(false)
     .with_rate_limiter(FixedWindowRateLimiter::default())
     .with_max_concurrent_sessions(3)
+    .with_mfa_policy(MfaPolicy {
+        trusted_device_lifetime: Some(authery::reexports::chrono::Duration::days(30)),
+        ..Default::default()
+    })
     .with_bearer_auth(true)
     .with_bearer_token_prefix("authery_");
 

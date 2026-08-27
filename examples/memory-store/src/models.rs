@@ -95,6 +95,7 @@ pub struct MyLoginSession {
     pub method: LoginMethod,
     pub expires: DateTime<Utc>,
     pub last_seen: Option<DateTime<Utc>>,
+    pub meta: SessionMeta,
 }
 
 impl LoginSession for MyLoginSession {
@@ -119,6 +120,14 @@ impl LoginSession for MyLoginSession {
 
     fn get_last_seen(&self) -> Option<DateTime<Utc>> {
         self.last_seen
+    }
+
+    fn get_user_agent(&self) -> Option<&str> {
+        self.meta.user_agent.as_deref()
+    }
+
+    fn get_ip_address(&self) -> Option<&str> {
+        self.meta.ip_address.as_deref()
     }
 }
 
@@ -175,6 +184,10 @@ impl OAuthToken for MyOAuthToken {
 
     fn get_user_id(&self) -> Uuid {
         self.user_id
+    }
+
+    fn get_scopes(&self) -> Option<Vec<String>> {
+        Some(self.scopes.clone())
     }
 
     fn get_provider_name(&self) -> &str {

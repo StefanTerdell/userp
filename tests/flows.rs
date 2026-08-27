@@ -21,10 +21,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 #[tokio::test]
 async fn password_login_happy_path() {
     let store = TestStore::default();
-    let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+    let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     let logged_in = auth(&store)
-        .password_login("alice@x.com", "hunter2")
+        .password_login("alice@x.com", "hunter2-hunter2")
         .await
         .unwrap();
 
@@ -37,7 +37,7 @@ async fn password_login_happy_path() {
 #[tokio::test]
 async fn password_login_does_not_reveal_user_existence() {
     let store = TestStore::default();
-    store.seed_user("alice@x.com", Some("hunter2"));
+    store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     let wrong_password = auth(&store)
         .password_login("alice@x.com", "nope")
@@ -56,13 +56,13 @@ async fn password_login_does_not_reveal_user_existence() {
 #[tokio::test]
 async fn expired_sessions_are_logged_out_and_evicted() {
     let store = TestStore::default();
-    let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+    let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     let mut builder = AuthBuilder::new(store.clone());
     builder.session_lifetime = Duration::seconds(-1); // born expired
     let logged_in = builder
         .build()
-        .password_login("alice@x.com", "hunter2")
+        .password_login("alice@x.com", "hunter2-hunter2")
         .await
         .unwrap();
 
@@ -75,13 +75,13 @@ async fn expired_sessions_are_logged_out_and_evicted() {
 #[tokio::test]
 async fn idle_timeout_evicts_and_touches() {
     let store = TestStore::default();
-    let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+    let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     let mut builder = AuthBuilder::new(store.clone());
     builder.idle_timeout = Some(Duration::hours(1));
     let logged_in = builder
         .build()
-        .password_login("alice@x.com", "hunter2")
+        .password_login("alice@x.com", "hunter2-hunter2")
         .await
         .unwrap();
 
@@ -115,14 +115,14 @@ async fn idle_timeout_evicts_and_touches() {
 #[tokio::test]
 async fn session_cap_evicts_oldest() {
     let store = TestStore::default();
-    let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+    let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     for _ in 0..3 {
         let mut builder = AuthBuilder::new(store.clone());
         builder.max_concurrent_sessions = Some(2);
         builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
     }
@@ -157,7 +157,7 @@ impl RateLimiter for CountingLimiter {
 #[tokio::test]
 async fn rate_limiter_blocks_password_attempts() {
     let store = TestStore::default();
-    store.seed_user("alice@x.com", Some("hunter2"));
+    store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     let limiter = Arc::new(CountingLimiter {
         attempts: AtomicU32::new(0),
@@ -294,7 +294,7 @@ fn mfa_for_password() -> MfaPolicy {
 #[tokio::test]
 async fn mfa_policy_creates_pending_session_and_otp_upgrades_it() {
     let store = TestStore::default();
-    let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+    let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
     // The user has a verified email, so a second factor is available and the
     // password login must be downgraded to a pending session.
@@ -302,7 +302,7 @@ async fn mfa_policy_creates_pending_session_and_otp_upgrades_it() {
     builder.mfa_policy = mfa_for_password();
     let pending = builder
         .build()
-        .password_login("alice@x.com", "hunter2")
+        .password_login("alice@x.com", "hunter2-hunter2")
         .await
         .unwrap();
 
@@ -349,7 +349,7 @@ async fn mfa_policy_skips_users_without_a_second_factor() {
     builder.mfa_policy = mfa_for_password();
     let logged_in = builder
         .build()
-        .password_signup("fresh@x.com", "hunter2")
+        .password_signup("fresh@x.com", "hunter2-hunter2")
         .await
         .unwrap();
 
@@ -390,6 +390,71 @@ fn login_method_rules_judge_first_factor_and_mfa() {
     }));
 }
 
+/// New passwords must meet the configured minimum length; existing short
+/// passwords still log in.
+#[tokio::test]
+async fn short_passwords_are_rejected_on_signup_and_reset() {
+    use authery::password::signup::PasswordSignupError;
+
+    let store = TestStore::default();
+    let err = auth(&store)
+        .password_signup("fresh@x.com", "short")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, PasswordSignupError::Rejected(_)));
+    assert_eq!(
+        err.to_string(),
+        "Password does not meet the requirements: At least 8 characters"
+    );
+    assert!(store.users.lock().unwrap().is_empty(), "no user created");
+
+    store.seed_user("alice@x.com", Some("short"));
+    auth(&store)
+        .password_login("alice@x.com", "short")
+        .await
+        .expect("existing short passwords still log in");
+}
+
+/// "Sign out everywhere else" keeps the current session only; a password
+/// reset ends every session including the reset one.
+#[tokio::test]
+async fn sessions_can_be_ended_in_bulk() {
+    let store = TestStore::default();
+    let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
+
+    let _other = auth(&store)
+        .password_login("alice@x.com", "hunter2-hunter2")
+        .await
+        .unwrap();
+    let _another = auth(&store)
+        .password_login("alice@x.com", "hunter2-hunter2")
+        .await
+        .unwrap();
+    let current = auth(&store)
+        .password_login("alice@x.com", "hunter2-hunter2")
+        .await
+        .unwrap();
+    assert_eq!(store.session_count(user_id), 3);
+
+    assert_eq!(current.log_out_other_sessions().await.unwrap(), Some(2));
+    assert_eq!(store.session_count(user_id), 1);
+    assert!(current.session().await.unwrap().is_some(), "current kept");
+
+    let _rebuilt = auth(&store)
+        .password_login("alice@x.com", "hunter2-hunter2")
+        .await
+        .unwrap();
+    assert_eq!(store.session_count(user_id), 2);
+    let everywhere = current.log_out_everywhere().await.unwrap();
+    assert_eq!(store.session_count(user_id), 0);
+    assert!(everywhere.session().await.unwrap().is_none());
+    assert_eq!(
+        auth(&store).log_out_other_sessions().await.unwrap(),
+        None,
+        "not logged in"
+    );
+}
+
 #[cfg(feature = "sms")]
 mod sms_tests {
     use super::*;
@@ -401,7 +466,7 @@ mod sms_tests {
     #[tokio::test]
     async fn sms_gateway_errors_are_generic_to_the_user_and_reported_to_the_hook() {
         let store = TestStore::default();
-        let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+        let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
         store.seed_phone(user_id, "+46701234567");
 
         let mut builder = AuthBuilder::new(store.clone());
@@ -448,7 +513,7 @@ mod sms_tests {
     #[tokio::test]
     async fn sms_login_init_and_verify() {
         let store = TestStore::default();
-        let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+        let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
         store.seed_phone(user_id, "+46701234567");
 
         let builder = AuthBuilder::new(store.clone());
@@ -534,7 +599,7 @@ mod sms_tests {
         // Signup creates an UNVERIFIED email, so the phone is the user's
         // only second factor.
         let signed_up = auth(&store)
-            .password_signup("alice@x.com", "hunter2")
+            .password_signup("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         let user_id = signed_up
@@ -550,7 +615,7 @@ mod sms_tests {
         let _sender = builder.sms_sender.clone();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         assert!(pending.session().await.unwrap().is_none(), "pending");
@@ -573,7 +638,7 @@ mod sms_tests {
         let sender = builder.sms_sender.clone();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         pending.mfa_sms_init().await.unwrap();
@@ -605,7 +670,7 @@ mod recovery_tests {
         // Password signup: unverified email, so recovery codes will be the
         // user's only second factor.
         let logged_in = auth(&store)
-            .password_signup("alice@x.com", "hunter2")
+            .password_signup("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         let codes = logged_in.recovery_codes_generate().await.unwrap();
@@ -616,7 +681,7 @@ mod recovery_tests {
         builder.mfa_policy = mfa_for_password();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         assert!(pending.session().await.unwrap().is_none(), "pending");
@@ -633,7 +698,7 @@ mod recovery_tests {
         builder.mfa_policy = mfa_for_password();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         let messy = codes[0].to_uppercase().replace('-', " ");
@@ -651,7 +716,7 @@ mod recovery_tests {
         builder.mfa_policy = mfa_for_password();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         assert!(matches!(
@@ -699,7 +764,7 @@ mod totp_tests {
         // Signup creates an UNVERIFIED email, so TOTP will be the user's only
         // second factor - the MFA wrap must trigger on it alone.
         let logged_in = auth(&store)
-            .password_signup("alice@x.com", "hunter2")
+            .password_signup("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         let user_id = logged_in
@@ -727,7 +792,7 @@ mod totp_tests {
         builder.mfa_policy = mfa_for_password();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         assert!(pending.session().await.unwrap().is_none());
@@ -749,7 +814,7 @@ mod totp_tests {
         builder.mfa_policy = mfa_for_password();
         let pending = builder
             .build()
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         let upgraded = pending
@@ -764,13 +829,116 @@ mod totp_tests {
         assert_eq!(*second, LoginMethod::Totp);
     }
 
+    /// After completing MFA the user can trust the device: later logins on
+    /// it skip the second factor (recorded as `TrustedDevice`), other users
+    /// and other devices still get challenged, and forgetting it restores
+    /// the challenge.
+    #[tokio::test]
+    async fn trusted_device_skips_the_second_factor() {
+        let store = TestStore::default();
+        let logged_in = auth(&store)
+            .password_signup("alice@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        let enrollment = logged_in.totp_enroll_start("alice@x.com").await.unwrap();
+        logged_in
+            .totp_enroll_confirm(&code_for(&enrollment.secret))
+            .await
+            .unwrap();
+
+        let policy = || MfaPolicy {
+            trusted_device_lifetime: Some(Duration::days(30)),
+            ..mfa_for_password()
+        };
+        let with_policy = |cookies: common::TestCookies| {
+            let mut builder = AuthBuilder::new(store.clone());
+            builder.mfa_policy = policy();
+            let mut authery = builder.build();
+            authery.cookies = cookies;
+            authery
+        };
+
+        // Complete MFA, then trust the device.
+        let pending = with_policy(Default::default())
+            .password_login("alice@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        let mut upgraded = pending
+            .mfa_totp_verify(&code_at_offset(&enrollment.secret, 1))
+            .await
+            .unwrap();
+        assert!(upgraded.trust_this_device().await.unwrap());
+        let device = upgraded.cookies.clone();
+
+        // The same device logs straight in with the trust recorded.
+        let trusted = with_policy(device.clone())
+            .password_login("alice@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        let session = trusted.session().await.unwrap().expect("no MFA challenge");
+        let LoginMethod::Mfa { first, second } = session.get_method() else {
+            panic!("expected Mfa session");
+        };
+        assert_eq!(*first, LoginMethod::Password);
+        assert_eq!(*second, LoginMethod::TrustedDevice);
+        assert!(
+            LoginMethodRules {
+                require_mfa: true,
+                ..Default::default()
+            }
+            .satisfies(&session.get_method())
+        );
+
+        // A fresh device is still challenged...
+        let fresh = with_policy(Default::default())
+            .password_login("alice@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        assert!(fresh.session().await.unwrap().is_none());
+
+        // ...as is another MFA-enrolled user on the trusted device.
+        let bob = auth(&store)
+            .password_signup("bob@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        let bob_enrollment = bob.totp_enroll_start("bob@x.com").await.unwrap();
+        bob.totp_enroll_confirm(&code_for(&bob_enrollment.secret))
+            .await
+            .unwrap();
+        let bob_on_alices_device = with_policy(device.clone())
+            .password_login("bob@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        assert!(bob_on_alices_device.session().await.unwrap().is_none());
+
+        // Forgetting the device restores the challenge; disabling the option
+        // ignores existing cookies.
+        let mut forgetting = with_policy(device.clone());
+        forgetting.forget_this_device();
+        let challenged = forgetting
+            .password_login("alice@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        assert!(challenged.session().await.unwrap().is_none());
+
+        let mut builder = AuthBuilder::new(store.clone());
+        builder.mfa_policy = mfa_for_password();
+        let mut disabled = builder.build();
+        disabled.cookies = device;
+        let challenged = disabled
+            .password_login("alice@x.com", "hunter2-hunter2")
+            .await
+            .unwrap();
+        assert!(challenged.session().await.unwrap().is_none());
+    }
+
     #[tokio::test]
     async fn totp_rejects_wrong_codes_and_disable_removes_factor() {
         let store = TestStore::default();
-        let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+        let user_id = store.seed_user("alice@x.com", Some("hunter2-hunter2"));
 
         let logged_in = auth(&store)
-            .password_login("alice@x.com", "hunter2")
+            .password_login("alice@x.com", "hunter2-hunter2")
             .await
             .unwrap();
         let enrollment = logged_in.totp_enroll_start("alice@x.com").await.unwrap();

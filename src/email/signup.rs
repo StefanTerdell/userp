@@ -19,6 +19,15 @@ pub enum EmailSignupInitError<StoreError: std::error::Error> {
     NotAllowed,
 }
 
+impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailSignupInitError<E> {
+    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
+        match self {
+            Self::SendingEmail(inner) => inner.rate_limited(),
+            Self::NotAllowed => None,
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum EmailSignupError<StoreError: std::error::Error> {
     #[error("Email signup not allowed")]
@@ -34,7 +43,7 @@ pub enum EmailSignupCallbackError<StoreError: std::error::Error> {
     #[error("Email signup not allowed")]
     NotAllowed,
     #[error("Challenge expired")]
-    ChallengeExpired,
+    ChallengeExpired { address: String },
     #[error("Challenge not found")]
     ChallengeNotFound,
     #[error(transparent)]
@@ -96,7 +105,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         if challenge.get_expires() < Utc::now() {
-            return Err(EmailSignupCallbackError::ChallengeExpired);
+            return Err(EmailSignupCallbackError::ChallengeExpired {
+                address: challenge.get_address().to_owned(),
+            });
         }
 
         let allow_login =

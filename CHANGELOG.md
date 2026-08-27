@@ -34,6 +34,22 @@ crate. Everything below is new relative to userp 0.0.x:
   "could not send" message; the underlying error is reported through the
   `AuthEvent::DeliveryFailed` event instead of the redirect query string.
 - Session lifetime, per-user concurrent-session caps, server-side eviction.
+- Sessions record user agent and client address (`SessionMeta`); "sign out
+  everywhere else" on the account page; a password reset ends every session.
+- Trusted devices: completing MFA can remember the browser for
+  `MfaPolicy::trusted_device_lifetime`, recorded as
+  `LoginMethod::TrustedDevice`.
+- Passkeys are stored as `PasskeyRecord`s with an optional name, creation and
+  last-used times.
+- Password requirements as a regex (`PasswordConfig::pattern`, default at
+  least 8 characters) checked on signup, set and reset and exposed to the
+  pages as the input's `pattern` attribute.
+- Cookie names (`CookieNames`) and the recovery-code batch size are
+  configurable.
+- Dedicated pages for "check your inbox", expired links, and rate-limit
+  refusals (`/email/sent`, `/email/expired`, `/paused`).
+- Optional `OAuthToken::get_scopes`/`get_created` and
+  `UserEmail::get_verified_at` for the account page.
 - Reference stores: Postgres (sqlx) and in-memory, feature-gated like the
   store trait itself.
 

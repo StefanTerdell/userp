@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+  <h1>Too many attempts</h1>
+
+  <p>
+    That was tried too many times in a short period.
+    {% if let Some(secs) = retry_after_secs %}
+    Please wait {% if *secs >= 120 %}{{ secs / 60 }} minutes{% else %}{{ secs }} seconds{% endif %} before trying again.
+    {% else %}
+    Please wait a while before trying again.
+    {% endif %}
+  </p>
+
+  {% if webauthn || email_login_action_route.is_some() || password_send_reset_page_route.is_some() %}
+  <p class="text-muted">You can still:</p>
+
+  {% if webauthn %}
+  <div class="links" style="text-align: left;">
+    <a href="{{ login_page_route }}{% if let Some(next) = next %}?next={{ next }}{% endif %}">Sign in with a passkey</a>
+  </div>
+  {% endif %}
+
+  {% if let Some(email_login) = email_login_action_route %}
+  <form action="{{ email_login }}" method="post" class="form">
+    <div class="form-group">
+      <label for="paused-email">Email yourself a sign-in link</label>
+      <input type="email" id="paused-email" name="email" required>
+    </div>
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% endif %}
+    <button type="submit" class="social-button">Send link</button>
+  </form>
+  {% endif %}
+
+  {% if let Some(reset) = password_send_reset_page_route %}
+  <div class="links" style="text-align: left;">
+    <a href="{{ reset }}">Reset your password</a>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div class="links">
+    <a href="{{ login_page_route }}">Back to login</a>
+  </div>
+</div>
+{% endblock %}

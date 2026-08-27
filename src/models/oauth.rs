@@ -30,6 +30,14 @@ pub trait OAuthToken: Send + Sync {
     fn get_user_id(&self) -> Self::UserId;
     fn get_provider_name(&self) -> &str;
     fn get_refresh_token(&self) -> &Option<String>;
+    /// Scopes granted by the provider, for the account page.
+    fn get_scopes(&self) -> Option<Vec<String>> {
+        None
+    }
+    /// When the token was linked, for the account page.
+    fn get_created(&self) -> Option<DateTime<Utc>> {
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -12,6 +12,143 @@ pub struct NextMessageErrorQuery {
 }
 
 #[derive(Deserialize)]
+pub struct PausedQuery {
+    pub retry_after: Option<i64>,
+    pub next: Option<String>,
+}
+
+pub async fn get_paused<St>(
+    auth: AxumAuthery<St>,
+    Query(PausedQuery { retry_after, next }): Query<PausedQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::PausedTemplate;
+
+    let view = PausedTemplate {
+        retry_after_secs: retry_after,
+        next: next.as_deref(),
+        login_page_route: &auth.routes.pages.login,
+        webauthn: cfg!(feature = "webauthn"),
+        #[cfg(feature = "email")]
+        email_login_action_route: auth
+            .email
+            .offer_links
+            .then_some(auth.routes.email.login_email.as_str()),
+        #[cfg(not(feature = "email"))]
+        email_login_action_route: None,
+        #[cfg(all(feature = "email", feature = "password"))]
+        password_send_reset_page_route: Some(&auth.routes.pages.password_send_reset),
+        #[cfg(not(all(feature = "email", feature = "password")))]
+        password_send_reset_page_route: None,
+    };
+    Ok(Html(auth.pages.render_paused(&view)))
+}
+
+#[cfg(feature = "email")]
+#[derive(Deserialize)]
+pub struct EmailLinkQuery {
+    pub address: Option<String>,
+    pub purpose: Option<String>,
+    pub next: Option<String>,
+}
+
+/// The resend and request-a-code actions for a link purpose.
+#[cfg(feature = "email")]
+fn email_link_actions<St: AutheryStore>(
+    auth: &AxumAuthery<St>,
+    purpose: crate::pages::EmailLinkPurpose,
+) -> (Option<&str>, Option<&str>) {
+    use crate::pages::EmailLinkPurpose;
+
+    let routes = &auth.routes;
+    let offer_otp = auth.email.offer_otp;
+    match purpose {
+        EmailLinkPurpose::Login => (
+            Some(routes.email.login_email.as_str()),
+            offer_otp.then_some(routes.email.login_otp.as_str()),
+        ),
+        EmailLinkPurpose::Signup => (
+            Some(routes.email.signup_email.as_str()),
+            offer_otp.then_some(routes.email.signup_otp.as_str()),
+        ),
+        EmailLinkPurpose::Verify => (None, None),
+        #[cfg(feature = "password")]
+        EmailLinkPurpose::Reset => (Some(routes.email.password_send_reset.as_str()), None),
+        #[cfg(not(feature = "password"))]
+        EmailLinkPurpose::Reset => (None, None),
+    }
+}
+
+#[cfg(feature = "email")]
+pub async fn get_email_sent<St>(
+    auth: AxumAuthery<St>,
+    Query(EmailLinkQuery {
+        address,
+        purpose,
+        next,
+    }): Query<EmailLinkQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::{EmailLinkPurpose, EmailSentTemplate};
+
+    let Some(address) = address else {
+        return Ok(Redirect::to(&auth.routes.pages.login).into_response());
+    };
+    let purpose = purpose
+        .as_deref()
+        .and_then(EmailLinkPurpose::parse)
+        .unwrap_or(EmailLinkPurpose::Login);
+    let (resend_action_route, otp_action_route) = email_link_actions(&auth, purpose);
+
+    let view = EmailSentTemplate {
+        address: &address,
+        purpose,
+        resend_action_route,
+        otp_action_route,
+        login_page_route: &auth.routes.pages.login,
+        next: next.as_deref(),
+    };
+    Ok(Html(auth.pages.render_email_sent(&view)).into_response())
+}
+
+#[cfg(feature = "email")]
+pub async fn get_email_expired<St>(
+    auth: AxumAuthery<St>,
+    Query(EmailLinkQuery {
+        address, purpose, ..
+    }): Query<EmailLinkQuery>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    use crate::pages::{EmailExpiredTemplate, EmailLinkPurpose};
+
+    let purpose = purpose
+        .as_deref()
+        .and_then(EmailLinkPurpose::parse)
+        .unwrap_or(EmailLinkPurpose::Login);
+    let (resend_action_route, otp_action_route) = email_link_actions(&auth, purpose);
+
+    let view = EmailExpiredTemplate {
+        address: address.as_deref(),
+        purpose,
+        resend_action_route,
+        otp_action_route,
+        login_page_route: &auth.routes.pages.login,
+        password: cfg!(feature = "password"),
+        webauthn: cfg!(feature = "webauthn"),
+    };
+    Ok(Html(auth.pages.render_email_expired(&view)))
+}
+
+#[derive(Deserialize)]
 pub struct AddressMessageSentErrorQuery {
     pub address: Option<String>,
     pub message: Option<String>,
@@ -90,6 +227,10 @@ where
         next: next.as_deref(),
         message: message.as_deref(),
         error: error.as_deref(),
+        trust_device_days: auth
+            .mfa_policy
+            .trusted_device_lifetime
+            .map(|lifetime| lifetime.num_days().max(1)),
         #[cfg(feature = "email")]
         otp: factors
             .otp_address
@@ -286,13 +427,7 @@ where
         #[cfg(feature = "oauth")]
         let oauth_tokens = auth.store.get_user_oauth_tokens(&user.get_id()).await?;
         #[cfg(feature = "webauthn")]
-        let passkey_credential_ids = auth
-            .store
-            .get_passkeys(&user.get_id())
-            .await?
-            .iter()
-            .map(|p| p.cred_id().iter().map(|b| format!("{b:02x}")).collect())
-            .collect();
+        let passkeys = auth.store.get_passkeys(&user.get_id()).await?;
         #[cfg(feature = "totp")]
         let totp_enabled = auth.totp_enabled(&user.get_id()).await?;
         #[cfg(feature = "mfa")]
@@ -310,7 +445,7 @@ where
             #[cfg(feature = "oauth")]
             &oauth_tokens,
             #[cfg(feature = "webauthn")]
-            passkey_credential_ids,
+            &passkeys,
             #[cfg(feature = "totp")]
             totp_enabled,
             #[cfg(feature = "mfa")]
@@ -344,7 +479,10 @@ where
 }
 
 #[cfg(all(feature = "email", feature = "password"))]
-pub async fn get_password_reset<St>(auth: AxumAuthery<St>) -> Result<impl IntoResponse, St::Error>
+pub async fn get_password_reset<St>(
+    auth: AxumAuthery<St>,
+    Query(NextMessageErrorQuery { error, .. }): Query<NextMessageErrorQuery>,
+) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
     St::Error: IntoResponse,
@@ -355,6 +493,13 @@ where
     if auth.is_reset_session().await? {
         let view = ResetPasswordTemplate {
             reset_password_action_route: &auth.routes.email.password_reset,
+            error: error.as_deref(),
+            pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+            pattern_hint: auth
+                .pass
+                .pattern
+                .as_ref()
+                .and_then(|p| p.hint().map(str::to_owned)),
         };
         Ok(Html(auth.pages.render_reset_password(&view)).into_response())
     } else {

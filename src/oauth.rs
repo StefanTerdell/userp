@@ -31,15 +31,13 @@ use std::{fmt::Display, future::Future, pin::Pin, sync::Arc};
 use thiserror::Error;
 use url::Url;
 
-const OAUTH_DATA_KEY: &str = "authery-oauth-state";
-
 /// The flow cookie is keyed by the CSRF state so concurrent flows (two login
 /// tabs, a login and a link) don't clobber each other; the callback knows
 /// which cookie to open because the state comes back as a query param. The
 /// value is encrypted+authenticated by the private jar, so a forged state can
 /// at most fail to find a cookie.
-fn oauth_data_key(csrf_state: &str) -> String {
-    format!("{OAUTH_DATA_KEY}-{csrf_state}")
+fn oauth_data_key(prefix: &str, csrf_state: &str) -> String {
+    format!("{prefix}-{csrf_state}")
 }
 
 pub enum RefreshInitResult {
@@ -266,7 +264,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             provider.get_authorization_url_and_state(&self.redirect_uri(), provider.scopes());
 
         self.cookies.add(
-            &oauth_data_key(csrf_state.secret()),
+            &oauth_data_key(&self.cookie_names.oauth_state_prefix, csrf_state.secret()),
             &json!((
                 csrf_state,
                 pkce_verifier.secret(),
@@ -285,7 +283,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         code: AuthorizationCode,
         csrf_token: CsrfToken,
     ) -> Result<(UnmatchedOAuthToken, OAuthFlow, Arc<dyn OAuthProvider>), OAuthCallbackError> {
-        let data_key = oauth_data_key(csrf_token.secret());
+        let data_key = oauth_data_key(&self.cookie_names.oauth_state_prefix, csrf_token.secret());
         let oauth_data = self
             .cookies
             .get(&data_key)

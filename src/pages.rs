@@ -14,6 +14,10 @@ use std::sync::Arc;
 pub struct TemplateLoginSession {
     pub id: String,
     pub method: LoginMethod,
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
+    pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires: chrono::DateTime<chrono::Utc>,
 }
 
 #[cfg(feature = "user")]
@@ -22,6 +26,10 @@ impl<T: LoginSession> From<&T> for TemplateLoginSession {
         TemplateLoginSession {
             id: value.get_id().to_string(),
             method: value.get_method(),
+            user_agent: value.get_user_agent().map(str::to_owned),
+            ip_address: value.get_ip_address().map(str::to_owned),
+            last_seen: value.get_last_seen(),
+            expires: value.get_expires(),
         }
     }
 }
@@ -30,6 +38,7 @@ pub struct TemplateUserEmail<'a> {
     address: &'a str,
     verified: bool,
     allow_link_login: bool,
+    verified_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[cfg(feature = "email")]
@@ -39,6 +48,7 @@ impl<'a, T: UserEmail> From<&'a T> for TemplateUserEmail<'a> {
             address: value.get_address(),
             verified: value.get_verified(),
             allow_link_login: value.get_allow_link_login(),
+            verified_at: value.get_verified_at(),
         }
     }
 }
@@ -47,6 +57,8 @@ impl<'a, T: UserEmail> From<&'a T> for TemplateUserEmail<'a> {
 pub struct TemplateOAuthToken<'a> {
     pub id: String,
     pub provider_name: &'a str,
+    pub scopes: Option<Vec<String>>,
+    pub created: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[cfg(feature = "oauth")]
@@ -55,6 +67,8 @@ impl<'a, T: OAuthToken> From<&'a T> for TemplateOAuthToken<'a> {
         Self {
             id: value.get_id().to_string(),
             provider_name: value.get_provider_name(),
+            scopes: value.get_scopes(),
+            created: value.get_created(),
         }
     }
 }
@@ -79,6 +93,83 @@ impl<'a> From<&'a Arc<dyn OAuthProvider>> for TemplateOAuthProvider<'a> {
 #[template(path = "reset-password.html")]
 pub struct ResetPasswordTemplate<'a> {
     pub reset_password_action_route: &'a str,
+    pub error: Option<&'a str>,
+    /// For the input's `pattern` attribute.
+    pub pattern: Option<String>,
+    pub pattern_hint: Option<String>,
+}
+
+/// What an emailed link was for; selects copy and the resend action.
+#[cfg(feature = "email")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmailLinkPurpose {
+    Login,
+    Signup,
+    Verify,
+    Reset,
+}
+
+#[cfg(feature = "email")]
+impl EmailLinkPurpose {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Login => "login",
+            Self::Signup => "signup",
+            Self::Verify => "verify",
+            Self::Reset => "reset",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "login" => Some(Self::Login),
+            "signup" => Some(Self::Signup),
+            "verify" => Some(Self::Verify),
+            "reset" => Some(Self::Reset),
+            _ => None,
+        }
+    }
+}
+
+/// "Check your inbox" after an emailed link was sent.
+#[cfg(feature = "email")]
+#[derive(Template)]
+#[template(path = "email-sent.html")]
+pub struct EmailSentTemplate<'a> {
+    pub address: &'a str,
+    pub purpose: EmailLinkPurpose,
+    /// Re-sends the link; posts `email` (and `next`).
+    pub resend_action_route: Option<&'a str>,
+    /// Requests a code instead; posts `email` (and `next`).
+    pub otp_action_route: Option<&'a str>,
+    pub login_page_route: &'a str,
+    pub next: Option<&'a str>,
+}
+
+/// An emailed link was used after it expired.
+#[cfg(feature = "email")]
+#[derive(Template)]
+#[template(path = "email-expired.html")]
+pub struct EmailExpiredTemplate<'a> {
+    pub address: Option<&'a str>,
+    pub purpose: EmailLinkPurpose,
+    pub resend_action_route: Option<&'a str>,
+    pub otp_action_route: Option<&'a str>,
+    pub login_page_route: &'a str,
+    pub password: bool,
+    pub webauthn: bool,
+}
+
+/// The rate limiter refused an attempt.
+#[derive(Template)]
+#[template(path = "paused.html")]
+pub struct PausedTemplate<'a> {
+    pub retry_after_secs: Option<i64>,
+    pub next: Option<&'a str>,
+    pub login_page_route: &'a str,
+    pub webauthn: bool,
+    pub email_login_action_route: Option<&'a str>,
+    pub password_send_reset_page_route: Option<&'a str>,
 }
 
 #[cfg(all(feature = "password", feature = "email"))]
@@ -97,6 +188,9 @@ pub struct UserTemplatePasswordInfo<'a> {
     pub has_password: bool,
     pub delete_action_route: &'a str,
     pub set_action_route: &'a str,
+    /// For the input's `pattern` attribute.
+    pub pattern: Option<String>,
+    pub pattern_hint: Option<String>,
 }
 
 #[cfg(feature = "user")]
@@ -130,6 +224,7 @@ pub struct UserTemplate<'a> {
     pub home_page_route: &'a str,
     pub login_page_route: &'a str,
     pub session_delete_action_route: &'a str,
+    pub sessions_delete_others_action_route: &'a str,
     pub user_delete_action_route: &'a str,
     pub verify_session_action_route: &'a str,
     pub password: Option<UserTemplatePasswordInfo<'a>>,
@@ -168,7 +263,7 @@ impl UserTemplate<'_> {
         error: Option<&'a str>,
         #[cfg(feature = "email")] emails: &'a [S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &'a [S::OAuthToken],
-        #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
+        #[cfg(feature = "webauthn")] passkeys: &'a [crate::models::PasskeyRecord],
         #[cfg(feature = "totp")] totp_enabled: bool,
         #[cfg(feature = "mfa")] recovery_codes_count: usize,
     ) -> UserTemplate<'a> {
@@ -180,6 +275,7 @@ impl UserTemplate<'_> {
             home_page_route: &auth.routes.pages.home,
             login_page_route: &auth.routes.pages.login,
             session_delete_action_route: &auth.routes.user.user_session_delete,
+            sessions_delete_others_action_route: &auth.routes.user.user_session_delete_others,
             user_delete_action_route: &auth.routes.user.user_delete,
             verify_session_action_route: &auth.routes.user_verify_session,
             #[cfg(feature = "password")]
@@ -187,6 +283,12 @@ impl UserTemplate<'_> {
                 has_password: user.get_password_hash().is_some(),
                 delete_action_route: &auth.routes.user.user_password_delete,
                 set_action_route: &auth.routes.user.user_password_set,
+                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+                pattern_hint: auth
+                    .pass
+                    .pattern
+                    .as_ref()
+                    .and_then(|p| p.hint().map(str::to_owned)),
             }),
             #[cfg(not(feature = "password"))]
             password: None,
@@ -229,7 +331,7 @@ impl UserTemplate<'_> {
             oauth: None,
             #[cfg(feature = "webauthn")]
             webauthn: Some(UserTemplateWebauthnInfo {
-                credential_ids: passkey_credential_ids,
+                passkeys: passkeys.iter().map(TemplatePasskey::from).collect(),
                 register_start_route: &auth.routes.webauthn.user_webauthn_register_start,
                 register_finish_route: &auth.routes.webauthn.user_webauthn_register_finish,
                 delete_action_route: &auth.routes.webauthn.user_webauthn_delete,
@@ -265,7 +367,7 @@ impl UserTemplate<'_> {
         error: Option<&str>,
         #[cfg(feature = "email")] emails: &[S::UserEmail],
         #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
-        #[cfg(feature = "webauthn")] passkey_credential_ids: Vec<String>,
+        #[cfg(feature = "webauthn")] passkeys: &[crate::models::PasskeyRecord],
         #[cfg(feature = "totp")] totp_enabled: bool,
         #[cfg(feature = "mfa")] recovery_codes_count: usize,
     ) -> Result<String, askama::Error> {
@@ -281,7 +383,7 @@ impl UserTemplate<'_> {
             #[cfg(feature = "oauth")]
             oauth_tokens,
             #[cfg(feature = "webauthn")]
-            passkey_credential_ids,
+            passkeys,
             #[cfg(feature = "totp")]
             totp_enabled,
             #[cfg(feature = "mfa")]
@@ -311,8 +413,7 @@ pub struct TemplateWebauthnInfo<'a> {
 
 #[cfg(feature = "user")]
 pub struct UserTemplateWebauthnInfo<'a> {
-    /// Hex-encoded credential ids of the user's registered passkeys.
-    pub credential_ids: Vec<String>,
+    pub passkeys: Vec<TemplatePasskey>,
     pub register_start_route: &'a str,
     pub register_finish_route: &'a str,
     pub delete_action_route: &'a str,
@@ -321,6 +422,29 @@ pub struct UserTemplateWebauthnInfo<'a> {
 pub struct TemplatePasswordInfo<'a> {
     pub action_route: &'a str,
     pub reset_route: Option<&'a str>,
+    /// For the input's `pattern` attribute.
+    pub pattern: Option<String>,
+    pub pattern_hint: Option<String>,
+}
+
+pub struct TemplatePasskey {
+    /// Hex-encoded credential id.
+    pub credential_id: String,
+    pub name: Option<String>,
+    pub created: chrono::DateTime<chrono::Utc>,
+    pub last_used: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(feature = "webauthn")]
+impl From<&crate::models::PasskeyRecord> for TemplatePasskey {
+    fn from(record: &crate::models::PasskeyRecord) -> Self {
+        Self {
+            credential_id: record.credential_id_hex(),
+            name: record.name.clone(),
+            created: record.created,
+            last_used: record.last_used,
+        }
+    }
 }
 
 #[derive(Template)]
@@ -366,6 +490,12 @@ impl LoginTemplate<'_> {
                 reset_route: Some(&auth.routes.pages.password_send_reset),
                 #[cfg(not(feature = "email"))]
                 reset_route: None,
+                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+                pattern_hint: auth
+                    .pass
+                    .pattern
+                    .as_ref()
+                    .and_then(|p| p.hint().map(str::to_owned)),
             }),
             #[cfg(not(feature = "password"))]
             password: None,
@@ -461,6 +591,12 @@ impl SignupTemplate<'_> {
                 reset_route: Some(&auth.routes.pages.password_send_reset),
                 #[cfg(not(feature = "email"))]
                 reset_route: None,
+                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+                pattern_hint: auth
+                    .pass
+                    .pattern
+                    .as_ref()
+                    .and_then(|p| p.hint().map(str::to_owned)),
             }),
             #[cfg(not(feature = "password"))]
             password: None,
@@ -556,6 +692,8 @@ pub struct MfaTemplate<'a> {
     pub next: Option<&'a str>,
     pub message: Option<&'a str>,
     pub error: Option<&'a str>,
+    /// Offer "trust this device" for this many days, when enabled.
+    pub trust_device_days: Option<i64>,
     pub otp: Option<MfaOtpTemplateInfo<'a>>,
     /// The SMS second-factor form, when the user has a verified number.
     pub sms: Option<MfaSmsTemplateInfo<'a>>,
@@ -655,6 +793,11 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_send_reset_password(&self, view: &SendResetPasswordTemplate<'_>) -> String;
     #[cfg(all(feature = "password", feature = "email"))]
     fn render_reset_password(&self, view: &ResetPasswordTemplate<'_>) -> String;
+    #[cfg(feature = "email")]
+    fn render_email_sent(&self, view: &EmailSentTemplate<'_>) -> String;
+    #[cfg(feature = "email")]
+    fn render_email_expired(&self, view: &EmailExpiredTemplate<'_>) -> String;
+    fn render_paused(&self, view: &PausedTemplate<'_>) -> String;
 }
 
 /// The default [`Pages`] renderer, backed by the bundled Askama templates.
@@ -713,6 +856,20 @@ impl Pages for AskamaPages {
 
     #[cfg(all(feature = "password", feature = "email"))]
     fn render_reset_password(&self, view: &ResetPasswordTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "email")]
+    fn render_email_sent(&self, view: &EmailSentTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "email")]
+    fn render_email_expired(&self, view: &EmailExpiredTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    fn render_paused(&self, view: &PausedTemplate<'_>) -> String {
         render_or_err(view)
     }
 }

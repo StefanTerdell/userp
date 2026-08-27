@@ -21,6 +21,7 @@ use crate::{
     models::{AutheryCookies, LoginMethod},
     store::AutheryStore,
 };
+use chrono::Utc;
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
@@ -29,9 +30,6 @@ use webauthn_rs::prelude::{
     PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse, WebauthnError,
 };
 use webauthn_rs::{Webauthn, WebauthnBuilder};
-
-const WEBAUTHN_REG_KEY: &str = "authery-webauthn-reg";
-const WEBAUTHN_AUTH_KEY: &str = "authery-webauthn-auth";
 
 /// Ceremony cookies are keyed by the challenge so concurrent ceremonies (two
 /// login tabs, a registration next to a login) don't clobber each other. The
@@ -118,6 +116,14 @@ pub enum WebauthnLoginError<StoreError: std::error::Error> {
     Store(StoreError),
 }
 
+/// Registration state parked in the ceremony cookie, with the label the
+/// finished passkey gets.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct RegistrationCeremony {
+    state: PasskeyRegistration,
+    name: Option<String>,
+}
+
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     /// Begin registering a passkey for the logged-in user. Returns the
     /// challenge to pass to `navigator.credentials.create()`; the ceremony
@@ -125,6 +131,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     pub async fn webauthn_register_start(
         &mut self,
         display_name: &str,
+        name: Option<String>,
     ) -> Result<CreationChallengeResponse, WebauthnRegisterError<S::Error>> {
         let Some(session) = self.session().await.map_err(WebauthnRegisterError::Store)? else {
             return Err(WebauthnRegisterError::NotLoggedIn);
@@ -139,8 +146,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(WebauthnRegisterError::Store)?;
 
-        let exclude =
-            (!existing.is_empty()).then(|| existing.iter().map(|p| p.cred_id().clone()).collect());
+        let exclude = (!existing.is_empty()).then(|| {
+            existing
+                .iter()
+                .map(|p| p.passkey.cred_id().clone())
+                .collect()
+        });
 
         // The webauthn user handle is a random uuid, deliberately NOT derived
         // from the store's user id: login resolves by credential id, so the
@@ -163,8 +174,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
 
         self.cookies.add(
-            &ceremony_key(WEBAUTHN_REG_KEY, &challenge_b64(&ccr.public_key.challenge)?),
-            &serde_json::to_string(&reg_state)?,
+            &ceremony_key(
+                &self.cookie_names.webauthn_register_prefix,
+                &challenge_b64(&ccr.public_key.challenge)?,
+            ),
+            &serde_json::to_string(&RegistrationCeremony {
+                state: reg_state,
+                name,
+            })?,
         );
 
         Ok(ccr)
@@ -180,7 +197,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         let Some(state_key) = client_data_challenge(credential.response.client_data_json.as_ref())
-            .map(|challenge| ceremony_key(WEBAUTHN_REG_KEY, &challenge))
+            .map(|challenge| ceremony_key(&self.cookie_names.webauthn_register_prefix, &challenge))
         else {
             return Err(WebauthnRegisterError::NoCeremony);
         };
@@ -190,16 +207,19 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         // The ceremony state is single-use either way.
         self.cookies.remove(&state_key);
 
-        let reg_state: PasskeyRegistration = serde_json::from_str(&state_json)?;
+        let RegistrationCeremony { state, name } = serde_json::from_str(&state_json)?;
 
         let passkey = self
             .webauthn
             .webauthn
-            .finish_passkey_registration(credential, &reg_state)?;
+            .finish_passkey_registration(credential, &state)?;
 
         use crate::models::LoginSession;
         self.store
-            .create_passkey(&session.get_user_id(), passkey)
+            .create_passkey(
+                &session.get_user_id(),
+                crate::models::PasskeyRecord::new(passkey, name),
+            )
             .await
             .map_err(WebauthnRegisterError::Store)?;
 
@@ -215,7 +235,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
 
         self.cookies.add(
             &ceremony_key(
-                WEBAUTHN_AUTH_KEY,
+                &self.cookie_names.webauthn_login_prefix,
                 &challenge_b64(&rcr.public_key.challenge)?,
             ),
             &serde_json::to_string(&auth_state)?,
@@ -232,7 +252,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         credential: &PublicKeyCredential,
     ) -> Result<Self, WebauthnLoginError<S::Error>> {
         let Some(state_key) = client_data_challenge(credential.response.client_data_json.as_ref())
-            .map(|challenge| ceremony_key(WEBAUTHN_AUTH_KEY, &challenge))
+            .map(|challenge| ceremony_key(&self.cookie_names.webauthn_login_prefix, &challenge))
         else {
             return Err(WebauthnLoginError::NoCeremony);
         };
@@ -250,7 +270,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .webauthn
             .identify_discoverable_authentication(credential)?;
 
-        let Some((user_id, passkey)) = self
+        let Some((user_id, mut record)) = self
             .store
             .get_passkey_by_credential_id(cred_id)
             .await
@@ -259,21 +279,21 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(WebauthnLoginError::UnknownCredential);
         };
 
-        let discoverable: DiscoverableKey = (&passkey).into();
+        let discoverable: DiscoverableKey = (&record.passkey).into();
         let result = self.webauthn.webauthn.finish_discoverable_authentication(
             credential,
             auth_state,
             &[discoverable],
         )?;
 
-        // Persist counter/backup-state updates so clone detection works.
-        let mut updated = passkey;
-        if updated.update_credential(&result).unwrap_or(false) {
-            self.store
-                .update_passkey(&user_id, updated)
-                .await
-                .map_err(WebauthnLoginError::Store)?;
-        }
+        // Persist counter/backup-state updates (clone detection) and the
+        // last-used stamp.
+        record.passkey.update_credential(&result);
+        record.last_used = Some(Utc::now());
+        self.store
+            .update_passkey(&user_id, record)
+            .await
+            .map_err(WebauthnLoginError::Store)?;
 
         let credential_id = cred_id.iter().map(|b| format!("{b:02x}")).collect();
 

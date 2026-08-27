@@ -59,6 +59,8 @@ pub(crate) struct RegisterStartBody {
     /// Shown by the authenticator when picking a credential; typically the
     /// user's email or handle.
     pub display_name: String,
+    /// Optional label for the account page.
+    pub name: Option<String>,
 }
 
 /// Begin registering a passkey for the logged-in user.
@@ -70,7 +72,10 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    match auth.webauthn_register_start(&body.display_name).await {
+    match auth
+        .webauthn_register_start(&body.display_name, body.name)
+        .await
+    {
         Ok(ccr) => Ok((auth, Json(ccr)).into_response()),
         Err(WebauthnRegisterError::Store(err)) => Err(err),
         Err(err) => Ok((

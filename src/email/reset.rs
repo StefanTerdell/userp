@@ -20,6 +20,15 @@ pub enum EmailResetInitError<StoreError: std::error::Error> {
     NotAllowed,
 }
 
+impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailResetInitError<E> {
+    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
+        match self {
+            Self::SendingEmail(inner) => inner.rate_limited(),
+            Self::NotAllowed => None,
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum EmailResetError<StoreError: std::error::Error> {
     #[error("Email reset not allowed")]
@@ -37,7 +46,7 @@ pub enum EmailResetCallbackError<StoreError: std::error::Error> {
     #[error("Email reset not allowed")]
     NotAllowed,
     #[error("Challenge expired")]
-    ChallengeExpired,
+    ChallengeExpired { address: String },
     #[error("Challenge not found")]
     ChallengeNotFound,
     #[error(transparent)]
@@ -88,7 +97,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         if challenge.get_expires() < Utc::now() {
-            return Err(EmailResetCallbackError::ChallengeExpired);
+            return Err(EmailResetCallbackError::ChallengeExpired {
+                address: challenge.get_address().to_owned(),
+            });
         }
 
         let user = match self

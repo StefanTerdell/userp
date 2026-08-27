@@ -18,8 +18,12 @@ pub enum PasswordSignupError<T: std::error::Error> {
     #[error(transparent)]
     RateLimited(RateLimited),
     #[error(transparent)]
+    Rejected(crate::password::PasswordRejected),
+    #[error(transparent)]
     StoreError(#[from] T),
 }
+
+crate::ratelimit::impl_maybe_rate_limited!(PasswordSignupError, RateLimited);
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     #[must_use = "Don't forget to return the auth session as part of the response!"]
@@ -66,7 +70,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                 .store
                 .create_user_by_password_id(
                     password_id,
-                    &self.pass.hasher.generate_hash(password.into()).await,
+                    &self
+                        .new_password_hash(password)
+                        .await
+                        .map_err(PasswordSignupError::Rejected)?,
                 )
                 .await?),
         }?;

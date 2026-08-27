@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+  <h1>Check your inbox</h1>
+
+  <p>
+    {% match purpose %}
+    {% when crate::pages::EmailLinkPurpose::Login %}We sent a sign-in link to
+    {% when crate::pages::EmailLinkPurpose::Signup %}We sent a sign-up link to
+    {% when crate::pages::EmailLinkPurpose::Verify %}We sent a verification link to
+    {% when crate::pages::EmailLinkPurpose::Reset %}We sent a password reset link to
+    {% endmatch %}
+    <strong>{{ address }}</strong>.
+  </p>
+
+  <p class="text-muted">If it hasn't arrived, check your spam folder. Links are single-use and expire after a
+    short while.</p>
+
+  {% if let Some(resend) = resend_action_route %}
+  <form action="{{ resend }}" method="post" class="form">
+    <input type="hidden" name="email" value="{{ address }}" />
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% endif %}
+    <button type="submit" class="social-button">Send a new link</button>
+  </form>
+  {% endif %}
+
+  {% if let Some(otp) = otp_action_route %}
+  <form action="{{ otp }}" method="post" class="form">
+    <input type="hidden" name="email" value="{{ address }}" />
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% endif %}
+    <button type="submit" class="social-button">Prefer a code? Email me one instead</button>
+  </form>
+  {% endif %}
+
+  <div class="links">
+    <a href="{{ login_page_route }}">Back to login</a>
+  </div>
+</div>
+{% endblock %}

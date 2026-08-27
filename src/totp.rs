@@ -68,6 +68,8 @@ pub enum TotpError<StoreError: std::error::Error> {
     Store(StoreError),
 }
 
+crate::ratelimit::impl_maybe_rate_limited!(TotpError, RateLimited);
+
 /// Build the RFC 6238 verifier: SHA-1, 6 digits, 30s steps, ±1 step skew -
 /// what every authenticator app expects.
 fn build_totp<E: std::error::Error>(

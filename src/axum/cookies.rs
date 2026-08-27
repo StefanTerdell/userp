@@ -63,9 +63,8 @@ impl AxumAutheryCookies {
     }
 }
 
-impl AutheryCookies for AxumAutheryCookies {
-    fn add(&mut self, key: &str, value: &str) {
-        let cookie = self.build_cookie(key, value);
+impl AxumAutheryCookies {
+    fn put(&mut self, cookie: Cookie<'static>) {
         match &mut self.jar {
             JarHandle::Owned(jar) => *jar = jar.clone().add(cookie),
             JarHandle::Shared(shared) => {
@@ -73,6 +72,20 @@ impl AutheryCookies for AxumAutheryCookies {
                 *jar = jar.clone().add(cookie);
             }
         }
+    }
+}
+
+impl AutheryCookies for AxumAutheryCookies {
+    fn add(&mut self, key: &str, value: &str) {
+        let cookie = self.build_cookie(key, value);
+        self.put(cookie);
+    }
+
+    fn add_persistent(&mut self, key: &str, value: &str, max_age: chrono::Duration) {
+        let mut cookie = self.build_cookie(key, value);
+        cookie.unset_expires();
+        cookie.set_max_age(time::Duration::seconds(max_age.num_seconds().max(0)));
+        self.put(cookie);
     }
 
     fn get(&self, key: &str) -> Option<String> {

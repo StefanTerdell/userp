@@ -26,6 +26,14 @@ pub struct PageRoutes<T = &'static str> {
     /// On this page the user can conclude a password reset by entering a new one
     #[cfg(all(feature = "password", feature = "email"))]
     pub password_reset: T,
+    /// Confirms that an emailed link was sent
+    #[cfg(feature = "email")]
+    pub email_sent: T,
+    /// Shown when an emailed link has expired
+    #[cfg(feature = "email")]
+    pub email_expired: T,
+    /// Shown when the rate limiter refuses an attempt
+    pub paused: T,
 }
 
 impl Default for PageRoutes {
@@ -43,6 +51,11 @@ impl Default for PageRoutes {
             password_send_reset: "/password/reset/send",
             #[cfg(all(feature = "password", feature = "email"))]
             password_reset: "/password/reset",
+            #[cfg(feature = "email")]
+            email_sent: "/email/sent",
+            #[cfg(feature = "email")]
+            email_expired: "/email/expired",
+            paused: "/paused",
         }
     }
 }
@@ -62,6 +75,11 @@ impl<'a> From<&'a PageRoutes<String>> for PageRoutes<&'a str> {
             password_send_reset: &value.password_send_reset,
             #[cfg(all(feature = "password", feature = "email"))]
             password_reset: &value.password_reset,
+            #[cfg(feature = "email")]
+            email_sent: &value.email_sent,
+            #[cfg(feature = "email")]
+            email_expired: &value.email_expired,
+            paused: &value.paused,
         }
     }
 }
@@ -94,6 +112,11 @@ impl<T: Display> PageRoutes<T> {
             password_send_reset: format!("{prefix}{}", self.password_send_reset),
             #[cfg(all(feature = "password", feature = "email"))]
             password_reset: format!("{prefix}{}", self.password_reset),
+            #[cfg(feature = "email")]
+            email_sent: format!("{prefix}{}", self.email_sent),
+            #[cfg(feature = "email")]
+            email_expired: format!("{prefix}{}", self.email_expired),
+            paused: format!("{prefix}{}", self.paused),
         }
     }
 }

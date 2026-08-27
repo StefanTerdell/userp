@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_seen timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen timestamptz NOT NULL DEFAULT now();
+-- Request details for the account page's device list.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent text;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip_address text;
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id);
 
 -- Email and SMS challenges share this table; authery namespaces the codes.
@@ -59,8 +62,14 @@ CREATE TABLE IF NOT EXISTS passkeys (
     credential_id bytea PRIMARY KEY,
     user_id       uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     -- webauthn-rs Passkey blobs are serde-serializable; persist opaquely.
-    passkey       jsonb NOT NULL
+    passkey       jsonb NOT NULL,
+    name          text,
+    created       timestamptz NOT NULL DEFAULT now(),
+    last_used     timestamptz
 );
+ALTER TABLE passkeys ADD COLUMN IF NOT EXISTS name text;
+ALTER TABLE passkeys ADD COLUMN IF NOT EXISTS created timestamptz NOT NULL DEFAULT now();
+ALTER TABLE passkeys ADD COLUMN IF NOT EXISTS last_used timestamptz;
 
 CREATE TABLE IF NOT EXISTS totp_credentials (
     user_id    uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,

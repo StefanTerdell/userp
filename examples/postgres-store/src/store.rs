@@ -19,7 +19,7 @@ use crate::models::PgUserEmail;
 use crate::models::PgUserPhone;
 use crate::models::{PgSession, PgUser};
 #[cfg(feature = "webauthn")]
-use authery::reexports::webauthn_rs::prelude::Passkey;
+use authery::models::PasskeyRecord;
 #[allow(unused_imports)]
 use authery::{
     prelude::*,
@@ -109,15 +109,19 @@ impl AutheryStore for PgStore {
         user_id: &Uuid,
         method: LoginMethod,
         expires: DateTime<Utc>,
+        meta: SessionMeta,
     ) -> Result<PgSession, PgStoreError> {
         Ok(sqlx::query_as(
-            "INSERT INTO sessions (id, user_id, method, expires) VALUES ($1, $2, $3, $4)
-             RETURNING id, user_id, method, expires, last_seen",
+            "INSERT INTO sessions (id, user_id, method, expires, user_agent, ip_address)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, user_id, method, expires, last_seen, user_agent, ip_address",
         )
         .bind(Uuid::new_v4())
         .bind(user_id)
         .bind(Json(method))
         .bind(expires)
+        .bind(meta.user_agent)
+        .bind(meta.ip_address)
         .fetch_one(&self.pool)
         .await?)
     }
@@ -139,7 +143,7 @@ impl AutheryStore for PgStore {
 
     async fn get_session(&self, session_id: &Uuid) -> Result<Option<PgSession>, PgStoreError> {
         Ok(sqlx::query_as(
-            "SELECT id, user_id, method, expires, last_seen FROM sessions WHERE id = $1",
+            "SELECT id, user_id, method, expires, last_seen, user_agent, ip_address FROM sessions WHERE id = $1",
         )
         .bind(session_id)
         .fetch_optional(&self.pool)
@@ -157,7 +161,7 @@ impl AutheryStore for PgStore {
 
     async fn get_user_sessions(&self, user_id: &Uuid) -> Result<Vec<PgSession>, PgStoreError> {
         Ok(sqlx::query_as(
-            "SELECT id, user_id, method, expires, last_seen FROM sessions WHERE user_id = $1",
+            "SELECT id, user_id, method, expires, last_seen, user_agent, ip_address FROM sessions WHERE user_id = $1",
         )
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -580,61 +584,77 @@ impl AutheryStore for PgStore {
     }
 
     // --- webauthn store ---
+    // The webauthn-rs blob stays opaque jsonb; the record's metadata lives
+    // in its own columns.
 
     #[cfg(feature = "webauthn")]
-    async fn create_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), PgStoreError> {
+    async fn create_passkey(
+        &self,
+        user_id: &Uuid,
+        record: PasskeyRecord,
+    ) -> Result<(), PgStoreError> {
         sqlx::query(
-            "INSERT INTO passkeys (credential_id, user_id, passkey) VALUES ($1, $2, $3)
-             ON CONFLICT (credential_id) DO UPDATE SET passkey = EXCLUDED.passkey",
+            "INSERT INTO passkeys (credential_id, user_id, passkey, name, created, last_used)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (credential_id) DO UPDATE
+             SET passkey = EXCLUDED.passkey, name = EXCLUDED.name, last_used = EXCLUDED.last_used",
         )
-        .bind(passkey.cred_id().as_slice())
+        .bind(record.credential_id())
         .bind(user_id)
-        .bind(Json(&passkey))
+        .bind(Json(&record.passkey))
+        .bind(&record.name)
+        .bind(record.created)
+        .bind(record.last_used)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
     #[cfg(feature = "webauthn")]
-    async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<Passkey>, PgStoreError> {
-        Ok(
-            sqlx::query("SELECT passkey FROM passkeys WHERE user_id = $1")
-                .bind(user_id)
-                .fetch_all(&self.pool)
-                .await?
-                .into_iter()
-                .map(|row| row.get::<Json<Passkey>, _>("passkey").0)
-                .collect(),
+    async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<PasskeyRecord>, PgStoreError> {
+        Ok(sqlx::query(
+            "SELECT passkey, name, created, last_used FROM passkeys WHERE user_id = $1",
         )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(passkey_record)
+        .collect())
     }
 
     #[cfg(feature = "webauthn")]
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
-    ) -> Result<Option<(Uuid, Passkey)>, PgStoreError> {
-        Ok(
-            sqlx::query("SELECT user_id, passkey FROM passkeys WHERE credential_id = $1")
-                .bind(credential_id)
-                .fetch_optional(&self.pool)
-                .await?
-                .map(|row| {
-                    (
-                        row.get::<Uuid, _>("user_id"),
-                        row.get::<Json<Passkey>, _>("passkey").0,
-                    )
-                }),
+    ) -> Result<Option<(Uuid, PasskeyRecord)>, PgStoreError> {
+        Ok(sqlx::query(
+            "SELECT user_id, passkey, name, created, last_used FROM passkeys
+             WHERE credential_id = $1",
         )
+        .bind(credential_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .map(|row| (row.get::<Uuid, _>("user_id"), passkey_record(row))))
     }
 
     #[cfg(feature = "webauthn")]
-    async fn update_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), PgStoreError> {
-        sqlx::query("UPDATE passkeys SET passkey = $3 WHERE credential_id = $1 AND user_id = $2")
-            .bind(passkey.cred_id().as_slice())
-            .bind(user_id)
-            .bind(Json(&passkey))
-            .execute(&self.pool)
-            .await?;
+    async fn update_passkey(
+        &self,
+        user_id: &Uuid,
+        record: PasskeyRecord,
+    ) -> Result<(), PgStoreError> {
+        sqlx::query(
+            "UPDATE passkeys SET passkey = $3, name = $4, last_used = $5
+             WHERE credential_id = $1 AND user_id = $2",
+        )
+        .bind(record.credential_id())
+        .bind(user_id)
+        .bind(Json(&record.passkey))
+        .bind(&record.name)
+        .bind(record.last_used)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -851,5 +871,17 @@ impl AutheryStore for PgStore {
 
         tx.commit().await?;
         Ok((user, token))
+    }
+}
+
+#[cfg(feature = "webauthn")]
+fn passkey_record(row: sqlx::postgres::PgRow) -> PasskeyRecord {
+    PasskeyRecord {
+        passkey: row
+            .get::<Json<authery::reexports::webauthn_rs::prelude::Passkey>, _>("passkey")
+            .0,
+        name: row.get("name"),
+        created: row.get("created"),
+        last_used: row.get("last_used"),
     }
 }

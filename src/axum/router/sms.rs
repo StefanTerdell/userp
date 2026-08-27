@@ -23,19 +23,21 @@ where
     St::Error: IntoResponse,
 {
     let sms_route = auth.routes.sms.login_sms.clone();
-    let login_route = auth.routes.pages.login.clone();
+    let routes = auth.routes.clone();
 
     match code {
-        None => match auth.sms_login_init(number.clone(), next).await {
+        None => match auth.sms_login_init(number.clone(), next.clone()).await {
             Ok(()) => Ok(Redirect::to(&format!(
                 "{sms_route}?address={}&message=Code sent!",
                 urlencoding::encode(&number)
             ))
             .into_response()),
             Err(crate::sms::SmsInitError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{login_route}?error={}",
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.login,
+                next.as_deref(),
             ))
             .into_response()),
         },
@@ -52,10 +54,11 @@ where
                 Ok((auth, Redirect::to(&next)).into_response())
             }
             Err(SmsVerifyError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{sms_route}?address={}&error={}",
-                urlencoding::encode(&number),
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &format!("{sms_route}?address={}", urlencoding::encode(&number)),
+                next.as_deref(),
             ))
             .into_response()),
         },
@@ -71,19 +74,21 @@ where
     St::Error: IntoResponse,
 {
     let sms_route = auth.routes.sms.signup_sms.clone();
-    let signup_route = auth.routes.pages.signup.clone();
+    let routes = auth.routes.clone();
 
     match code {
-        None => match auth.sms_signup_init(number.clone(), next).await {
+        None => match auth.sms_signup_init(number.clone(), next.clone()).await {
             Ok(()) => Ok(Redirect::to(&format!(
                 "{sms_route}?address={}&message=Code sent!",
                 urlencoding::encode(&number)
             ))
             .into_response()),
             Err(crate::sms::SmsInitError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{signup_route}?error={}",
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.signup,
+                next.as_deref(),
             ))
             .into_response()),
         },
@@ -100,10 +105,11 @@ where
                 Ok((auth, Redirect::to(&next)).into_response())
             }
             Err(SmsVerifyError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&format!(
-                "{sms_route}?address={}&error={}",
-                urlencoding::encode(&number),
-                urlencoding::encode(&err.to_string())
+            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &format!("{sms_route}?address={}", urlencoding::encode(&number)),
+                next.as_deref(),
             ))
             .into_response()),
         },

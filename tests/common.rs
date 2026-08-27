@@ -148,6 +148,7 @@ pub struct TestSession {
     pub method: LoginMethod,
     pub expires: DateTime<Utc>,
     pub last_seen: Option<DateTime<Utc>>,
+    pub meta: authery::models::SessionMeta,
 }
 
 impl LoginSession for TestSession {
@@ -168,6 +169,12 @@ impl LoginSession for TestSession {
     fn get_last_seen(&self) -> Option<DateTime<Utc>> {
         self.last_seen
     }
+    fn get_user_agent(&self) -> Option<&str> {
+        self.meta.user_agent.as_deref()
+    }
+    fn get_ip_address(&self) -> Option<&str> {
+        self.meta.ip_address.as_deref()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -184,7 +191,7 @@ pub struct TestStore {
     #[cfg(feature = "oauth")]
     pub oauth_tokens: Arc<Mutex<HashMap<Uuid, TestOAuthToken>>>,
     #[cfg(feature = "webauthn")]
-    pub passkeys: Arc<Mutex<Vec<(Uuid, authery::reexports::webauthn_rs::prelude::Passkey)>>>,
+    pub passkeys: Arc<Mutex<Vec<(Uuid, authery::models::PasskeyRecord)>>>,
 }
 
 impl TestStore {
@@ -266,6 +273,7 @@ impl AutheryStore for TestStore {
         user_id: &Uuid,
         method: LoginMethod,
         expires: DateTime<Utc>,
+        meta: authery::models::SessionMeta,
     ) -> Result<TestSession, Infallible> {
         let session = TestSession {
             id: Uuid::new_v4(),
@@ -273,6 +281,7 @@ impl AutheryStore for TestStore {
             method,
             expires,
             last_seen: Some(Utc::now()),
+            meta,
         };
         self.sessions
             .lock()
@@ -438,7 +447,7 @@ impl AutheryStore for TestStore {
     async fn create_passkey(
         &self,
         user_id: &Uuid,
-        passkey: authery::reexports::webauthn_rs::prelude::Passkey,
+        passkey: authery::models::PasskeyRecord,
     ) -> Result<(), Infallible> {
         self.passkeys.lock().unwrap().push((*user_id, passkey));
         Ok(())
@@ -448,7 +457,7 @@ impl AutheryStore for TestStore {
     async fn get_passkeys(
         &self,
         user_id: &Uuid,
-    ) -> Result<Vec<authery::reexports::webauthn_rs::prelude::Passkey>, Infallible> {
+    ) -> Result<Vec<authery::models::PasskeyRecord>, Infallible> {
         Ok(self
             .passkeys
             .lock()
@@ -463,13 +472,13 @@ impl AutheryStore for TestStore {
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
-    ) -> Result<Option<(Uuid, authery::reexports::webauthn_rs::prelude::Passkey)>, Infallible> {
+    ) -> Result<Option<(Uuid, authery::models::PasskeyRecord)>, Infallible> {
         Ok(self
             .passkeys
             .lock()
             .unwrap()
             .iter()
-            .find(|(_, p)| p.cred_id().as_ref() == credential_id)
+            .find(|(_, p)| p.credential_id() == credential_id)
             .cloned())
     }
 
@@ -477,10 +486,10 @@ impl AutheryStore for TestStore {
     async fn update_passkey(
         &self,
         user_id: &Uuid,
-        passkey: authery::reexports::webauthn_rs::prelude::Passkey,
+        passkey: authery::models::PasskeyRecord,
     ) -> Result<(), Infallible> {
         let mut passkeys = self.passkeys.lock().unwrap();
-        passkeys.retain(|(u, p)| !(u == user_id && p.cred_id() == passkey.cred_id()));
+        passkeys.retain(|(u, p)| !(u == user_id && p.credential_id() == passkey.credential_id()));
         passkeys.push((*user_id, passkey));
         Ok(())
     }
@@ -490,7 +499,7 @@ impl AutheryStore for TestStore {
         self.passkeys
             .lock()
             .unwrap()
-            .retain(|(u, p)| !(u == user_id && p.cred_id().as_ref() == credential_id));
+            .retain(|(u, p)| !(u == user_id && p.credential_id() == credential_id));
         Ok(())
     }
 
@@ -908,6 +917,8 @@ impl AuthBuilder {
             rate_limiter: self.rate_limiter,
             events: self.events,
             bearer_token: None,
+            session_meta: Default::default(),
+            cookie_names: Default::default(),
             cookies: TestCookies::default(),
             store: self.store,
             pass: PasswordConfig::new().with_hasher(PlaintextHasher),

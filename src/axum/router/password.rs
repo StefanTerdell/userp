@@ -28,7 +28,7 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let signup_route = auth.routes.pages.signup.clone();
+    let routes = auth.routes.clone();
 
     match auth.password_signup(&email, &password).await {
         Ok(auth) => {
@@ -43,13 +43,13 @@ where
         }
         Err(err) => match err {
             PasswordSignupError::StoreError(err) => Err(err),
-            _ => {
-                let next = format!(
-                    "{signup_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
+            _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
+                &routes,
+                &err,
+                &routes.pages.signup,
+                next.as_deref(),
+            ))
+            .into_response()),
         },
     }
 }
@@ -66,7 +66,7 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let login_route = auth.routes.pages.login.clone();
+    let routes = auth.routes.clone();
 
     match auth.password_login(&email, &password).await {
         Ok(auth) => {
@@ -84,11 +84,13 @@ where
             PasswordLoginError::NotAllowed
             | PasswordLoginError::WrongPassword
             | PasswordLoginError::RateLimited(_) => {
-                let next = format!(
-                    "{login_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
+                Ok(Redirect::to(&crate::axum::router::error_redirect(
+                    &routes,
+                    &err,
+                    &routes.pages.login,
+                    next.as_deref(),
+                ))
+                .into_response())
             }
         },
     }

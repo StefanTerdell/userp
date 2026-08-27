@@ -10,7 +10,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum EmailVerifyCallbackError<StoreError: std::error::Error> {
     #[error("Challenge expired")]
-    ChallengeExpired,
+    ChallengeExpired { address: String },
     #[error("Challenge not found")]
     ChallengeNotFound,
     #[error(transparent)]
@@ -27,6 +27,15 @@ pub enum EmailVerifyInitError<StoreError: std::error::Error> {
     Store(StoreError),
 }
 
+impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailVerifyInitError<E> {
+    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
+        match self {
+            Self::SendingEmail(inner) => inner.rate_limited(),
+            _ => None,
+        }
+    }
+}
+
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     pub async fn email_verify_callback(
         &self,
@@ -37,7 +46,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         if challenge.get_expires() < Utc::now() {
-            return Err(EmailVerifyCallbackError::ChallengeExpired);
+            return Err(EmailVerifyCallbackError::ChallengeExpired {
+                address: challenge.get_address().to_owned(),
+            });
         }
 
         self.store

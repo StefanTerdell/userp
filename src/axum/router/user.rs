@@ -65,18 +65,35 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    let new_password_hash = auth.pass.hasher.generate_hash(new_password).await;
+    let user_route = auth.routes.pages.user.clone();
+
+    let new_password_hash = match auth.new_password_hash(&new_password).await {
+        Ok(hash) => hash,
+        Err(err) => {
+            #[cfg(all(feature = "password", feature = "email"))]
+            let page = if is_reset_session {
+                auth.routes.pages.password_reset.clone()
+            } else {
+                user_route
+            };
+            #[cfg(not(all(feature = "password", feature = "email")))]
+            let page = user_route;
+            return Ok(Redirect::to(&format!(
+                "{page}?error={}",
+                urlencoding::encode(&err.to_string())
+            ))
+            .into_response());
+        }
+    };
 
     auth.store
         .set_user_password_hash(&user.get_id(), new_password_hash, &session.get_id())
         .await?;
 
-    let user_route = auth.routes.pages.user.clone();
-
-    // A reset session is single-use - drop it once the password is set.
+    // A reset ends every session, the single-use reset session included.
     if is_reset_session {
         let login_route = auth.routes.pages.login.clone();
-        let auth = auth.log_out().await?;
+        let auth = auth.log_out_everywhere().await?;
 
         return Ok((
             auth,
@@ -272,6 +289,29 @@ where
     let user_route = auth.routes.pages.post_login;
 
     Ok(Redirect::to(&format!("{user_route}?message=Session deleted")).into_response())
+}
+
+pub async fn post_user_session_delete_others<St>(
+    auth: AxumAuthery<St>,
+) -> Result<impl IntoResponse, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    let Some(deleted) = auth.log_out_other_sessions().await? else {
+        return Ok(StatusCode::UNAUTHORIZED.into_response());
+    };
+
+    #[cfg(feature = "pages")]
+    let user_route = &auth.routes.pages.user;
+    #[cfg(not(feature = "pages"))]
+    let user_route = &auth.routes.pages.post_login;
+
+    Ok(Redirect::to(&format!(
+        "{user_route}?message={}",
+        urlencoding::encode(&format!("Signed out of {deleted} other sessions"))
+    ))
+    .into_response())
 }
 
 #[cfg(all(feature = "totp", feature = "pages"))]

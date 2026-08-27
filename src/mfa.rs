@@ -45,6 +45,13 @@ pub struct MfaPolicy {
     pub require_for_sms: bool,
     #[cfg(feature = "oauth")]
     pub require_for_oauth: bool,
+    /// How long a device the user chose to trust after completing MFA may
+    /// skip the second factor. `None` (the default) disables the option;
+    /// the resulting sessions record [`LoginMethod::TrustedDevice`] as the
+    /// second factor.
+    pub trusted_device_lifetime: Option<chrono::Duration>,
+    /// Codes per generated recovery batch (default 10).
+    pub recovery_code_count: usize,
 }
 
 impl Default for MfaPolicy {
@@ -59,6 +66,8 @@ impl Default for MfaPolicy {
             require_for_sms: false,
             #[cfg(feature = "oauth")]
             require_for_oauth: false,
+            trusted_device_lifetime: None,
+            recovery_code_count: 10,
         }
     }
 }
@@ -130,13 +139,63 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Ok(method);
         }
 
-        if self.mfa_factors(user_id, &method).await?.any() {
-            Ok(LoginMethod::MfaPending {
-                first: Box::new(method),
-            })
-        } else {
-            Ok(method)
+        if !self.mfa_factors(user_id, &method).await?.any() {
+            return Ok(method);
         }
+
+        if self.device_trusted_for(user_id) {
+            return Ok(LoginMethod::Mfa {
+                first: Box::new(method),
+                second: Box::new(LoginMethod::TrustedDevice),
+            });
+        }
+
+        Ok(LoginMethod::MfaPending {
+            first: Box::new(method),
+        })
+    }
+
+    /// Whether the trusted-device cookie names this user and is still valid.
+    fn device_trusted_for(&self, user_id: &S::UserId) -> bool {
+        if self.mfa_policy.trusted_device_lifetime.is_none() {
+            return false;
+        }
+        let Some(value) = self.cookies.get(&self.cookie_names.trusted_device) else {
+            return false;
+        };
+        let Some((expires, cookie_user)) = value.split_once(':') else {
+            return false;
+        };
+        let Ok(expires) = expires.parse::<i64>() else {
+            return false;
+        };
+        expires > chrono::Utc::now().timestamp() && cookie_user == user_id.to_string()
+    }
+
+    /// Remember this device for the logged-in user so the next logins within
+    /// [`MfaPolicy::trusted_device_lifetime`] skip the second factor. Returns
+    /// `false` when the option is disabled or nobody is logged in.
+    pub async fn trust_this_device(&mut self) -> Result<bool, S::Error> {
+        let Some(lifetime) = self.mfa_policy.trusted_device_lifetime else {
+            return Ok(false);
+        };
+        let Some(session) = self.session().await? else {
+            return Ok(false);
+        };
+
+        let expires = (chrono::Utc::now() + lifetime).timestamp();
+        self.cookies.add_persistent(
+            &self.cookie_names.trusted_device,
+            &format!("{expires}:{}", session.get_user_id()),
+            lifetime,
+        );
+
+        Ok(true)
+    }
+
+    /// Forget this device; the next login runs the second factor again.
+    pub fn forget_this_device(&mut self) {
+        self.cookies.remove(&self.cookie_names.trusted_device);
     }
 
     /// The second factors available to this user, given the first factor
@@ -244,7 +303,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         self.store
             .delete_session(&user_id, &pending.get_id())
             .await?;
-        self.cookies.remove(crate::constants::SESSION_ID_KEY);
+        self.cookies.remove(&self.cookie_names.session_id);
 
         self.log_in(
             LoginMethod::Mfa {
@@ -284,6 +343,8 @@ mod otp_factor {
         #[error(transparent)]
         Store(StoreError),
     }
+
+    crate::ratelimit::impl_maybe_rate_limited!(MfaOtpError, RateLimited);
 
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         /// Mail a second-factor code to the pending user's own verified
@@ -388,8 +449,6 @@ mod webauthn_factor {
         PasskeyAuthentication, PublicKeyCredential, RequestChallengeResponse, WebauthnError,
     };
 
-    const MFA_WEBAUTHN_KEY: &str = "authery-mfa-webauthn";
-
     #[derive(Debug, Error)]
     pub enum MfaWebauthnError<StoreError: std::error::Error> {
         #[error("No MFA login in progress")]
@@ -429,6 +488,7 @@ mod webauthn_factor {
                 return Err(MfaWebauthnError::FactorUnavailable);
             }
 
+            let passkeys: Vec<_> = passkeys.into_iter().map(|p| p.passkey).collect();
             let (rcr, auth_state) = self
                 .webauthn
                 .webauthn
@@ -436,7 +496,7 @@ mod webauthn_factor {
 
             self.cookies.add(
                 &crate::webauthn::ceremony_key(
-                    MFA_WEBAUTHN_KEY,
+                    &self.cookie_names.mfa_webauthn_prefix,
                     &crate::webauthn::challenge_b64(&rcr.public_key.challenge)?,
                 ),
                 &serde_json::to_string(&auth_state)?,
@@ -462,7 +522,9 @@ mod webauthn_factor {
             let Some(state_key) = crate::webauthn::client_data_challenge(
                 credential.response.client_data_json.as_ref(),
             )
-            .map(|challenge| crate::webauthn::ceremony_key(MFA_WEBAUTHN_KEY, &challenge)) else {
+            .map(|challenge| {
+                crate::webauthn::ceremony_key(&self.cookie_names.mfa_webauthn_prefix, &challenge)
+            }) else {
                 return Err(MfaWebauthnError::NoCeremony);
             };
             let Some(state_json) = self.cookies.get(&state_key) else {
@@ -481,19 +543,20 @@ mod webauthn_factor {
 
             let user_id = pending.get_user_id();
 
-            // Persist counter/backup-state updates.
+            // Persist counter/backup-state updates and the last-used stamp.
             let passkeys = self
                 .store
                 .get_passkeys(&user_id)
                 .await
                 .map_err(MfaWebauthnError::Store)?;
-            if let Some(mut passkey) = passkeys
+            if let Some(mut record) = passkeys
                 .into_iter()
-                .find(|p| p.cred_id() == result.cred_id())
-                && passkey.update_credential(&result).unwrap_or(false)
+                .find(|p| p.passkey.cred_id() == result.cred_id())
             {
+                record.passkey.update_credential(&result);
+                record.last_used = Some(chrono::Utc::now());
                 self.store
-                    .update_passkey(&user_id, passkey)
+                    .update_passkey(&user_id, record)
                     .await
                     .map_err(MfaWebauthnError::Store)?;
             }
@@ -527,6 +590,15 @@ mod totp_factor {
         Totp(TotpError<StoreError>),
         #[error(transparent)]
         Store(StoreError),
+    }
+
+    impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for MfaTotpError<E> {
+        fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
+            match self {
+                Self::Totp(inner) => inner.rate_limited(),
+                _ => None,
+            }
+        }
     }
 
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
@@ -582,6 +654,8 @@ mod sms_factor {
         #[error(transparent)]
         Store(StoreError),
     }
+
+    crate::ratelimit::impl_maybe_rate_limited!(MfaSmsError, RateLimited);
 
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         /// Text a second-factor code to the pending user's own verified
@@ -684,9 +758,6 @@ mod recovery {
     use crate::ratelimit::{RateLimitOp, RateLimited};
     use sha2::{Digest, Sha256};
 
-    /// How many codes a batch contains.
-    const BATCH_SIZE: usize = 10;
-
     /// The canonical hash of a recovery code: SHA-256 hex over the
     /// normalized form (lowercased, separators stripped). Codes carry ~50
     /// bits of CSPRNG entropy, so a fast hash suffices against offline
@@ -739,6 +810,8 @@ mod recovery {
         Store(StoreError),
     }
 
+    crate::ratelimit::impl_maybe_rate_limited!(MfaRecoveryError, RateLimited);
+
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         /// Generate a fresh batch of recovery codes for the logged-in user,
         /// replacing any previous batch. The plaintext codes are returned
@@ -750,7 +823,9 @@ mod recovery {
                 return Err(RecoveryCodesError::NotLoggedIn);
             };
 
-            let codes: Vec<String> = (0..BATCH_SIZE).map(|_| generate_code()).collect();
+            let codes: Vec<String> = (0..self.mfa_policy.recovery_code_count)
+                .map(|_| generate_code())
+                .collect();
             let hashes = codes.iter().map(|c| hash_recovery_code(c)).collect();
 
             self.store

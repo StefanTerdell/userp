@@ -54,6 +54,29 @@ pub struct RateLimited {
 
 pub type RateLimitFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RateLimited>> + Send + 'a>>;
 
+/// Flow errors that may wrap a rate-limit refusal.
+pub trait MaybeRateLimited {
+    fn rate_limited(&self) -> Option<&RateLimited>;
+}
+
+/// `impl MaybeRateLimited` for an enum whose `$variant` holds a `RateLimited`;
+/// extra arms delegate to nested errors.
+macro_rules! impl_maybe_rate_limited {
+    ($ty:ident, $variant:ident $(, $nested:ident)*) => {
+        impl<E: std::error::Error> $crate::ratelimit::MaybeRateLimited for $ty<E> {
+            fn rate_limited(&self) -> Option<&$crate::ratelimit::RateLimited> {
+                match self {
+                    Self::$variant(limited) => Some(limited),
+                    $(Self::$nested(inner) => inner.rate_limited(),)*
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+pub(crate) use impl_maybe_rate_limited;
+
 /// Consulted before abusable operations. Implement and register with
 /// [`crate::config::AutheryConfig::with_rate_limiter`]. Return `Ok(())` to let
 /// the operation proceed, `Err(RateLimited)` to refuse it.

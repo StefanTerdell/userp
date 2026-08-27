@@ -18,6 +18,27 @@
 
   <p>Your account requires a second factor to log in.</p>
 
+  {% if let Some(days) = trust_device_days %}
+  <div class="form-group">
+    <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+      <input type="checkbox" id="trust-device" style="width: auto;">
+      Trust this device for {{ days }} days
+    </label>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var box = document.getElementById('trust-device');
+      function sync() {
+        document.querySelectorAll('input[name="trust_device"]').forEach(function (el) {
+          el.value = box.checked ? '1' : '';
+        });
+      }
+      box.addEventListener('change', sync);
+      sync();
+    });
+  </script>
+  {% endif %}
+
   {% if let Some(webauthn) = webauthn %}
   <div class="webauthn-login">
     <button type="button" id="mfa-passkey-button" class="social-button">Use a passkey</button>
@@ -63,7 +84,9 @@
               userHandle: cred.response.userHandle ? toB64url(cred.response.userHandle) : null
             }
           };
-          var fin = await fetch('{{ webauthn.finish_route }}', {
+          var trust = document.getElementById('trust-device');
+          var finishUrl = '{{ webauthn.finish_route }}' + (trust && trust.checked ? '?trust_device=1' : '');
+          var fin = await fetch(finishUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
@@ -97,6 +120,7 @@
           autocomplete="one-time-code" required>
       </div>
       <button type="submit">Verify</button>
+      <input type="hidden" name="trust_device" value="" />
       {% if let Some(next) = next %}
       <input type="hidden" name="next" value="{{ next }}" />
       {% endif %}
@@ -118,6 +142,7 @@
         <input type="text" id="recovery-code" name="code" autocomplete="off" required>
       </div>
       <button type="submit">Use recovery code</button>
+      <input type="hidden" name="trust_device" value="" />
       {% if let Some(next) = next %}
       <input type="hidden" name="next" value="{{ next }}" />
       {% endif %}
@@ -146,6 +171,7 @@
         <input type="text" id="sms-code" name="code" {% if let Some(mode) = sms.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = sms.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = sms.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code">
       </div>
       <button type="submit">Verify</button>
+      <input type="hidden" name="trust_device" value="" />
       {% if let Some(next) = next %}
       <input type="hidden" name="next" value="{{ next }}" />
       {% endif %}
@@ -175,6 +201,7 @@
         required>
       </div>
       <button type="submit">Verify</button>
+      <input type="hidden" name="trust_device" value="" />
       {% if let Some(next) = next %}
       <input type="hidden" name="next" value="{{ next }}" />
       {% endif %}

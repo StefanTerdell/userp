@@ -233,6 +233,8 @@ pub enum SendEmailChallengeError<StoreError: std::error::Error> {
     Store(#[from] StoreError),
 }
 
+crate::ratelimit::impl_maybe_rate_limited!(SendEmailChallengeError, RateLimited);
+
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     #[cfg(feature = "email")]
     async fn send_email_challenge(

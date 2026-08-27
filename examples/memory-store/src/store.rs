@@ -8,7 +8,7 @@ use crate::models::MyUserPhone;
 use crate::models::{AppOrg, AppOrgMember, AppOrgProvider, MyOAuthToken};
 use crate::models::{MyLoginSession, MyUser};
 #[cfg(feature = "webauthn")]
-use authery::reexports::webauthn_rs::prelude::Passkey;
+use authery::models::PasskeyRecord;
 use authery::{
     prelude::*,
     reexports::{
@@ -35,7 +35,7 @@ pub struct MemoryStore {
     /// Passkeys keyed by raw credential id, with their owning user.
     #[cfg(feature = "webauthn")]
     #[allow(clippy::type_complexity)]
-    passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, Passkey)>>>,
+    passkeys: Arc<RwLock<HashMap<Vec<u8>, (Uuid, PasskeyRecord)>>>,
     #[cfg(feature = "totp")]
     totp: Arc<RwLock<HashMap<Uuid, TotpCredential>>>,
     #[cfg(feature = "sms")]
@@ -86,16 +86,20 @@ impl AutheryStore for MemoryStore {
     type OAuthTokenId = Uuid;
 
     #[cfg(feature = "webauthn")]
-    async fn create_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), Self::Error> {
+    async fn create_passkey(
+        &self,
+        user_id: &Uuid,
+        passkey: PasskeyRecord,
+    ) -> Result<(), Self::Error> {
         let mut passkeys = self.passkeys.write().await;
 
-        passkeys.insert(passkey.cred_id().to_vec(), (*user_id, passkey));
+        passkeys.insert(passkey.credential_id().to_vec(), (*user_id, passkey));
 
         Ok(())
     }
 
     #[cfg(feature = "webauthn")]
-    async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<Passkey>, Self::Error> {
+    async fn get_passkeys(&self, user_id: &Uuid) -> Result<Vec<PasskeyRecord>, Self::Error> {
         let passkeys = self.passkeys.read().await;
 
         Ok(passkeys
@@ -109,26 +113,29 @@ impl AutheryStore for MemoryStore {
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
-    ) -> Result<Option<(Uuid, Passkey)>, Self::Error> {
+    ) -> Result<Option<(Uuid, PasskeyRecord)>, Self::Error> {
         let passkeys = self.passkeys.read().await;
 
         Ok(passkeys.get(credential_id).cloned())
     }
 
     #[cfg(feature = "webauthn")]
-    async fn update_passkey(&self, user_id: &Uuid, passkey: Passkey) -> Result<(), Self::Error> {
+    async fn update_passkey(
+        &self,
+        user_id: &Uuid,
+        passkey: PasskeyRecord,
+    ) -> Result<(), Self::Error> {
         let mut passkeys = self.passkeys.write().await;
 
-        match passkeys.get(passkey.cred_id().as_slice()) {
+        match passkeys.get(passkey.credential_id()) {
             Some((owner, _)) if owner == user_id => {
-                passkeys.insert(passkey.cred_id().to_vec(), (*user_id, passkey));
+                passkeys.insert(passkey.credential_id().to_vec(), (*user_id, passkey));
                 Ok(())
             }
             Some(_) => Err(MemoryStoreError::WrongUserId),
-            None => Err(MemoryStoreError::TokenNotFound(format!(
-                "{:x?}",
-                passkey.cred_id()
-            ))),
+            None => Err(MemoryStoreError::TokenNotFound(
+                passkey.credential_id_hex(),
+            )),
         }
     }
 
@@ -211,6 +218,7 @@ impl AutheryStore for MemoryStore {
         user_id: &Uuid,
         method: LoginMethod,
         expires: DateTime<Utc>,
+        meta: SessionMeta,
     ) -> Result<Self::LoginSession, Self::Error> {
         let session = MyLoginSession {
             id: Uuid::new_v4(),
@@ -218,6 +226,7 @@ impl AutheryStore for MemoryStore {
             method,
             expires,
             last_seen: Some(Utc::now()),
+            meta,
         };
 
         let mut sessions = self.sessions.write().await;

@@ -1,3 +1,4 @@
+use crate::cookie_names::CookieNames;
 #[cfg(feature = "email")]
 use crate::email::EmailConfig;
 #[cfg(feature = "mfa")]
@@ -63,6 +64,12 @@ pub struct AutheryConfig {
     /// `Authorization: Bearer` — a token without the prefix is rejected.
     /// `None` (the default) uses the bare session id.
     pub bearer_token_prefix: Option<String>,
+    /// Header holding the client address when behind a proxy (e.g.
+    /// `x-forwarded-for`; the first entry is used). Without it the socket
+    /// address is recorded when axum's `ConnectInfo` is available.
+    pub client_ip_header: Option<String>,
+    /// Names of the cookies authery sets.
+    pub cookie_names: CookieNames,
     /// Consulted before abusable operations (password attempts, email sends).
     /// Defaults to no limiting; see [`crate::ratelimit`].
     pub rate_limiter: Arc<dyn RateLimiter>,
@@ -123,6 +130,8 @@ impl AutheryConfig {
             previous_keys: Vec::new(),
             bearer_auth: false,
             bearer_token_prefix: None,
+            client_ip_header: None,
+            cookie_names: CookieNames::default(),
             rate_limiter: Arc::new(NoRateLimit),
             events: Arc::new(crate::events::TracingEvents),
             routes: routes.into(),
@@ -171,6 +180,19 @@ impl AutheryConfig {
         }
         self.previous_keys = keys;
         Ok(self)
+    }
+
+    /// Rename the cookies authery sets; see [`CookieNames`].
+    pub fn with_cookie_names(mut self, cookie_names: CookieNames) -> Self {
+        self.cookie_names = cookie_names;
+        self
+    }
+
+    /// Record client addresses from this header; see
+    /// [`AutheryConfig::client_ip_header`].
+    pub fn with_client_ip_header(mut self, header: impl Into<String>) -> Self {
+        self.client_ip_header = Some(header.into());
+        self
     }
 
     /// Enable idle expiry; see [`AutheryConfig::idle_timeout`].

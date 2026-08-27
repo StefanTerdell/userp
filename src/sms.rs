@@ -134,6 +134,8 @@ pub enum SmsInitError<StoreError: std::error::Error> {
     Store(StoreError),
 }
 
+crate::ratelimit::impl_maybe_rate_limited!(SmsInitError, RateLimited);
+
 #[derive(Debug, Error)]
 pub enum SmsVerifyError<StoreError: std::error::Error> {
     #[error("Sms login not allowed")]
@@ -149,6 +151,8 @@ pub enum SmsVerifyError<StoreError: std::error::Error> {
     #[error(transparent)]
     Store(#[from] StoreError),
 }
+
+crate::ratelimit::impl_maybe_rate_limited!(SmsVerifyError, RateLimited);
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     fn emit_sms_code_rejected(&self, number: &str) {

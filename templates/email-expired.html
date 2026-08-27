@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+  <h1>This link has expired</h1>
+
+  <p>Emailed links are single-use and only valid for a short while.
+    {% if let Some(address) = address %}This one was sent to <strong>{{ address }}</strong>.{% endif %}
+  </p>
+
+  {% if let Some(address) = address %}
+  {% if let Some(resend) = resend_action_route %}
+  <form action="{{ resend }}" method="post" class="form">
+    <input type="hidden" name="email" value="{{ address }}" />
+    <button type="submit">Send a new link</button>
+  </form>
+  {% endif %}
+
+  {% if let Some(otp) = otp_action_route %}
+  <form action="{{ otp }}" method="post" class="form">
+    <input type="hidden" name="email" value="{{ address }}" />
+    <button type="submit" class="social-button">Email me a code instead</button>
+  </form>
+  {% endif %}
+  {% endif %}
+
+  <div class="links">
+    <a href="{{ login_page_route }}">
+      {% match purpose %}
+      {% when crate::pages::EmailLinkPurpose::Verify %}Back to your account
+      {% when _ %}Other ways to sign in
+      {% endmatch %}
+    </a>
+  </div>
+</div>
+{% endblock %}

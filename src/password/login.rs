@@ -19,6 +19,8 @@ pub enum PasswordLoginError<T: std::error::Error> {
     StoreError(#[from] T),
 }
 
+crate::ratelimit::impl_maybe_rate_limited!(PasswordLoginError, RateLimited);
+
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     #[must_use = "Don't forget to return the auth session as part of the response!"]
     pub async fn password_login(

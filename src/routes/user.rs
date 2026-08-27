@@ -23,6 +23,8 @@ pub struct UserActionRoutes<T = &'static str> {
     pub user_totp_disable: T,
     /// Post route to delete a login session
     pub user_session_delete: T,
+    /// Post route to delete every session except the current one
+    pub user_session_delete_others: T,
     /// Post route to add a user email
     #[cfg(feature = "email")]
     pub user_email_add: T,
@@ -59,6 +61,7 @@ impl Default for UserActionRoutes {
             #[cfg(feature = "totp")]
             user_totp_disable: "/user/totp/disable",
             user_session_delete: "/user/session/delete",
+            user_session_delete_others: "/user/session/delete_others",
             #[cfg(feature = "email")]
             user_email_add: "/user/email/add",
             #[cfg(feature = "email")]
@@ -90,6 +93,7 @@ impl<'a> From<&'a UserActionRoutes<String>> for UserActionRoutes<&'a str> {
             #[cfg(feature = "totp")]
             user_totp_disable: &value.user_totp_disable,
             user_session_delete: &value.user_session_delete,
+            user_session_delete_others: &value.user_session_delete_others,
             #[cfg(feature = "email")]
             user_email_add: &value.user_email_add,
             #[cfg(feature = "email")]
@@ -134,6 +138,7 @@ impl<T: Display> UserActionRoutes<T> {
             #[cfg(feature = "totp")]
             user_totp_disable: format!("{prefix}{}", self.user_totp_disable),
             user_session_delete: format!("{prefix}{}", self.user_session_delete),
+            user_session_delete_others: format!("{prefix}{}", self.user_session_delete_others),
             #[cfg(feature = "password")]
             user_password_set: format!("{prefix}{}", self.user_password_set),
             #[cfg(feature = "password")]

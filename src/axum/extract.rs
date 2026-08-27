@@ -78,6 +78,28 @@ where
         };
         let store = St::from_ref(state);
 
+        let session_meta = crate::models::SessionMeta {
+            user_agent: parts
+                .headers
+                .get(axum::http::header::USER_AGENT)
+                .and_then(|value| value.to_str().ok())
+                .map(|ua| ua.chars().take(512).collect()),
+            ip_address: config
+                .client_ip_header
+                .as_deref()
+                .and_then(|name| parts.headers.get(name))
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(',').next())
+                .map(|ip| ip.trim().to_string())
+                .filter(|ip| !ip.is_empty())
+                .or_else(|| {
+                    parts
+                        .extensions
+                        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                        .map(|info| info.0.ip().to_string())
+                }),
+        };
+
         Ok(CoreAuthery {
             allow_signup: config.allow_signup,
             allow_login: config.allow_login,
@@ -87,6 +109,8 @@ where
             rate_limiter: config.rate_limiter,
             events: config.events,
             bearer_token,
+            session_meta,
+            cookie_names: config.cookie_names,
             routes: config.routes,
             cookies,
             store,

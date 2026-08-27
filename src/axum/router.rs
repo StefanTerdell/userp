@@ -50,19 +50,22 @@ pub fn with_cookie_layer<S>(
     expose_auth_token: bool,
     auth_token_prefix: Option<String>,
     previous_keys: Vec<Key>,
+    session_cookie_name: String,
 ) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     let previous_keys = Arc::new(previous_keys);
+    let session_cookie_name = Arc::new(session_cookie_name);
     router.layer(from_fn(move |mut req: Request, next: Next| {
         let key = key.clone();
         let auth_token_prefix = auth_token_prefix.clone();
         let previous_keys = previous_keys.clone();
+        let session_cookie_name = session_cookie_name.clone();
         async move {
             let jar = PrivateCookieJar::from_headers(req.headers(), key);
             let session_before = jar
-                .get(crate::constants::SESSION_ID_KEY)
+                .get(session_cookie_name.as_str())
                 .map(|c| c.value().to_string());
             let fallbacks: Vec<PrivateCookieJar> = previous_keys
                 .iter()
@@ -80,7 +83,7 @@ where
 
             let jar = shared.jar.lock().unwrap().clone();
             let session_after = jar
-                .get(crate::constants::SESSION_ID_KEY)
+                .get(session_cookie_name.as_str())
                 .map(|c| c.value().to_string());
 
             let mut res = (jar, res).into_response();
@@ -181,6 +184,48 @@ fn jsonify_redirect(res: axum::response::Response) -> axum::response::Response {
     )
 }
 
+/// The paused page for a rate-limit refusal. Carries `error` so JSON clients
+/// get a 422.
+pub(crate) fn paused_url(
+    routes: &Routes<String>,
+    limited: &crate::ratelimit::RateLimited,
+    next: Option<&str>,
+) -> String {
+    let mut url = format!(
+        "{}?error={}",
+        routes.pages.paused,
+        urlencoding::encode("Too many attempts")
+    );
+    if let Some(retry_after) = limited.retry_after {
+        url.push_str(&format!(
+            "&retry_after={}",
+            retry_after.num_seconds().max(1)
+        ));
+    }
+    if let Some(next) = next {
+        url.push_str(&format!("&next={}", urlencoding::encode(next)));
+    }
+    url
+}
+
+/// `fallback` with `error=` appended, or the paused page when the error is a
+/// rate-limit refusal.
+pub(crate) fn error_redirect(
+    routes: &Routes<String>,
+    err: &(impl std::fmt::Display + crate::ratelimit::MaybeRateLimited),
+    fallback: &str,
+    next: Option<&str>,
+) -> String {
+    if let Some(limited) = err.rate_limited() {
+        return paused_url(routes, limited, next);
+    }
+    let separator = if fallback.contains('?') { '&' } else { '?' };
+    format!(
+        "{fallback}{separator}error={}",
+        urlencoding::encode(&err.to_string())
+    )
+}
+
 /// Guards against open redirects: only local paths pass through,
 /// anything absolute, protocol-relative or malformed becomes the fallback.
 pub(crate) fn safe_next(next: Option<String>, fallback: &str) -> String {
@@ -221,6 +266,11 @@ pub trait AxumRouter {
         Vec::new()
     }
 
+    /// See [`crate::config::AutheryConfig::cookie_names`].
+    fn cookie_names(&self) -> crate::cookie_names::CookieNames {
+        Default::default()
+    }
+
     fn router<St, S>(&self) -> Router<S>
     where
         AutheryConfig: FromRef<S>,
@@ -247,7 +297,24 @@ pub trait AxumRouter {
                 .route(
                     self.routes().pages.signup.as_str(),
                     get(pages::get_signup::<St>),
+                )
+                .route(
+                    self.routes().pages.paused.as_str(),
+                    get(pages::get_paused::<St>),
                 );
+
+            #[cfg(feature = "email")]
+            {
+                router = router
+                    .route(
+                        self.routes().pages.email_sent.as_str(),
+                        get(pages::get_email_sent::<St>),
+                    )
+                    .route(
+                        self.routes().pages.email_expired.as_str(),
+                        get(pages::get_email_expired::<St>),
+                    );
+            }
 
             #[cfg(all(feature = "email", feature = "password"))]
             {
@@ -281,6 +348,10 @@ pub trait AxumRouter {
                 .route(
                     self.routes().user.user_session_delete.as_str(),
                     post(user::post_user_session_delete::<St>),
+                )
+                .route(
+                    self.routes().user.user_session_delete_others.as_str(),
+                    post(user::post_user_session_delete_others::<St>),
                 );
 
             #[cfg(feature = "password")]
@@ -555,6 +626,7 @@ pub trait AxumRouter {
             self.bearer_auth(),
             self.bearer_token_prefix(),
             self.previous_cookie_keys(),
+            self.cookie_names().session_id,
         )
     }
 }
@@ -581,6 +653,10 @@ impl AxumRouter for AutheryConfig {
             .iter()
             .map(|key| Key::from(key.as_bytes()))
             .collect()
+    }
+
+    fn cookie_names(&self) -> crate::cookie_names::CookieNames {
+        self.cookie_names.clone()
     }
 }
 

@@ -5,13 +5,12 @@ use crate::oauth::OAuthConfig;
 #[cfg(feature = "password")]
 use crate::password::PasswordConfig;
 use crate::{
-    constants::SESSION_ID_KEY,
-    models::{AutheryCookies, LoginSession},
-    store::AutheryStore,
-};
-use crate::{
     models::{Allow, LoginMethod},
     routes::Routes,
+};
+use crate::{
+    models::{AutheryCookies, LoginSession},
+    store::AutheryStore,
 };
 use chrono::{Duration, Utc};
 
@@ -30,6 +29,11 @@ pub struct CoreAuthery<S: AutheryStore, C: AutheryCookies> {
     /// this from the Authorization header when bearer auth is enabled). When
     /// present it takes precedence over the session cookie.
     pub bearer_token: Option<String>,
+    /// Recorded on sessions created during this request; see
+    /// [`SessionMeta`](crate::models::SessionMeta).
+    pub session_meta: crate::models::SessionMeta,
+    /// See [`CookieNames`](crate::cookie_names::CookieNames).
+    pub cookie_names: crate::cookie_names::CookieNames,
     pub cookies: C,
     pub store: S,
     #[cfg(feature = "password")]
@@ -113,7 +117,10 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         let method = self.mfa_wrap_method(method, user_id).await?;
 
         let expires = Utc::now() + self.session_lifetime;
-        let session = self.store.create_session(user_id, method, expires).await?;
+        let session = self
+            .store
+            .create_session(user_id, method, expires, self.session_meta.clone())
+            .await?;
 
         self.emit(crate::events::AuthEvent::LoginSucceeded {
             user_id: user_id.to_string(),
@@ -125,7 +132,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
 
         self.cookies
-            .add(SESSION_ID_KEY, &session.get_id().to_string());
+            .add(&self.cookie_names.session_id, &session.get_id().to_string());
 
         Ok(self)
     }
@@ -159,7 +166,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     #[must_use = "Don't forget to return the auth session as part of the response!"]
     pub async fn log_out(mut self) -> Result<Self, S::Error> {
         if let Some(session_id) = self.session_id_cookie() {
-            self.cookies.remove(SESSION_ID_KEY);
+            self.cookies.remove(&self.cookie_names.session_id);
 
             // Delete whatever session the cookie points at - including
             // password reset sessions, which session() filters out.
@@ -168,11 +175,54 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
                     .delete_session(&session.get_user_id(), &session.get_id())
                     .await?;
             }
-        } else if self.cookies.get(SESSION_ID_KEY).is_some() {
-            self.cookies.remove(SESSION_ID_KEY);
+        } else if self.cookies.get(&self.cookie_names.session_id).is_some() {
+            self.cookies.remove(&self.cookie_names.session_id);
         }
 
         Ok(self)
+    }
+
+    /// Delete every session of the user the cookie (or bearer token) points
+    /// at, including reset and MFA-pending ones, and clear the cookie.
+    #[must_use = "Don't forget to return the auth session as part of the response!"]
+    pub async fn log_out_everywhere(mut self) -> Result<Self, S::Error> {
+        let Some(session_id) = self.session_id_cookie() else {
+            return self.log_out().await;
+        };
+
+        self.cookies.remove(&self.cookie_names.session_id);
+
+        if let Some(session) = self.store.get_session(&session_id).await? {
+            let user_id = session.get_user_id();
+            for session in self.store.get_user_sessions(&user_id).await? {
+                self.store
+                    .delete_session(&user_id, &session.get_id())
+                    .await?;
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Delete the logged-in user's other sessions, keeping the current one.
+    /// Returns the number deleted, or `None` when not logged in.
+    pub async fn log_out_other_sessions(&self) -> Result<Option<usize>, S::Error> {
+        let Some(current) = self.session().await? else {
+            return Ok(None);
+        };
+
+        let user_id = current.get_user_id();
+        let mut deleted = 0;
+        for session in self.store.get_user_sessions(&user_id).await? {
+            if session.get_id() != current.get_id() {
+                self.store
+                    .delete_session(&user_id, &session.get_id())
+                    .await?;
+                deleted += 1;
+            }
+        }
+
+        Ok(Some(deleted))
     }
 
     pub(crate) fn session_id_cookie(&self) -> Option<S::SessionId> {
@@ -182,7 +232,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return token.parse::<S::SessionId>().ok();
         }
 
-        let session_id_cookie = self.cookies.get(SESSION_ID_KEY)?;
+        let session_id_cookie = self.cookies.get(&self.cookie_names.session_id)?;
 
         session_id_cookie.parse::<S::SessionId>().ok()
     }
