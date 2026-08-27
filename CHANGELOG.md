@@ -30,6 +30,9 @@ crate. Everything below is new relative to userp 0.0.x:
 - Opt-in bearer-token session mode with an optional token prefix.
 - Rate-limiter hook, auth-event hook (tracing by default), customizable
   email/SMS copy, replaceable pages, per-route overrides.
+- Delivery failures (SMTP, SMS gateway) surface to the end user as a generic
+  "could not send" message; the underlying error is reported through the
+  `AuthEvent::DeliveryFailed` event instead of the redirect query string.
 - Session lifetime, per-user concurrent-session caps, server-side eviction.
 - Reference stores: Postgres (sqlx) and in-memory, feature-gated like the
   store trait itself.

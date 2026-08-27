@@ -575,7 +575,7 @@ mod sms_factor {
         FactorUnavailable,
         #[error("Wrong or expired code")]
         WrongCode,
-        #[error("Sending failed: {0}")]
+        #[error("Could not send the text message, please try again later")]
         Send(#[from] SmsSendError),
         #[error(transparent)]
         RateLimited(RateLimited),
@@ -606,9 +606,7 @@ mod sms_factor {
                 .await
                 .map_err(MfaSmsError::Store)?;
 
-            self.sms
-                .sender
-                .send(&number, &self.sms.messages.mfa_code(&digits))
+            self.send_sms(&number, &self.sms.messages.mfa_code(&digits))
                 .await?;
 
             Ok(number)

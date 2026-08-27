@@ -7,6 +7,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+  # Marvin attack on RSA PKCS#1 v1.5 decryption in `rsa` (via jsonwebtoken).
+  # Authery only verifies signatures, never decrypts. No fixed release exists.
+  { id = "RUSTSEC-2023-0071", reason = "rsa is used for signature verification only, not decryption" },
+]
 
 [licenses]
 version = 2
@@ -15,6 +20,7 @@ allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
   "ISC",
+  "0BSD",
   "BSD-2-Clause",
   "BSD-3-Clause",
   "MPL-2.0",

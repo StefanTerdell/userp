@@ -28,11 +28,14 @@ _Status: pre-release; APIs still moving._
 
 ### Basic example
 
-Enable the features you want (see the table below):
+All login methods are enabled by default; add `axum` for the router, or
+disable the defaults and pick features (see the table below):
 
 ```toml
 [dependencies]
-authery = { version = "0.1", features = ["axum", "pages", "webauthn", "mfa"] }
+authery = { version = "0.1", features = ["axum"] }
+# or only what you need:
+authery = { version = "0.1", default-features = false, features = ["axum", "pages", "user", "password", "email"] }
 ```
 
 Implement [`AutheryStore`](https://docs.rs/authery/latest/authery/store/trait.AutheryStore.html) for your storage (see
@@ -127,7 +130,7 @@ response.
 | `pages` | Bundled Askama pages + the `Pages` replacement trait | - |
 | `axum` | The extractor, router and cookie layer | - |
 
-Default: `user`, `email`, `password`, `oauth`.
+Default: everything except `axum`.
 
 ## The store
 

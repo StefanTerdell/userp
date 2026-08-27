@@ -47,6 +47,26 @@ pub enum AuthEvent {
         operation: &'static str,
         identifier: String,
     },
+    /// An email or text could not be delivered. `error` is the underlying
+    /// cause; the user only sees a generic message.
+    #[cfg(any(feature = "email", feature = "sms"))]
+    DeliveryFailed {
+        channel: DeliveryChannel,
+        /// Address or number.
+        recipient: String,
+        error: String,
+    },
+}
+
+/// The transport that failed.
+#[cfg(any(feature = "email", feature = "sms"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DeliveryChannel {
+    #[cfg(feature = "email")]
+    Email,
+    #[cfg(feature = "sms")]
+    Sms,
 }
 
 /// Which code path rejected a code.
@@ -65,6 +85,22 @@ pub enum CodeChannel {
     Totp,
     #[cfg(feature = "mfa")]
     RecoveryCode,
+}
+
+/// Joins an error's `source()` chain with `: `.
+#[cfg(any(feature = "email", feature = "sms"))]
+pub(crate) fn source_chain(err: &dyn std::error::Error) -> String {
+    let mut parts = Vec::new();
+    let mut current = err.source();
+    while let Some(source) = current {
+        parts.push(source.to_string());
+        current = source.source();
+    }
+    if parts.is_empty() {
+        "no further detail".to_string()
+    } else {
+        parts.join(": ")
+    }
 }
 
 /// Receives every [`AuthEvent`]. Called synchronously on the request path.
@@ -102,6 +138,14 @@ impl AuthEventHandler for TracingEvents {
                 identifier,
             } => {
                 tracing::warn!(operation, identifier, "rate limited");
+            }
+            #[cfg(any(feature = "email", feature = "sms"))]
+            AuthEvent::DeliveryFailed {
+                channel,
+                recipient,
+                error,
+            } => {
+                tracing::error!(?channel, recipient, error, "message delivery failed");
             }
             #[allow(unreachable_patterns)]
             _ => tracing::info!(?event, "auth event"),

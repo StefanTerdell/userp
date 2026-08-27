@@ -2,6 +2,9 @@
 //! the recommended test feature set:
 //!
 //!   cargo test -p authery --no-default-features --features password,email,mfa,user
+//!
+//! Also compiles with default features via stub `oauth`/`webauthn`/`pages`
+//! items; those flows are covered by `dev/e2e`.
 #![allow(dead_code)]
 
 use authery::core::CoreAuthery;
@@ -110,6 +113,34 @@ impl EmailChallenge for TestChallenge {
     }
 }
 
+#[cfg(feature = "oauth")]
+#[derive(Debug, Clone)]
+pub struct TestOAuthToken {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub provider_name: String,
+    pub provider_user_id: String,
+    pub refresh_token: Option<String>,
+}
+
+#[cfg(feature = "oauth")]
+impl authery::models::oauth::OAuthToken for TestOAuthToken {
+    type Id = Uuid;
+    type UserId = Uuid;
+    fn get_id(&self) -> Uuid {
+        self.id
+    }
+    fn get_user_id(&self) -> Uuid {
+        self.user_id
+    }
+    fn get_provider_name(&self) -> &str {
+        &self.provider_name
+    }
+    fn get_refresh_token(&self) -> &Option<String> {
+        &self.refresh_token
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TestSession {
     pub id: Uuid,
@@ -150,6 +181,10 @@ pub struct TestStore {
     pub phones: Arc<Mutex<Vec<TestPhone>>>,
     #[cfg(feature = "mfa")]
     pub recovery: Arc<Mutex<HashMap<Uuid, Vec<String>>>>,
+    #[cfg(feature = "oauth")]
+    pub oauth_tokens: Arc<Mutex<HashMap<Uuid, TestOAuthToken>>>,
+    #[cfg(feature = "webauthn")]
+    pub passkeys: Arc<Mutex<Vec<(Uuid, authery::reexports::webauthn_rs::prelude::Passkey)>>>,
 }
 
 impl TestStore {
@@ -217,6 +252,10 @@ impl AutheryStore for TestStore {
     type EmailChallenge = TestChallenge;
     #[cfg(feature = "sms")]
     type UserPhone = TestPhone;
+    #[cfg(feature = "oauth")]
+    type OAuthTokenId = Uuid;
+    #[cfg(feature = "oauth")]
+    type OAuthToken = TestOAuthToken;
 
     async fn get_user(&self, user_id: &Uuid) -> Result<Option<TestUser>, Infallible> {
         Ok(self.users.lock().unwrap().get(user_id).cloned())
@@ -393,6 +432,184 @@ impl AutheryStore for TestStore {
             .get(user_id)
             .map(Vec::len)
             .unwrap_or(0))
+    }
+
+    #[cfg(feature = "webauthn")]
+    async fn create_passkey(
+        &self,
+        user_id: &Uuid,
+        passkey: authery::reexports::webauthn_rs::prelude::Passkey,
+    ) -> Result<(), Infallible> {
+        self.passkeys.lock().unwrap().push((*user_id, passkey));
+        Ok(())
+    }
+
+    #[cfg(feature = "webauthn")]
+    async fn get_passkeys(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<authery::reexports::webauthn_rs::prelude::Passkey>, Infallible> {
+        Ok(self
+            .passkeys
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(u, _)| u == user_id)
+            .map(|(_, p)| p.clone())
+            .collect())
+    }
+
+    #[cfg(feature = "webauthn")]
+    async fn get_passkey_by_credential_id(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<(Uuid, authery::reexports::webauthn_rs::prelude::Passkey)>, Infallible> {
+        Ok(self
+            .passkeys
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(_, p)| p.cred_id().as_ref() == credential_id)
+            .cloned())
+    }
+
+    #[cfg(feature = "webauthn")]
+    async fn update_passkey(
+        &self,
+        user_id: &Uuid,
+        passkey: authery::reexports::webauthn_rs::prelude::Passkey,
+    ) -> Result<(), Infallible> {
+        let mut passkeys = self.passkeys.lock().unwrap();
+        passkeys.retain(|(u, p)| !(u == user_id && p.cred_id() == passkey.cred_id()));
+        passkeys.push((*user_id, passkey));
+        Ok(())
+    }
+
+    #[cfg(all(feature = "webauthn", feature = "user"))]
+    async fn delete_passkey(&self, user_id: &Uuid, credential_id: &[u8]) -> Result<(), Infallible> {
+        self.passkeys
+            .lock()
+            .unwrap()
+            .retain(|(u, p)| !(u == user_id && p.cred_id().as_ref() == credential_id));
+        Ok(())
+    }
+
+    #[cfg(feature = "oauth")]
+    async fn update_token_by_unmatched_token(
+        &self,
+        token_id: &Uuid,
+        unmatched: authery::models::oauth::UnmatchedOAuthToken,
+    ) -> Result<TestOAuthToken, Infallible> {
+        let mut tokens = self.oauth_tokens.lock().unwrap();
+        let token = tokens
+            .get_mut(token_id)
+            .expect("update_token_by_unmatched_token on unknown token id");
+        token.refresh_token = unmatched.refresh_token;
+        Ok(token.clone())
+    }
+
+    #[cfg(feature = "oauth")]
+    async fn get_oauth_token_by_id(
+        &self,
+        token_id: &Uuid,
+    ) -> Result<Option<TestOAuthToken>, Infallible> {
+        Ok(self.oauth_tokens.lock().unwrap().get(token_id).cloned())
+    }
+
+    #[cfg(feature = "oauth")]
+    async fn get_token_by_unmatched_token(
+        &self,
+        unmatched: authery::models::oauth::UnmatchedOAuthToken,
+    ) -> Result<Option<TestOAuthToken>, Infallible> {
+        Ok(self
+            .oauth_tokens
+            .lock()
+            .unwrap()
+            .values()
+            .find(|t| {
+                t.provider_name == unmatched.provider_name
+                    && t.provider_user_id == unmatched.provider_user_id
+            })
+            .cloned())
+    }
+
+    #[cfg(feature = "oauth")]
+    async fn create_user_token_from_unmatched_token(
+        &self,
+        user_id: &Uuid,
+        unmatched: authery::models::oauth::UnmatchedOAuthToken,
+    ) -> Result<TestOAuthToken, Infallible> {
+        let token = TestOAuthToken {
+            id: Uuid::new_v4(),
+            user_id: *user_id,
+            provider_name: unmatched.provider_name,
+            provider_user_id: unmatched.provider_user_id,
+            refresh_token: unmatched.refresh_token,
+        };
+        self.oauth_tokens
+            .lock()
+            .unwrap()
+            .insert(token.id, token.clone());
+        Ok(token)
+    }
+
+    #[cfg(feature = "oauth")]
+    async fn create_user_from_unmatched_token(
+        &self,
+        unmatched: authery::models::oauth::UnmatchedOAuthToken,
+    ) -> Result<(TestUser, TestOAuthToken), Infallible> {
+        let id = Uuid::new_v4();
+        let user = TestUser {
+            id,
+            password_hash: None,
+            emails: vec![],
+        };
+        self.users.lock().unwrap().insert(id, user.clone());
+        let token = self
+            .create_user_token_from_unmatched_token(&id, unmatched)
+            .await?;
+        Ok((user, token))
+    }
+
+    #[cfg(feature = "oauth")]
+    async fn get_user_by_unmatched_token(
+        &self,
+        unmatched: authery::models::oauth::UnmatchedOAuthToken,
+    ) -> Result<Option<(TestUser, TestOAuthToken)>, Infallible> {
+        let Some(token) = self.get_token_by_unmatched_token(unmatched).await? else {
+            return Ok(None);
+        };
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .get(&token.user_id)
+            .cloned()
+            .map(|u| (u, token)))
+    }
+
+    #[cfg(all(feature = "user", feature = "oauth"))]
+    async fn get_user_oauth_tokens(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<TestOAuthToken>, Infallible> {
+        Ok(self
+            .oauth_tokens
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|t| t.user_id == *user_id)
+            .cloned()
+            .collect())
+    }
+
+    #[cfg(all(feature = "user", feature = "oauth"))]
+    async fn delete_oauth_token(&self, user_id: &Uuid, token_id: &Uuid) -> Result<(), Infallible> {
+        let mut tokens = self.oauth_tokens.lock().unwrap();
+        if tokens.get(token_id).is_some_and(|t| t.user_id == *user_id) {
+            tokens.remove(token_id);
+        }
+        Ok(())
     }
 
     async fn get_user_by_password_id(
@@ -606,6 +823,8 @@ impl authery::prelude::PasswordHasher for PlaintextHasher {
 #[derive(Debug, Clone, Default)]
 pub struct TestSmsSender {
     pub sent: Arc<Mutex<Vec<(String, String)>>>,
+    /// When set, every send fails with this error.
+    pub fail_with: Arc<Mutex<Option<String>>>,
 }
 
 #[cfg(feature = "sms")]
@@ -625,11 +844,26 @@ impl TestSmsSender {
 #[cfg(feature = "sms")]
 impl authery::sms::SmsSender for TestSmsSender {
     fn send<'a>(&'a self, to: &'a str, message: &'a str) -> authery::sms::SmsSendFuture<'a> {
+        if let Some(gateway_error) = self.fail_with.lock().unwrap().clone() {
+            return Box::pin(async move { Err(gateway_error.into()) });
+        }
         self.sent
             .lock()
             .unwrap()
             .push((to.to_string(), message.to_string()));
         Box::pin(async { Ok(()) })
+    }
+}
+
+/// Collects emitted auth events.
+#[derive(Debug, Clone, Default)]
+pub struct CapturingEvents {
+    pub events: Arc<Mutex<Vec<authery::events::AuthEvent>>>,
+}
+
+impl authery::events::AuthEventHandler for CapturingEvents {
+    fn on_event(&self, event: authery::events::AuthEvent) {
+        self.events.lock().unwrap().push(event);
     }
 }
 
@@ -639,6 +873,7 @@ pub struct AuthBuilder {
     pub max_concurrent_sessions: Option<usize>,
     pub idle_timeout: Option<Duration>,
     pub rate_limiter: Arc<dyn RateLimiter>,
+    pub events: Arc<dyn authery::events::AuthEventHandler>,
     pub mfa_policy: authery::mfa::MfaPolicy,
     #[cfg(feature = "sms")]
     pub sms_sender: TestSmsSender,
@@ -652,6 +887,7 @@ impl AuthBuilder {
             max_concurrent_sessions: None,
             idle_timeout: None,
             rate_limiter: Arc::new(NoRateLimit),
+            events: Arc::new(authery::events::TracingEvents),
             #[cfg(feature = "sms")]
             sms_sender: TestSmsSender::default(),
             mfa_policy: authery::mfa::MfaPolicy {
@@ -670,7 +906,7 @@ impl AuthBuilder {
             max_concurrent_sessions: self.max_concurrent_sessions,
             idle_timeout: self.idle_timeout,
             rate_limiter: self.rate_limiter,
-            events: Arc::new(authery::events::TracingEvents),
+            events: self.events,
             bearer_token: None,
             cookies: TestCookies::default(),
             store: self.store,
@@ -683,6 +919,16 @@ impl AuthBuilder {
                 Url::parse("http://localhost:3000").unwrap(),
                 SmtpSettings::new("smtp://localhost:1", "test@example.com"),
             ),
+            #[cfg(feature = "oauth")]
+            oauth: authery::oauth::OAuthConfig::new(Url::parse("http://localhost:3000").unwrap()),
+            #[cfg(feature = "webauthn")]
+            webauthn: authery::webauthn::WebauthnConfig::new(
+                Url::parse("http://localhost:3000").unwrap(),
+                "authery-tests",
+            )
+            .unwrap(),
+            #[cfg(feature = "pages")]
+            pages: Arc::new(authery::pages::AskamaPages),
             mfa_policy: self.mfa_policy,
         }
     }

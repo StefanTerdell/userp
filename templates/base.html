@@ -2,7 +2,7 @@
 <html>
 
 <head>
-  <title>Userp Askama example</title>
+  <title>Authery</title>
   <style>
     :root {
       --primary-color: #3498db;
@@ -62,6 +62,7 @@
 
     input[type="text"],
     input[type="email"],
+    input[type="tel"],
     input[type="password"] {
       width: 100%;
       padding: 10px;
@@ -97,7 +98,7 @@
       border: 1px solid #ddd;
       color: var(--text-color);
       padding: 10px 15px;
-      margin: 5px;
+      margin: 5px 0;
       border-radius: 4px;
       cursor: pointer;
       transition: background-color 0.3s ease;
@@ -106,6 +107,27 @@
 
     .social-button:hover {
       background-color: #f1f1f1;
+    }
+
+    .message,
+    .error {
+      padding: 10px 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+      border: 1px solid;
+      overflow-wrap: anywhere;
+    }
+
+    .message {
+      color: var(--primary-dark);
+      background-color: #eaf4fb;
+      border-color: #b8dcf2;
+    }
+
+    .error {
+      color: #a93226;
+      background-color: #fdecea;
+      border-color: #f5b7b1;
     }
 
     .links {

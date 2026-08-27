@@ -215,18 +215,20 @@ impl SmtpSettings {
     }
 }
 
+/// Delivery variants display a generic message; the cause is in `source()`
+/// and in [`AuthEvent::DeliveryFailed`](crate::events::AuthEvent::DeliveryFailed).
 #[derive(Debug, Error)]
 pub enum SendEmailChallengeError<StoreError: std::error::Error> {
     #[error(transparent)]
     RateLimited(crate::ratelimit::RateLimited),
-    #[error(transparent)]
-    Url(url::ParseError),
-    #[error(transparent)]
-    Address(lettre::address::AddressError),
-    #[error(transparent)]
-    MessageBuilding(lettre::error::Error),
-    #[error(transparent)]
-    Transport(lettre::transport::smtp::Error),
+    #[error("Could not build the email link")]
+    Url(#[source] url::ParseError),
+    #[error("Invalid email address")]
+    Address(#[source] lettre::address::AddressError),
+    #[error("Could not send the email, please try again later")]
+    MessageBuilding(#[source] lettre::error::Error),
+    #[error("Could not send the email, please try again later")]
+    Transport(#[source] lettre::transport::smtp::Error),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -276,6 +278,25 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     }
 
     pub(crate) async fn send_email(
+        &self,
+        to: &str,
+        subject: &str,
+        html_body: String,
+    ) -> Result<(), SendEmailChallengeError<S::Error>> {
+        let result = self.send_email_inner(to, subject, html_body).await;
+
+        if let Err(err) = &result {
+            self.emit(crate::events::AuthEvent::DeliveryFailed {
+                channel: crate::events::DeliveryChannel::Email,
+                recipient: to.to_string(),
+                error: format!("{err}: {}", crate::events::source_chain(err)),
+            });
+        }
+
+        result
+    }
+
+    async fn send_email_inner(
         &self,
         to: &str,
         subject: &str,

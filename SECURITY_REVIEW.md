@@ -1,8 +1,11 @@
-# Security review (2026-07-15)
+# Security review (2026-07-15, updated 2026-08-27)
 
-Full review of the userp workspace ahead of the authery revival work, per the
-plan's phase 0. Scope: `userp-server`, `userp-axum-router`, `userp-pages`,
-`userp-client`, plus the memory-store example as reference store impl.
+Full review of the codebase authery inherited from its predecessor crate
+(`userp`), done ahead of the rewrite. Scope at the time: the `userp-server`,
+`userp-axum-router`, `userp-pages` and `userp-client` crates plus the
+memory-store example as reference store impl - all since folded into the single
+`authery` crate. Findings and their fixes carry over; the bottom section tracks
+what has been closed since.
 
 ## Sound foundations
 
@@ -46,15 +49,30 @@ These were flagged as deferred and have since been fixed on the `authery` crate:
 | OAuth flow state lived in a single cookie slot, so two concurrent flows (two login tabs, or login + link) clobbered each other and the older flow failed with a CSRF mismatch | The flow cookie is keyed by the CSRF state (`authery-oauth-state-{state}`); the callback selects the cookie by the state query param. Verified live against Keycloak: two interleaved flows both complete (2026-07-17)                                                                                                                          |
 | Same single-slot pattern on the three WebAuthn ceremony cookies (login, registration, MFA factor) | Ceremony cookies are keyed by the challenge; the finish call recovers the key from the challenge echoed in `clientDataJSON` (which only *selects* the cookie — the signed ceremony validation still runs against the encrypted state). Verified with headless Chrome + a CDP virtual authenticator: two interleaved login ceremonies both complete (2026-07-17) |
 
+## Closed since the review
+
+- **Rate limiting hook** (`authery::ratelimit::RateLimiter`): authery calls
+  the app-supplied limiter before password attempts, code/TOTP/recovery
+  verification, and email/SMS sends, keyed on the relevant identifier. No
+  limiter implementation ships (backing store and IP keying are app
+  decisions); `examples/full/src/ratelimit.rs` shows an in-memory one.
+- **Concurrent-session cap** (`max_concurrent_sessions`): oldest sessions are
+  evicted server-side on login once the cap is hit. Idle timeout
+  (`idle_timeout`) and cookie-key rotation grace were added alongside.
+- **Async SMTP**: `lettre::AsyncSmtpTransport` on the tokio executor.
+- **Automated tests**: `tests/flows.rs` covers the password, email link/code,
+  SMS, TOTP, recovery-code and MFA-policy flows against an in-memory store;
+  `tests/oidc_validation.rs` covers id_token validation against Keycloak;
+  `dev/e2e` drives the WebAuthn browser ceremonies through a headless-Chrome
+  virtual authenticator. The OAuth flows are exercised manually against the
+  Keycloak in `dev/compose.yaml`.
+
 ## Known gaps still open
 
-- **No rate limiting / lockout** on password guesses or email-challenge sends
-  (the latter is a mail-spam vector). Best handled as a tower layer at the app
-  level (e.g. `tower_governor`) since the built-in router composes with
-  `.layer(...)`; document as app responsibility, optionally add hooks later.
-- **Logging in doesn't cap concurrent sessions** and re-login orphans the old
-  session server-side.
-- **SMTP send is synchronous** (`lettre::SmtpTransport`) inside async handlers.
-- Test coverage is thin: OIDC id_token validation has an integration test; the
-  password/email/session flows are exercised manually (curl against the
-  memory-store example) but not yet in an automated suite.
+- **No built-in lockout**: the rate-limit hook exists, but the crate itself
+  never refuses a request unless the app plugs a limiter in. Documented as an
+  app responsibility.
+- **Dependency advisory**: `rsa` (via `jsonwebtoken`) carries RUSTSEC-2023-0071
+  (Marvin timing attack on PKCS#1 v1.5 *decryption*). Authery only uses RSA to
+  verify id_token signatures, so the affected path is not reachable; tracked as
+  an explicit ignore in `deny.toml` until an upstream fix lands.

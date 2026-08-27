@@ -393,7 +393,55 @@ fn login_method_rules_judge_first_factor_and_mfa() {
 #[cfg(feature = "sms")]
 mod sms_tests {
     use super::*;
+    use authery::events::{AuthEvent, DeliveryChannel};
     use authery::sms::SmsVerifyError;
+    use common::CapturingEvents;
+
+    /// Gateway errors reach the event hook, not the user-facing message.
+    #[tokio::test]
+    async fn sms_gateway_errors_are_generic_to_the_user_and_reported_to_the_hook() {
+        let store = TestStore::default();
+        let user_id = store.seed_user("alice@x.com", Some("hunter2"));
+        store.seed_phone(user_id, "+46701234567");
+
+        let mut builder = AuthBuilder::new(store.clone());
+        let events = CapturingEvents::default();
+        builder.events = Arc::new(events.clone());
+        *builder.sms_sender.fail_with.lock().unwrap() =
+            Some("401 Unauthorized: bad api key sk_live_123".into());
+
+        let err = builder
+            .build()
+            .sms_login_init("+46701234567".into(), None)
+            .await
+            .unwrap_err();
+
+        let user_facing = err.to_string();
+        assert_eq!(
+            user_facing,
+            "Could not send the text message, please try again later"
+        );
+        assert!(!user_facing.contains("sk_live"), "gateway error leaked");
+
+        let events = events.events.lock().unwrap();
+        let delivery = events
+            .iter()
+            .find_map(|e| match e {
+                AuthEvent::DeliveryFailed {
+                    channel,
+                    recipient,
+                    error,
+                } => Some((*channel, recipient.clone(), error.clone())),
+                _ => None,
+            })
+            .expect("DeliveryFailed event emitted");
+        assert_eq!(delivery.0, DeliveryChannel::Sms);
+        assert_eq!(delivery.1, "+46701234567");
+        assert!(
+            delivery.2.contains("sk_live_123"),
+            "hook sees the real error"
+        );
+    }
 
     /// Init texts a code through the sender, verify logs the user in. The
     /// code is single-use.
@@ -499,7 +547,7 @@ mod sms_tests {
 
         let mut builder = AuthBuilder::new(store.clone());
         builder.mfa_policy = mfa_for_password();
-        let sender = builder.sms_sender.clone();
+        let _sender = builder.sms_sender.clone();
         let pending = builder
             .build()
             .password_login("alice@x.com", "hunter2")

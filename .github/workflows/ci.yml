@@ -22,7 +22,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-rdme
-      # README.md is generated from the crate docs in src/lib.rs.
+      # README.md is generated from the crate docs in src/lib.rs. cargo-rdme
+      # resolves intra-doc links with a pinned nightly it installs itself.
+      - run: cargo rdme install-rust-toolchain-for-intralinks
       - run: cargo rdme --check
 
   deny:
@@ -55,6 +57,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p authery --no-default-features --features "${{ matrix.features }}"
 
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p authery --all-features
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -63,8 +74,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Core flow tests (no external services needed).
       - run: cargo test -p authery --no-default-features --features password,email,mfa,user,totp,sms
-      # Default features; the Keycloak-dependent test self-skips when it is
-      # not reachable.
+      # Default features: same flow tests against the full store trait; the
+      # Keycloak-dependent test self-skips when it is not reachable.
       - run: cargo test -p authery
 
   examples:

@@ -1,11 +1,6 @@
 #[cfg(any(feature = "email", feature = "sms"))]
 use crate::models::MyEmailChallenge;
-#[cfg(any(
-    feature = "email",
-    feature = "otp",
-    feature = "password",
-    feature = "oauth"
-))]
+#[cfg(any(feature = "email", feature = "password", feature = "oauth"))]
 use crate::models::MyUserEmail;
 #[cfg(feature = "sms")]
 use crate::models::MyUserPhone;

@@ -124,7 +124,9 @@ fn challenge_key(number: &str, code: &str) -> String {
 pub enum SmsInitError<StoreError: std::error::Error> {
     #[error("Sms login not allowed")]
     NotAllowed,
-    #[error("Sending failed: {0}")]
+    /// Gateway failure; the cause is reported through
+    /// [`AuthEvent::DeliveryFailed`](crate::events::AuthEvent::DeliveryFailed).
+    #[error("Could not send the text message, please try again later")]
     Send(#[from] SmsSendError),
     #[error(transparent)]
     RateLimited(RateLimited),
@@ -200,15 +202,29 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(SmsInitError::Store)?;
 
-        self.sms
-            .sender
-            .send(
-                challenge.get_address(),
-                &self.sms.messages.login_code(&digits),
-            )
-            .await?;
+        self.send_sms(
+            challenge.get_address(),
+            &self.sms.messages.login_code(&digits),
+        )
+        .await?;
 
         Ok(())
+    }
+
+    /// Sends through the configured sender, emitting
+    /// [`AuthEvent::DeliveryFailed`](crate::events::AuthEvent::DeliveryFailed) on failure.
+    pub(crate) async fn send_sms(&self, to: &str, message: &str) -> Result<(), SmsSendError> {
+        let result = self.sms.sender.send(to, message).await;
+
+        if let Err(err) = &result {
+            self.emit(crate::events::AuthEvent::DeliveryFailed {
+                channel: crate::events::DeliveryChannel::Sms,
+                recipient: to.to_string(),
+                error: format!("{err}: {}", crate::events::source_chain(err.as_ref())),
+            });
+        }
+
+        result
     }
 
     /// Verify a login code and log the user in, creating the user first if
