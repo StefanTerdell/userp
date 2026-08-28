@@ -323,6 +323,7 @@ pub(crate) use totp_handlers::{post_user_totp_confirm, post_user_totp_disable};
 mod totp_handlers {
     use super::*;
     use crate::models::User;
+    #[cfg(feature = "email")]
     use crate::models::email::UserEmail;
     use crate::totp::TotpError;
     use axum::Form;

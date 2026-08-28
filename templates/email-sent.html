@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="form-container">
-  <h1>Check your inbox</h1>
+{% block title %}Check your inbox{% endblock %}
 
-  <p>
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <span class="icon icon-hero" aria-hidden="true">drafts</span>
+  <h1>Check your inbox</h1>
+  <p class="lede">
     {% match purpose %}
     {% when crate::pages::EmailLinkPurpose::Login %}We sent a sign-in link to
     {% when crate::pages::EmailLinkPurpose::Signup %}We sent a sign-up link to
@@ -14,31 +17,37 @@
     <strong>{{ address }}</strong>.
   </p>
 
-  <p class="text-muted">If it hasn't arrived, check your spam folder. Links are single-use and expire after a
-    short while.</p>
-
   {% if let Some(resend) = resend_action_route %}
-  <form action="{{ resend }}" method="post" class="form">
+  <form action="{{ resend }}" method="post">
     <input type="hidden" name="email" value="{{ address }}" />
     {% if let Some(next) = next %}
     <input type="hidden" name="next" value="{{ next }}" />
     {% endif %}
-    <button type="submit" class="social-button">Send a new link</button>
+    <button type="submit" class="btn btn-secondary">Resend</button>
   </form>
   {% endif %}
 
-  {% if let Some(otp) = otp_action_route %}
-  <form action="{{ otp }}" method="post" class="form">
-    <input type="hidden" name="email" value="{{ address }}" />
-    {% if let Some(next) = next %}
-    <input type="hidden" name="next" value="{{ next }}" />
+  <div style="margin-top: var(--space-8);">
+    <div class="caps text-muted" style="margin-bottom: var(--space-2);">If it hasn't arrived</div>
+    <ul class="text-muted small" style="display: flex; flex-direction: column; gap: 5px;">
+      <li>Check spam and any filtered folders.</li>
+      <li>Links are valid for a short while and can be used once.</li>
+      <li>Requesting a new link is safe; each is checked on its own.</li>
+    </ul>
+  </div>
+
+  <div class="foot text-muted">
+    {% if let Some(otp) = otp_action_route %}
+    <form action="{{ otp }}" method="post" style="display: inline;">
+      <input type="hidden" name="email" value="{{ address }}" />
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+      Prefer a code? <button type="submit" class="btn btn-ghost" style="font-size: 12px; padding: 0 2px;">Send one instead</button>
+    </form>
+    {% else %}
+    <a href="{{ login_page_route }}">Back to sign in</a>
     {% endif %}
-    <button type="submit" class="social-button">Prefer a code? Email me one instead</button>
-  </form>
-  {% endif %}
-
-  <div class="links">
-    <a href="{{ login_page_route }}">Back to login</a>
   </div>
 </div>
 {% endblock %}

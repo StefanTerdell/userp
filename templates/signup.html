@@ -1,127 +1,123 @@
 {% extends "base.html" %}
 
+{% block title %}Create an account{% endblock %}
+
 {% block content %}
-<div class="form-container">
-  <h1>Sign Up</h1>
+<div class="screen">
+  {% include "brand.html" %}
+  <h1>Create an account</h1>
+  <p class="sub text-muted">Pick how you'd like to sign in from now on.</p>
 
   {% if let Some(message) = message %}
-  <div class="message" role="alert">
-    <strong>{{ message }}</strong>
-  </div>
+  <p class="notice" role="status">{{ message }}</p>
   {% endif %}
-
   {% if let Some(error) = error %}
-  <div class="error" role="alert">
-    <strong>Something went wrong: {{ error }}</strong>
-  </div>
+  <p class="notice notice-error" role="alert">{{ error }}</p>
   {% endif %}
 
-  {% if let Some(email) = email %}
-  <div class="magic-login">
-    <form action="{{ email.action_route }}" method="post" class="form">
-      <div class="form-group">
-        <label for="magic-email">Email for Magic Link</label>
-        <input type="email" id="magic-email" name="email" required>
-      </div>
-      <button type="submit">Sign Up with Magic Link</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
+  {% if password.is_some() || otp.is_some() || email.is_some() || sms.is_some() %}
+  <div class="methods">
+    <div class="seg" role="radiogroup" aria-label="Sign-up method" id="method-switch">
+      {% if password.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-password">Password</label>
       {% endif %}
-    </form>
-  </div>
-
-  {% if password.is_some() || oauth.is_some() || otp.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% if let Some(otp) = otp %}
-  <div class="otp-login">
-    <form action="{{ otp.action_route }}" method="post" class="form">
-      <div class="form-group">
-        <label for="otp-email">Email for One-Time Code</label>
-        <input type="email" id="otp-email" name="email" required>
-      </div>
-      <button type="submit">Sign up with a code</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
+      {% if otp.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-otp">One-time code</label>
       {% endif %}
-    </form>
-  </div>
-
-  {% if password.is_some() || oauth.is_some() || sms.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% if let Some(sms) = sms %}
-  <div class="sms-login">
-    <form action="{{ sms.action_route }}" method="post" class="form">
-      <div class="form-group">
-        <label for="sms-number">Phone number for a text code</label>
-        <input type="tel" id="sms-number" name="number" placeholder="+46701234567" required>
-      </div>
-      <button type="submit">Sign up with a text code</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
+      {% if email.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-email">Link</label>
       {% endif %}
-    </form>
-  </div>
-
-  {% if password.is_some() || oauth.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% if let Some(password) = password %}
-  <form action="{{ password.action_route }}" method="post" id="signup-form">
-    <div class="form-group">
-      <label for="email">Email</label>
-      <input type="email" id="email" name="password_id" required>
-    </div>
-    <div class="form-group">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="new-password"
-        {% if let Some(pattern) = password.pattern %}pattern="{{ pattern }}" {% endif %}required>
-      {% if let Some(hint) = password.pattern_hint %}
-      <p class="text-muted">{{ hint }}</p>
+      {% if sms.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-sms">Text</label>
       {% endif %}
     </div>
-    <button type="submit">Sign Up</button>
-    {% if let Some(next) = next %}
-    <input type="hidden" name="next" value="{{ next }}" />
+
+    {% if let Some(password) = password %}
+    <form action="{{ password.action_route }}" method="post" class="panel panel-password" id="signup-form">
+      <div class="field">
+        <label for="email">Email</label>
+        <input class="input" type="email" id="email" name="password_id" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input class="input" type="password" id="password" name="password" autocomplete="new-password"
+          {% if let Some(pattern) = password.pattern %}pattern="{{ pattern }}" {% endif %}required>
+        {% if let Some(hint) = password.pattern_hint %}
+        <p class="hint text-muted">{{ hint }}</p>
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Create account</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
     {% endif %}
-  </form>
 
-  {% if oauth.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
+    {% if let Some(otp) = otp %}
+    <form action="{{ otp.action_route }}" method="post" class="panel panel-otp">
+      <div class="field">
+        <label for="otp-email">Email</label>
+        <input class="input" type="email" id="otp-email" name="email" autocomplete="username" required>
+      </div>
+      <p class="hint text-muted">We'll email you a code to confirm the address.</p>
+      <button type="submit" class="btn btn-primary btn-block">Sign up with a code</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+    {% endif %}
+
+    {% if let Some(email) = email %}
+    <form action="{{ email.action_route }}" method="post" class="panel panel-email">
+      <div class="field">
+        <label for="magic-email">Email</label>
+        <input class="input" type="email" id="magic-email" name="email" autocomplete="username" required>
+      </div>
+      <p class="hint text-muted">We'll email you a link that finishes signing up.</p>
+      <button type="submit" class="btn btn-primary btn-block">Sign up with a link</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+    {% endif %}
+
+    {% if let Some(sms) = sms %}
+    <form action="{{ sms.action_route }}" method="post" class="panel panel-sms">
+      <div class="field">
+        <label for="sms-number">Phone number</label>
+        <input class="input" type="tel" id="sms-number" name="number" placeholder="+46701234567" autocomplete="tel" required>
+      </div>
+      <p class="hint text-muted">We'll text you a code to confirm the number.</p>
+      <button type="submit" class="btn btn-primary btn-block">Sign up with a text code</button>
+      {% if let Some(next) = next %}
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% endif %}
+    </form>
+    {% endif %}
   </div>
-  {% endif %}
+  <script>
+    (function () {
+      var first = document.querySelector('#method-switch input');
+      if (first && !document.querySelector('#method-switch input:checked')) { first.checked = true; }
+    })();
+  </script>
   {% endif %}
 
   {% if let Some(oauth) = oauth %}
-  <div class="social-login">
+  <div class="caps text-muted kicker">Or continue with</div>
+  <div class="grid-2">
     {% for provider in oauth.providers %}
-    <form action="{{ oauth.action_route }}" method="post" class="form">
+    <form action="{{ oauth.action_route }}" method="post">
       <input type="hidden" name="provider" value="{{ provider.name }}" />
-      <button type="submit" class="social-button">Sign up with {{ provider.display_name }}</button>
       {% if let Some(next) = next %}
       <input type="hidden" name="next" value="{{ next }}" />
       {% endif %}
+      <button type="submit" class="btn btn-secondary prov"><span class="mono">{{ provider.display_name.chars().next().unwrap_or('•') }}</span>{{ provider.display_name }}</button>
     </form>
     {% endfor %}
   </div>
   {% endif %}
 
-  <div class="links">
-    <a href="{{ login_route }}">Already have an account? Log in</a>
-  </div>
+  <div class="foot text-muted">Already registered? <a href="{{ login_route }}">Sign in</a></div>
 </div>
 {% endblock %}

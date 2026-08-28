@@ -1,49 +1,48 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="form-container">
-  <h1>Too many attempts</h1>
+{% block title %}Sign-in paused{% endblock %}
 
-  <p>
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <span class="icon icon-hero warn" aria-hidden="true">lock</span>
+  <h1>Sign-in paused</h1>
+  <p class="lede">
     That was tried too many times in a short period.
     {% if let Some(secs) = retry_after_secs %}
-    Please wait {% if *secs >= 120 %}{{ secs / 60 }} minutes{% else %}{{ secs }} seconds{% endif %} before trying again.
+    It reopens in {% if *secs >= 120 %}{{ secs / 60 }} minutes{% else %}{{ secs }} seconds{% endif %}, to keep the account safe.
     {% else %}
-    Please wait a while before trying again.
+    Please wait a while before trying again, to keep the account safe.
     {% endif %}
   </p>
 
   {% if webauthn || email_login_action_route.is_some() || password_send_reset_page_route.is_some() %}
-  <p class="text-muted">You can still:</p>
-
-  {% if webauthn %}
-  <div class="links" style="text-align: left;">
-    <a href="{{ login_page_route }}{% if let Some(next) = next %}?next={{ next }}{% endif %}">Sign in with a passkey</a>
-  </div>
-  {% endif %}
-
-  {% if let Some(email_login) = email_login_action_route %}
-  <form action="{{ email_login }}" method="post" class="form">
-    <div class="form-group">
-      <label for="paused-email">Email yourself a sign-in link</label>
-      <input type="email" id="paused-email" name="email" required>
-    </div>
-    {% if let Some(next) = next %}
-    <input type="hidden" name="next" value="{{ next }}" />
+  <div class="caps text-muted kicker">You can still</div>
+  <div class="stack">
+    {% if webauthn %}
+    <a class="btn btn-secondary prov" href="{{ login_page_route }}{% if let Some(next) = next %}?next={{ next }}{% endif %}"><span class="icon" aria-hidden="true">fingerprint</span>Sign in with a passkey</a>
     {% endif %}
-    <button type="submit" class="social-button">Send link</button>
-  </form>
-  {% endif %}
-
-  {% if let Some(reset) = password_send_reset_page_route %}
-  <div class="links" style="text-align: left;">
-    <a href="{{ reset }}">Reset your password</a>
+    {% if let Some(email_login) = email_login_action_route %}
+    <details>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">mail</span>Email yourself a sign-in link</summary>
+      <form action="{{ email_login }}" method="post" style="margin-top: var(--space-2);">
+        <div class="field">
+          <label for="paused-email">Email</label>
+          <input class="input" type="email" id="paused-email" name="email" required>
+        </div>
+        {% if let Some(next) = next %}
+        <input type="hidden" name="next" value="{{ next }}" />
+        {% endif %}
+        <button type="submit" class="btn btn-primary btn-block">Send link</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if let Some(reset) = password_send_reset_page_route %}
+    <a class="btn btn-secondary prov" href="{{ reset }}"><span class="icon" aria-hidden="true">support</span>Reset your password</a>
+    {% endif %}
   </div>
   {% endif %}
-  {% endif %}
 
-  <div class="links">
-    <a href="{{ login_page_route }}">Back to login</a>
-  </div>
+  <div class="foot text-muted"><a href="{{ login_page_route }}">Back to sign in</a></div>
 </div>
 {% endblock %}

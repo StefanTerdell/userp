@@ -30,6 +30,9 @@ crate. Everything below is new relative to userp 0.0.x:
 - Opt-in bearer-token session mode with an optional token prefix.
 - Rate-limiter hook, auth-event hook (tracing by default), customizable
   email/SMS copy, replaceable pages, per-route overrides.
+- Redesigned bundled pages: a single-column auth screen grammar with a
+  method switch on login/signup, and a two-column account page (Source
+  Serif 4 + Material Symbols via Bunny Fonts, `brand.html` wordmark slot).
 - Delivery failures (SMTP, SMS gateway) surface to the end user as a generic
   "could not send" message; the underlying error is reported through the
   `AuthEvent::DeliveryFailed` event instead of the redirect query string.

@@ -317,6 +317,7 @@ where
     use crate::pages::SmsTemplate;
 
     let view = SmsTemplate {
+        login_page_route: &auth.routes.pages.login,
         number: &query.address,
         action_route: &auth.routes.sms.login_sms,
         next: query.next.as_deref(),
@@ -339,6 +340,7 @@ where
     use crate::pages::SmsTemplate;
 
     let view = SmsTemplate {
+        login_page_route: &auth.routes.pages.login,
         number: &query.address,
         action_route: &auth.routes.sms.signup_sms,
         next: query.next.as_deref(),
@@ -370,6 +372,7 @@ where
     use crate::pages::OtpTemplate;
 
     let view = OtpTemplate {
+        login_page_route: &auth.routes.pages.login,
         address: &query.address,
         action_route: &auth.routes.email.login_otp,
         next: query.next.as_deref(),
@@ -394,6 +397,7 @@ where
     use crate::pages::OtpTemplate;
 
     let view = OtpTemplate {
+        login_page_route: &auth.routes.pages.login,
         address: &query.address,
         action_route: &auth.routes.email.signup_otp,
         next: query.next.as_deref(),
@@ -469,6 +473,7 @@ where
     use crate::pages::SendResetPasswordTemplate;
 
     let view = SendResetPasswordTemplate {
+        login_page_route: &auth.routes.pages.login,
         sent: query.sent.is_some_and(|sent| sent),
         address: query.address.as_deref(),
         error: query.error.as_deref(),
@@ -492,6 +497,7 @@ where
 
     if auth.is_reset_session().await? {
         let view = ResetPasswordTemplate {
+            login_page_route: &auth.routes.pages.login,
             reset_password_action_route: &auth.routes.email.password_reset,
             error: error.as_deref(),
             pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),

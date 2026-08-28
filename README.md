@@ -39,7 +39,7 @@ authery = { version = "0.1", default-features = false, features = ["axum", "page
 ```
 
 Implement [`AutheryStore`](https://docs.rs/authery/latest/authery/store/trait.AutheryStore.html) for your storage (see
-_The store_ below), then configure and mount the router:
+*The store* below), then configure and mount the router:
 
 ```rust
 use authery::prelude::*;
@@ -117,18 +117,18 @@ response.
 
 ## Feature flags
 
-| Feature    | What it enables                                                                                                                                           | Store additions                                      |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `user`     | Account management: session listing, email/password management, account deletion                                                                          | user-scoped queries & mutations                      |
-| `password` | Password login/signup, pluggable hasher                                                                                                                   | password-id lookup & user creation                   |
-| `email`    | Everything email: magic links, one-time codes, verification, password reset (with `password`); async SMTP. Links and codes can each be withheld by config | user-email entities, single-use challenges           |
-| `sms`      | Texted six-digit codes: login, signup, MFA; five ready-made gateway senders or bring-your-own `SmsSender`                                                 | user-phone entities (challenges shared with `email`) |
-| `oauth`    | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution                                                     | oauth token entities & lookups                       |
-| `webauthn` | Passkeys: usernameless login, account-page registration                                                                                                   | passkey records keyed by credential id               |
-| `totp`     | Authenticator-app codes (RFC 6238) as a second factor, QR enrollment                                                                                      | one TOTP credential per user                         |
-| `mfa`      | Second-factor policy over any first factor; single-use recovery codes                                                                                     | recovery-code hashes                                 |
-| `pages`    | Bundled Askama pages + the `Pages` replacement trait                                                                                                      | -                                                    |
-| `axum`     | The extractor, router and cookie layer                                                                                                                    | -                                                    |
+| Feature | What it enables | Store additions |
+|---|---|---|
+| `user` | Account management: session listing, email/password management, account deletion | user-scoped queries & mutations |
+| `password` | Password login/signup, pluggable hasher | password-id lookup & user creation |
+| `email` | Everything email: magic links, one-time codes, verification, password reset (with `password`); async SMTP. Links and codes can each be withheld by config | user-email entities, single-use challenges |
+| `sms` | Texted six-digit codes: login, signup, MFA; five ready-made gateway senders or bring-your-own `SmsSender` | user-phone entities (challenges shared with `email`) |
+| `oauth` | OAuth2/OIDC: login, signup, linking, refresh; PKCE + validated id_tokens; runtime provider resolution | oauth token entities & lookups |
+| `webauthn` | Passkeys: usernameless login, account-page registration | passkey records keyed by credential id |
+| `totp` | Authenticator-app codes (RFC 6238) as a second factor, QR enrollment | one TOTP credential per user |
+| `mfa` | Second-factor policy over any first factor; single-use recovery codes | recovery-code hashes |
+| `pages` | Bundled Askama pages + the `Pages` replacement trait | - |
+| `axum` | The extractor, router and cookie layer | - |
 
 Default: everything except `axum`.
 
@@ -240,7 +240,7 @@ the encrypted state cookie, so no per-provider or per-flow path segments
 are needed. Register `{base_url}/oauth/callback` as the redirect URI with
 each provider.
 
-Providers don't have to be fixed at startup - see _Multi-tenancy_ below.
+Providers don't have to be fixed at startup - see *Multi-tenancy* below.
 
 ### Passkeys (`webauthn`)
 
@@ -279,7 +279,7 @@ routine enough that NIST discourages SMS for high-value accounts.
 A policy layer over the other methods.
 `MfaPolicy` names the first factors that must be backed
 by a second one (default: passwords only). When such a login succeeds
-_and the user has a factor registered_, the session is **pending** -
+*and the user has a factor registered*, the session is **pending** -
 treated as logged-out everywhere except the completion flow, which offers
 a passkey ceremony, an authenticator code, a one-time code sent to the
 user's **own verified** address or number (never one supplied in the
@@ -348,11 +348,14 @@ and secret scanners, GitHub-`ghp_` style.
 
 The `pages` feature bundles plain Askama templates for login, signup, the
 account page, password reset, code entry, the MFA picker, "check your
-inbox", expired links and rate-limit refusals. Restyle
-them, or implement the `Pages` trait to render the same
-view-models with your own templating - you keep the router and flows
-while owning the markup. Or skip `pages` entirely and the router serves
-only the action/callback endpoints.
+inbox", expired links and rate-limit refusals. They load Source Serif 4
+and the Material Symbols icon font from [Bunny Fonts](https://fonts.bunny.net)
+(a GDPR-friendly Google Fonts mirror) and fall back to system serifs
+offline; the wordmark lives in `brand.html`. Restyle them, or implement
+the `Pages` trait to render the same view-models with your own
+templating - you keep the router and flows while owning the markup. Or
+skip `pages` entirely and the router serves only the action/callback
+endpoints.
 
 ## Routes
 
@@ -405,10 +408,10 @@ alone is the auth plumbing for per-tenant SSO against providers unknown
 until request time, so that's the primitive authery provides:
 
 1. Register an [`OAuthProviderResolver`](https://docs.rs/authery/latest/authery/oauth/trait.OAuthProviderResolver.html)
-   that builds providers from _your_ tables, keyed by an opaque context
+   that builds providers from *your* tables, keyed by an opaque context
    string (e.g. the tenant slug).
 2. Start flows with `oauth_login_init_with_context(context, provider,
-next)` - the context rides the encrypted state cookie and both init
+   next)` - the context rides the encrypted state cookie and both init
    and callback resolve through your resolver.
 3. Your store receives the context alongside the **validated** claims on
    the resulting token - that's your membership hook.

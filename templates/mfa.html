@@ -1,30 +1,39 @@
 {% extends "base.html" %}
 
+{% block title %}One more step{% endblock %}
+
 {% block content %}
-<div class="form-container">
-  <h1>Verify it's you</h1>
+<div class="screen">
+  {% include "brand.html" %}
+  <h1>One more step</h1>
+  <p class="sub text-muted">Your account requires a second factor to sign in.</p>
 
   {% if let Some(message) = message %}
-  <div class="message" role="alert">
-    <strong>{{ message }}</strong>
-  </div>
+  <p class="notice" role="status">{{ message }}</p>
   {% endif %}
-
   {% if let Some(error) = error %}
-  <div class="error" role="alert">
-    <strong>Something went wrong: {{ error }}</strong>
-  </div>
+  <p class="notice notice-error" role="alert">{{ error }}</p>
   {% endif %}
 
-  <p>Your account requires a second factor to log in.</p>
+  {% if let Some(totp_route) = totp %}
+  <form action="{{ totp_route }}" method="post" id="mfa-totp-form">
+    <div class="field">
+      <label for="totp-code">Authenticator code</label>
+      <input class="input code" type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*"
+        autocomplete="one-time-code" required autofocus>
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Verify and continue</button>
+    <input type="hidden" name="trust_device" value="" />
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% endif %}
+  </form>
+  {% endif %}
 
   {% if let Some(days) = trust_device_days %}
-  <div class="form-group">
-    <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
-      <input type="checkbox" id="trust-device" style="width: auto;">
-      Trust this device for {{ days }} days
-    </label>
-  </div>
+  <label class="radio" style="margin-top: var(--space-3);">
+    <input type="checkbox" id="trust-device"><span class="dot"></span>Trust this device for {{ days }} days
+  </label>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       var box = document.getElementById('trust-device');
@@ -39,174 +48,142 @@
   </script>
   {% endif %}
 
-  {% if let Some(webauthn) = webauthn %}
-  <div class="webauthn-login">
-    <button type="button" id="mfa-passkey-button" class="social-button">Use a passkey</button>
-    <div class="error" id="mfa-passkey-error" role="alert" style="display: none;"></div>
-  </div>
-  <script>
-    (function () {
-      function fromB64url(s) {
-        s = s.replace(/-/g, '+').replace(/_/g, '/');
-        return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
-      }
-      function toB64url(b) {
-        return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
-          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      }
-      function fail(e) {
-        var el = document.getElementById('mfa-passkey-error');
-        el.textContent = 'Passkey verification failed: ' + e;
-        el.style.display = 'block';
-      }
-      document.getElementById('mfa-passkey-button').addEventListener('click', async function () {
-        try {
-          var res = await fetch('{{ webauthn.start_route }}', { method: 'POST' });
-          var rcr = await res.json();
-          if (!res.ok) { return fail(rcr.error || res.status); }
-          var pk = rcr.publicKey;
-          pk.challenge = fromB64url(pk.challenge);
-          if (pk.allowCredentials) {
-            pk.allowCredentials = pk.allowCredentials.map(function (c) {
-              c.id = fromB64url(c.id); return c;
-            });
-          }
-          var cred = await navigator.credentials.get({ publicKey: pk });
-          var body = {
-            id: cred.id,
-            rawId: toB64url(cred.rawId),
-            type: cred.type,
-            extensions: cred.getClientExtensionResults(),
-            response: {
-              authenticatorData: toB64url(cred.response.authenticatorData),
-              clientDataJSON: toB64url(cred.response.clientDataJSON),
-              signature: toB64url(cred.response.signature),
-              userHandle: cred.response.userHandle ? toB64url(cred.response.userHandle) : null
+  {% if webauthn.is_some() || sms.is_some() || otp.is_some() || recovery.is_some() %}
+  <div class="caps text-muted kicker">{% if totp.is_some() %}Other ways{% else %}Choose a way{% endif %}</div>
+  <div class="stack">
+    {% if let Some(webauthn) = webauthn %}
+    <button type="button" id="mfa-passkey-button" class="btn btn-secondary prov"><span class="icon" aria-hidden="true">fingerprint</span>Use a passkey</button>
+    <p class="notice notice-error" id="mfa-passkey-error" role="alert" style="display: none; margin: 0;"></p>
+    <script>
+      (function () {
+        function fromB64url(s) {
+          s = s.replace(/-/g, '+').replace(/_/g, '/');
+          return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
+        }
+        function toB64url(b) {
+          return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+        function fail(e) {
+          var el = document.getElementById('mfa-passkey-error');
+          el.textContent = 'Passkey verification failed: ' + e;
+          el.style.display = 'block';
+        }
+        document.getElementById('mfa-passkey-button').addEventListener('click', async function () {
+          try {
+            var res = await fetch('{{ webauthn.start_route }}', { method: 'POST' });
+            var rcr = await res.json();
+            if (!res.ok) { return fail(rcr.error || res.status); }
+            var pk = rcr.publicKey;
+            pk.challenge = fromB64url(pk.challenge);
+            if (pk.allowCredentials) {
+              pk.allowCredentials = pk.allowCredentials.map(function (c) {
+                c.id = fromB64url(c.id); return c;
+              });
             }
-          };
-          var trust = document.getElementById('trust-device');
-          var finishUrl = '{{ webauthn.finish_route }}' + (trust && trust.checked ? '?trust_device=1' : '');
-          var fin = await fetch(finishUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          });
-          var out = await fin.json();
-          if (fin.ok) {
-            {% if let Some(next) = next %}
-            window.location = '{{ next }}';
-            {% else %}
-            window.location = out.next || '/';
-            {% endif %}
-          } else { fail(out.error || fin.status); }
-        } catch (e) { fail(e); }
-      });
-    })();
-  </script>
-  {% endif %}
+            var cred = await navigator.credentials.get({ publicKey: pk });
+            var body = {
+              id: cred.id,
+              rawId: toB64url(cred.rawId),
+              type: cred.type,
+              extensions: cred.getClientExtensionResults(),
+              response: {
+                authenticatorData: toB64url(cred.response.authenticatorData),
+                clientDataJSON: toB64url(cred.response.clientDataJSON),
+                signature: toB64url(cred.response.signature),
+                userHandle: cred.response.userHandle ? toB64url(cred.response.userHandle) : null
+              }
+            };
+            var trust = document.getElementById('trust-device');
+            var finishUrl = '{{ webauthn.finish_route }}' + (trust && trust.checked ? '?trust_device=1' : '');
+            var fin = await fetch(finishUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            var out = await fin.json();
+            if (fin.ok) {
+              {% if let Some(next) = next %}
+              window.location = '{{ next }}';
+              {% else %}
+              window.location = out.next || '/';
+              {% endif %}
+            } else { fail(out.error || fin.status); }
+          } catch (e) { fail(e); }
+        });
+      })();
+    </script>
+    {% endif %}
 
-  {% if webauthn.is_some() && (totp.is_some() || otp.is_some()) %}
-  <div class="or-divider">
-    <span>or</span>
-  </div>
-  {% endif %}
-
-  {% if let Some(totp_route) = totp %}
-  <div class="totp-login">
-    <form action="{{ totp_route }}" method="post" id="mfa-totp-form">
-      <div class="form-group">
-        <label for="totp-code">Code from your authenticator app</label>
-        <input type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*"
-          autocomplete="one-time-code" required>
+    {% if let Some(sms) = sms %}
+    <details {% if message.is_some() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">smartphone</span>Code by text to {{ sms.number_hint }}</summary>
+      <div style="padding: var(--space-2) 0 var(--space-3);">
+        <form action="{{ sms.action_route }}" method="post" style="margin-bottom: var(--space-2);">
+          {% if let Some(next) = next %}
+          <input type="hidden" name="next" value="{{ next }}" />
+          {% endif %}
+          <button type="submit" class="btn btn-ghost">Text me a code</button>
+        </form>
+        <form action="{{ sms.action_route }}" method="post" id="mfa-sms-form">
+          <div class="field">
+            <label for="sms-code">Texted code</label>
+            <input class="input code" type="text" id="sms-code" name="code" {% if let Some(mode) = sms.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = sms.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = sms.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Verify</button>
+          <input type="hidden" name="trust_device" value="" />
+          {% if let Some(next) = next %}
+          <input type="hidden" name="next" value="{{ next }}" />
+          {% endif %}
+        </form>
       </div>
-      <button type="submit">Verify</button>
-      <input type="hidden" name="trust_device" value="" />
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
-    </form>
-  </div>
+    </details>
+    {% endif %}
 
-  {% if otp.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% if let Some(recovery_route) = recovery %}
-  <div class="recovery-login">
-    <form action="{{ recovery_route }}" method="post" id="mfa-recovery-form">
-      <div class="form-group">
-        <label for="recovery-code">Or use a recovery code</label>
-        <input type="text" id="recovery-code" name="code" autocomplete="off" required>
+    {% if let Some(otp) = otp %}
+    <details {% if message.is_some() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">mail</span>Code by email to {{ otp.address_hint }}</summary>
+      <div style="padding: var(--space-2) 0 var(--space-3);">
+        <form action="{{ otp.action_route }}" method="post" style="margin-bottom: var(--space-2);">
+          {% if let Some(next) = next %}
+          <input type="hidden" name="next" value="{{ next }}" />
+          {% endif %}
+          <button type="submit" class="btn btn-ghost">Email me a code</button>
+        </form>
+        <form action="{{ otp.action_route }}" method="post" id="mfa-otp-form">
+          <div class="field">
+            <label for="code">Emailed code</label>
+            <input class="input code" type="text" id="code" name="code" {% if let Some(mode) = otp.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = otp.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = otp.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Verify</button>
+          <input type="hidden" name="trust_device" value="" />
+          {% if let Some(next) = next %}
+          <input type="hidden" name="next" value="{{ next }}" />
+          {% endif %}
+        </form>
       </div>
-      <button type="submit">Use recovery code</button>
-      <input type="hidden" name="trust_device" value="" />
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
-    </form>
-  </div>
+    </details>
+    {% endif %}
 
-  {% if sms.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% if let Some(sms) = sms %}
-  <div class="sms-login">
-    <form action="{{ sms.action_route }}" method="post" class="form">
-      <button type="submit">Text a code to {{ sms.number_hint }}</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
-    </form>
-
-    <form action="{{ sms.action_route }}" method="post" id="mfa-sms-form">
-      <div class="form-group">
-        <label for="sms-code">Texted code</label>
-        <input type="text" id="sms-code" name="code" {% if let Some(mode) = sms.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = sms.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = sms.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code">
-      </div>
-      <button type="submit">Verify</button>
-      <input type="hidden" name="trust_device" value="" />
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
-    </form>
-  </div>
-
-  {% if otp.is_some() %}
-  <div class="or-divider">
-    <span>or</span>
+    {% if let Some(recovery_route) = recovery %}
+    <details>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">key</span>Recovery code</summary>
+      <form action="{{ recovery_route }}" method="post" id="mfa-recovery-form" style="padding: var(--space-2) 0 var(--space-3);">
+        <div class="field">
+          <label for="recovery-code">Recovery code</label>
+          <input class="input code" type="text" id="recovery-code" name="code" autocomplete="off" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Use recovery code</button>
+        <input type="hidden" name="trust_device" value="" />
+        {% if let Some(next) = next %}
+        <input type="hidden" name="next" value="{{ next }}" />
+        {% endif %}
+      </form>
+    </details>
+    {% endif %}
   </div>
   {% endif %}
-  {% endif %}
 
-  {% if let Some(otp) = otp %}
-  <div class="otp-login">
-    <form action="{{ otp.action_route }}" method="post" class="form">
-      <button type="submit">Email a code to {{ otp.address_hint }}</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
-    </form>
-
-    <form action="{{ otp.action_route }}" method="post" id="mfa-otp-form">
-      <div class="form-group">
-        <label for="code">Code</label>
-        <input type="text" id="code" name="code" {% if let Some(mode) = otp.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = otp.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = otp.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code"
-        required>
-      </div>
-      <button type="submit">Verify</button>
-      <input type="hidden" name="trust_device" value="" />
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
-    </form>
-  </div>
-  {% endif %}
+  <div class="foot text-muted">Lost every factor? A recovery code is the way back in.</div>
 </div>
 {% endblock %}

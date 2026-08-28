@@ -118,6 +118,40 @@ pub enum LoginMethod {
     },
 }
 
+impl LoginMethod {
+    /// Short human-readable label, e.g. "Password + authenticator app".
+    pub fn label(&self) -> String {
+        match self {
+            #[cfg(feature = "password")]
+            Self::Password => "Password".into(),
+            #[cfg(all(feature = "password", feature = "email"))]
+            Self::PasswordReset { .. } => "Password reset".into(),
+            #[cfg(feature = "email")]
+            Self::Email { .. } => "Email link".into(),
+            #[cfg(feature = "email")]
+            Self::Otp { .. } => "Email code".into(),
+            #[cfg(feature = "webauthn")]
+            Self::Webauthn { .. } => "Passkey".into(),
+            #[cfg(feature = "totp")]
+            Self::Totp => "Authenticator app".into(),
+            #[cfg(feature = "mfa")]
+            Self::RecoveryCode => "Recovery code".into(),
+            #[cfg(feature = "mfa")]
+            Self::TrustedDevice => "Trusted device".into(),
+            #[cfg(feature = "sms")]
+            Self::Sms { .. } => "Text code".into(),
+            #[cfg(feature = "mfa")]
+            Self::MfaPending { first } => format!("{} (second factor pending)", first.label()),
+            #[cfg(feature = "mfa")]
+            Self::Mfa { first, second } => format!("{} + {}", first.label(), second.label()),
+            #[cfg(feature = "oauth")]
+            Self::OAuth { .. } => "OAuth provider".into(),
+            #[allow(unreachable_patterns)]
+            _ => format!("{self:?}"),
+        }
+    }
+}
+
 impl Display for LoginMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("{self:#?}"))

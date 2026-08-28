@@ -15,18 +15,61 @@ pub struct TemplateLoginSession {
     pub id: String,
     pub method: LoginMethod,
     pub user_agent: Option<String>,
+    /// "Chrome · macOS"-style summary of the user agent.
+    pub device: Option<String>,
+    pub mobile: bool,
     pub ip_address: Option<String>,
     pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
     pub expires: chrono::DateTime<chrono::Utc>,
 }
 
+/// Browser and platform names from a user-agent string, best effort.
+#[cfg(feature = "user")]
+pub fn describe_user_agent(ua: &str) -> (String, bool) {
+    let browser = [
+        ("Edg/", "Edge"),
+        ("OPR/", "Opera"),
+        ("Firefox/", "Firefox"),
+        ("Chrome/", "Chrome"),
+        ("CriOS/", "Chrome"),
+        ("Safari/", "Safari"),
+        ("curl/", "curl"),
+    ]
+    .iter()
+    .find(|(needle, _)| ua.contains(needle))
+    .map(|(_, name)| *name);
+    let platform = [
+        ("iPhone", "iPhone"),
+        ("iPad", "iPad"),
+        ("Android", "Android"),
+        ("Windows", "Windows"),
+        ("Mac OS X", "macOS"),
+        ("CrOS", "ChromeOS"),
+        ("Linux", "Linux"),
+    ]
+    .iter()
+    .find(|(needle, _)| ua.contains(needle))
+    .map(|(_, name)| *name);
+    let mobile = ua.contains("Mobile") || ua.contains("iPhone") || ua.contains("Android");
+    let label = match (browser, platform) {
+        (Some(b), Some(p)) => format!("{b} · {p}"),
+        (Some(b), None) => b.to_string(),
+        (None, Some(p)) => p.to_string(),
+        (None, None) => ua.chars().take(40).collect(),
+    };
+    (label, mobile)
+}
+
 #[cfg(feature = "user")]
 impl<T: LoginSession> From<&T> for TemplateLoginSession {
     fn from(value: &T) -> Self {
+        let described = value.get_user_agent().map(describe_user_agent);
         TemplateLoginSession {
             id: value.get_id().to_string(),
             method: value.get_method(),
             user_agent: value.get_user_agent().map(str::to_owned),
+            device: described.as_ref().map(|(label, _)| label.clone()),
+            mobile: described.is_some_and(|(_, mobile)| mobile),
             ip_address: value.get_ip_address().map(str::to_owned),
             last_seen: value.get_last_seen(),
             expires: value.get_expires(),
@@ -92,6 +135,7 @@ impl<'a> From<&'a Arc<dyn OAuthProvider>> for TemplateOAuthProvider<'a> {
 #[derive(Template)]
 #[template(path = "reset-password.html")]
 pub struct ResetPasswordTemplate<'a> {
+    pub login_page_route: &'a str,
     pub reset_password_action_route: &'a str,
     pub error: Option<&'a str>,
     /// For the input's `pattern` attribute.
@@ -176,6 +220,7 @@ pub struct PausedTemplate<'a> {
 #[derive(Template)]
 #[template(path = "send-reset-password.html")]
 pub struct SendResetPasswordTemplate<'a> {
+    pub login_page_route: &'a str,
     pub sent: bool,
     pub address: Option<&'a str>,
     pub error: Option<&'a str>,
@@ -736,6 +781,7 @@ impl CodeInputHints {
 #[derive(Template)]
 #[template(path = "sms.html")]
 pub struct SmsTemplate<'a> {
+    pub login_page_route: &'a str,
     pub number: &'a str,
     pub action_route: &'a str,
     pub next: Option<&'a str>,
@@ -750,6 +796,7 @@ pub struct SmsTemplate<'a> {
 #[derive(Template)]
 #[template(path = "otp.html")]
 pub struct OtpTemplate<'a> {
+    pub login_page_route: &'a str,
     pub address: &'a str,
     pub action_route: &'a str,
     pub next: Option<&'a str>,
