@@ -19,16 +19,16 @@
   <div class="methods">
     <div class="seg" role="radiogroup" aria-label="Sign-up method" id="method-switch">
       {% if password.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-password">Password</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-password" {% if selected_method == "password" %}checked{% endif %}>Password</label>
       {% endif %}
       {% if otp.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-otp">One-time code</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-otp" {% if selected_method == "otp" %}checked{% endif %}>One-time code</label>
       {% endif %}
       {% if email.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-email">Link</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-email" {% if selected_method == "email" %}checked{% endif %}>Link</label>
       {% endif %}
       {% if sms.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-sms">Text</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-sms" {% if selected_method == "sms" %}checked{% endif %}>Text</label>
       {% endif %}
     </div>
 
@@ -95,12 +95,6 @@
     </form>
     {% endif %}
   </div>
-  <script>
-    (function () {
-      var first = document.querySelector('#method-switch input');
-      if (first && !document.querySelector('#method-switch input:checked')) { first.checked = true; }
-    })();
-  </script>
   {% endif %}
 
   {% if let Some(oauth) = oauth %}

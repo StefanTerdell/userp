@@ -5,7 +5,7 @@
 {% block content %}
 <div class="screen">
   {% include "brand.html" %}
-  <span class="icon icon-hero warn" aria-hidden="true">hourglass_empty</span>
+  <svg class="icon icon-hero warn" aria-hidden="true"><use href="#i-hourglass_empty"/></svg>
   <h1>This link has expired</h1>
   <p class="lede">Emailed links are single-use and only valid for a short while.
     {% if let Some(address) = address %}This one was sent to <strong>{{ address }}</strong>.{% endif %}
@@ -31,8 +31,6 @@
       </form>
       {% endif %}
       {% endif %}
-      {% if password %}<a class="btn btn-ghost" href="{{ login_page_route }}">Password</a>{% endif %}
-      {% if webauthn %}<a class="btn btn-ghost" href="{{ login_page_route }}">Passkey</a>{% endif %}
       <a class="btn btn-ghost" href="{{ login_page_route }}">
         {% match purpose %}
         {% when crate::pages::EmailLinkPurpose::Verify %}Back to your account

@@ -341,9 +341,9 @@
 //! The `pages` feature bundles plain Askama templates for login, signup, the
 //! account page, password reset, code entry, the MFA picker, "check your
 //! inbox", expired links and rate-limit refusals. They load Source Serif 4
-//! and the Material Symbols icon font from [Bunny Fonts](https://fonts.bunny.net)
-//! (a GDPR-friendly Google Fonts mirror) and fall back to system serifs
-//! offline; the wordmark lives in `brand.html`. Restyle them, or implement
+//! from [Bunny Fonts](https://fonts.bunny.net) (a GDPR-friendly Google Fonts
+//! mirror) and fall back to system serifs offline; icons are inline SVG and
+//! the wordmark lives in `brand.html`. Restyle them, or implement
 //! the `Pages` trait to render the same view-models with your own
 //! templating - you keep the router and flows while owning the markup. Or
 //! skip `pages` entirely and the router serves only the action/callback

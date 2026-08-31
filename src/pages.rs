@@ -14,7 +14,6 @@ use std::sync::Arc;
 pub struct TemplateLoginSession {
     pub id: String,
     pub method: LoginMethod,
-    pub user_agent: Option<String>,
     /// "Chrome · macOS"-style summary of the user agent.
     pub device: Option<String>,
     pub mobile: bool,
@@ -25,13 +24,17 @@ pub struct TemplateLoginSession {
 
 /// Browser and platform names from a user-agent string, best effort.
 #[cfg(feature = "user")]
-pub fn describe_user_agent(ua: &str) -> (String, bool) {
+fn describe_user_agent(ua: &str) -> (String, bool) {
     let browser = [
+        ("EdgiOS/", "Edge"),
+        ("EdgA/", "Edge"),
         ("Edg/", "Edge"),
+        ("OPT/", "Opera"),
         ("OPR/", "Opera"),
+        ("FxiOS/", "Firefox"),
         ("Firefox/", "Firefox"),
-        ("Chrome/", "Chrome"),
         ("CriOS/", "Chrome"),
+        ("Chrome/", "Chrome"),
         ("Safari/", "Safari"),
         ("curl/", "curl"),
     ]
@@ -50,7 +53,11 @@ pub fn describe_user_agent(ua: &str) -> (String, bool) {
     .iter()
     .find(|(needle, _)| ua.contains(needle))
     .map(|(_, name)| *name);
-    let mobile = ua.contains("Mobile") || ua.contains("iPhone") || ua.contains("Android");
+    let mobile = if ua.contains("iPad") || ua.contains("Tablet") {
+        false
+    } else {
+        ua.contains("iPhone") || ua.contains("Mobile")
+    };
     let label = match (browser, platform) {
         (Some(b), Some(p)) => format!("{b} · {p}"),
         (Some(b), None) => b.to_string(),
@@ -63,13 +70,12 @@ pub fn describe_user_agent(ua: &str) -> (String, bool) {
 #[cfg(feature = "user")]
 impl<T: LoginSession> From<&T> for TemplateLoginSession {
     fn from(value: &T) -> Self {
-        let described = value.get_user_agent().map(describe_user_agent);
+        let (device, mobile) = value.get_user_agent().map(describe_user_agent).unzip();
         TemplateLoginSession {
             id: value.get_id().to_string(),
             method: value.get_method(),
-            user_agent: value.get_user_agent().map(str::to_owned),
-            device: described.as_ref().map(|(label, _)| label.clone()),
-            mobile: described.is_some_and(|(_, mobile)| mobile),
+            device,
+            mobile: mobile.unwrap_or(false),
             ip_address: value.get_ip_address().map(str::to_owned),
             last_seen: value.get_last_seen(),
             expires: value.get_expires(),
@@ -268,6 +274,7 @@ pub struct UserTemplate<'a> {
     pub sessions: Vec<TemplateLoginSession>,
     pub home_page_route: &'a str,
     pub login_page_route: &'a str,
+    pub logout_action_route: &'a str,
     pub session_delete_action_route: &'a str,
     pub sessions_delete_others_action_route: &'a str,
     pub user_delete_action_route: &'a str,
@@ -319,6 +326,7 @@ impl UserTemplate<'_> {
             sessions: sessions.iter().map(|s| s.into()).collect(),
             home_page_route: &auth.routes.pages.home,
             login_page_route: &auth.routes.pages.login,
+            logout_action_route: &auth.routes.logout,
             session_delete_action_route: &auth.routes.user.user_session_delete,
             sessions_delete_others_action_route: &auth.routes.user.user_session_delete_others,
             user_delete_action_route: &auth.routes.user.user_delete,
@@ -505,6 +513,8 @@ pub struct LoginTemplate<'a> {
     pub webauthn: Option<TemplateWebauthnInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub signup_route: &'a str,
+    /// Which method panel starts selected: "password", "otp", "email", "sms" or "".
+    pub selected_method: &'static str,
 }
 
 pub struct TemplateSmsInfo<'a> {
@@ -520,11 +530,12 @@ impl LoginTemplate<'_> {
         next: Option<&'a str>,
         message: Option<&'a str>,
         error: Option<&'a str>,
+        method: Option<&str>,
     ) -> LoginTemplate<'a> {
         #[cfg(feature = "oauth")]
         let oauth_login_providers = auth.oauth_login_providers();
 
-        LoginTemplate {
+        let mut view = LoginTemplate {
             next,
             message,
             error,
@@ -586,7 +597,20 @@ impl LoginTemplate<'_> {
             #[cfg(not(feature = "oauth"))]
             oauth: None,
             signup_route: &auth.routes.pages.signup,
-        }
+            selected_method: "",
+        };
+        view.selected_method = match method {
+            Some("password") if view.password.is_some() => "password",
+            Some("otp") if view.otp.is_some() => "otp",
+            Some("email") if view.email.is_some() => "email",
+            Some("sms") if view.sms.is_some() => "sms",
+            _ if view.password.is_some() => "password",
+            _ if view.otp.is_some() => "otp",
+            _ if view.email.is_some() => "email",
+            _ if view.sms.is_some() => "sms",
+            _ => "",
+        };
+        view
     }
 
     pub fn render_with<S: AutheryStore, C: AutheryCookies>(
@@ -594,8 +618,9 @@ impl LoginTemplate<'_> {
         next: Option<&str>,
         message: Option<&str>,
         error: Option<&str>,
+        method: Option<&str>,
     ) -> Result<String, askama::Error> {
-        Self::with(auth, next, message, error).render()
+        Self::with(auth, next, message, error, method).render()
     }
 }
 
@@ -611,6 +636,8 @@ pub struct SignupTemplate<'a> {
     pub sms: Option<TemplateSmsInfo<'a>>,
     pub oauth: Option<TemplateOAuthInfo<'a>>,
     pub login_route: &'a str,
+    /// Which method panel starts selected: "password", "otp", "email", "sms" or "".
+    pub selected_method: &'static str,
 }
 
 impl SignupTemplate<'_> {
@@ -621,11 +648,12 @@ impl SignupTemplate<'_> {
         next: Option<&'a str>,
         message: Option<&'a str>,
         error: Option<&'a str>,
+        method: Option<&str>,
     ) -> SignupTemplate<'a> {
         #[cfg(feature = "oauth")]
         let oauth_signup_providers = auth.oauth_signup_providers();
 
-        SignupTemplate {
+        let mut view = SignupTemplate {
             next,
             message,
             error,
@@ -680,7 +708,20 @@ impl SignupTemplate<'_> {
             #[cfg(not(feature = "oauth"))]
             oauth: None,
             login_route: &auth.routes.pages.login,
-        }
+            selected_method: "",
+        };
+        view.selected_method = match method {
+            Some("password") if view.password.is_some() => "password",
+            Some("otp") if view.otp.is_some() => "otp",
+            Some("email") if view.email.is_some() => "email",
+            Some("sms") if view.sms.is_some() => "sms",
+            _ if view.password.is_some() => "password",
+            _ if view.otp.is_some() => "otp",
+            _ if view.email.is_some() => "email",
+            _ if view.sms.is_some() => "sms",
+            _ => "",
+        };
+        view
     }
 
     pub fn render_with<S: AutheryStore, C: AutheryCookies>(
@@ -688,8 +729,9 @@ impl SignupTemplate<'_> {
         next: Option<&str>,
         message: Option<&str>,
         error: Option<&str>,
+        method: Option<&str>,
     ) -> Result<String, askama::Error> {
-        Self::with(auth, next, message, error).render()
+        Self::with(auth, next, message, error, method).render()
     }
 }
 

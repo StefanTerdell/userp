@@ -40,7 +40,7 @@ where
             Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
                 &err,
-                &routes.pages.login,
+                &crate::axum::router::with_method(&routes.pages.login, "otp"),
                 next.as_deref(),
             ))
             .into_response()),
@@ -91,7 +91,7 @@ where
             Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
                 &err,
-                &routes.pages.signup,
+                &crate::axum::router::with_method(&routes.pages.signup, "otp"),
                 next.as_deref(),
             ))
             .into_response()),

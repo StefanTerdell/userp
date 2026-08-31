@@ -20,7 +20,7 @@
     <div class="field">
       <label for="totp-code">Authenticator code</label>
       <input class="input code" type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*"
-        autocomplete="one-time-code" required autofocus>
+        autocomplete="one-time-code" required{% if message.is_none() && error.is_none() %} autofocus{% endif %}>
     </div>
     <button type="submit" class="btn btn-primary btn-block">Verify and continue</button>
     <input type="hidden" name="trust_device" value="" />
@@ -52,18 +52,10 @@
   <div class="caps text-muted kicker">{% if totp.is_some() %}Other ways{% else %}Choose a way{% endif %}</div>
   <div class="stack">
     {% if let Some(webauthn) = webauthn %}
-    <button type="button" id="mfa-passkey-button" class="btn btn-secondary prov"><span class="icon" aria-hidden="true">fingerprint</span>Use a passkey</button>
+    <button type="button" id="mfa-passkey-button" class="btn btn-secondary prov"{% if let Some(next) = next %} data-next="{{ next }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Use a passkey</button>
     <p class="notice notice-error" id="mfa-passkey-error" role="alert" style="display: none; margin: 0;"></p>
     <script>
       (function () {
-        function fromB64url(s) {
-          s = s.replace(/-/g, '+').replace(/_/g, '/');
-          return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
-        }
-        function toB64url(b) {
-          return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
-            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        }
         function fail(e) {
           var el = document.getElementById('mfa-passkey-error');
           el.textContent = 'Passkey verification failed: ' + e;
@@ -103,11 +95,8 @@
             });
             var out = await fin.json();
             if (fin.ok) {
-              {% if let Some(next) = next %}
-              window.location = '{{ next }}';
-              {% else %}
-              window.location = out.next || '/';
-              {% endif %}
+              var btn = document.getElementById('mfa-passkey-button');
+              window.location = btn.dataset.next || out.next || '/';
             } else { fail(out.error || fin.status); }
           } catch (e) { fail(e); }
         });
@@ -116,8 +105,8 @@
     {% endif %}
 
     {% if let Some(sms) = sms %}
-    <details {% if message.is_some() %}open{% endif %}>
-      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">smartphone</span>Code by text to {{ sms.number_hint }}</summary>
+    <details {% if message.is_some() || error.is_some() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-smartphone"/></svg>Code by text to {{ sms.number_hint }}</summary>
       <div style="padding: var(--space-2) 0 var(--space-3);">
         <form action="{{ sms.action_route }}" method="post" style="margin-bottom: var(--space-2);">
           {% if let Some(next) = next %}
@@ -141,8 +130,8 @@
     {% endif %}
 
     {% if let Some(otp) = otp %}
-    <details {% if message.is_some() %}open{% endif %}>
-      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">mail</span>Code by email to {{ otp.address_hint }}</summary>
+    <details {% if message.is_some() || error.is_some() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>Code by email to {{ otp.address_hint }}</summary>
       <div style="padding: var(--space-2) 0 var(--space-3);">
         <form action="{{ otp.action_route }}" method="post" style="margin-bottom: var(--space-2);">
           {% if let Some(next) = next %}
@@ -166,8 +155,8 @@
     {% endif %}
 
     {% if let Some(recovery_route) = recovery %}
-    <details>
-      <summary class="btn btn-secondary prov" style="list-style: none;"><span class="icon" aria-hidden="true">key</span>Recovery code</summary>
+    <details {% if totp.is_none() && webauthn.is_none() && sms.is_none() && otp.is_none() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg>Recovery code</summary>
       <form action="{{ recovery_route }}" method="post" id="mfa-recovery-form" style="padding: var(--space-2) 0 var(--space-3);">
         <div class="field">
           <label for="recovery-code">Recovery code</label>

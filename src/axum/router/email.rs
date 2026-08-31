@@ -85,7 +85,7 @@ where
             _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
                 &err,
-                &routes.pages.login,
+                &crate::axum::router::with_method(&routes.pages.login, "email"),
                 next.as_deref(),
             ))
             .into_response()),
@@ -152,7 +152,7 @@ where
             _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
                 &err,
-                &routes.pages.signup,
+                &crate::axum::router::with_method(&routes.pages.signup, "email"),
                 next.as_deref(),
             ))
             .into_response()),

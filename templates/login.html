@@ -19,16 +19,16 @@
   <div class="methods">
     <div class="seg" role="radiogroup" aria-label="Sign-in method" id="method-switch">
       {% if password.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-password">Password</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-password" {% if selected_method == "password" %}checked{% endif %}>Password</label>
       {% endif %}
       {% if otp.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-otp">One-time code</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-otp" {% if selected_method == "otp" %}checked{% endif %}>One-time code</label>
       {% endif %}
       {% if email.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-email">Link</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-email" {% if selected_method == "email" %}checked{% endif %}>Link</label>
       {% endif %}
       {% if sms.is_some() %}
-      <label class="seg-opt"><input type="radio" name="method" id="m-sms">Text</label>
+      <label class="seg-opt"><input type="radio" name="method" id="m-sms" {% if selected_method == "sms" %}checked{% endif %}>Text</label>
       {% endif %}
     </div>
 
@@ -96,12 +96,6 @@
     </form>
     {% endif %}
   </div>
-  <script>
-    (function () {
-      var first = document.querySelector('#method-switch input');
-      if (first && !document.querySelector('#method-switch input:checked')) { first.checked = true; }
-    })();
-  </script>
   {% endif %}
 
   {% if oauth.is_some() || webauthn.is_some() %}
@@ -124,19 +118,11 @@
 
   {% if let Some(webauthn) = webauthn %}
   <div class="stack" style="margin-top: var(--space-2);">
-    <button type="button" id="passkey-login-button" class="btn btn-secondary prov"><span class="icon" aria-hidden="true">fingerprint</span>Passkey on this device</button>
+    <button type="button" id="passkey-login-button" class="btn btn-secondary prov"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Passkey on this device</button>
     <p class="notice notice-error" id="passkey-login-error" role="alert" style="display: none;"></p>
   </div>
   <script>
     (function () {
-      function fromB64url(s) {
-        s = s.replace(/-/g, '+').replace(/_/g, '/');
-        return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
-      }
-      function toB64url(b) {
-        return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
-          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      }
       function fail(e) {
         var el = document.getElementById('passkey-login-error');
         el.textContent = 'Passkey login failed: ' + e;

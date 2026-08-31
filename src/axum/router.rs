@@ -226,20 +226,27 @@ pub(crate) fn error_redirect(
     )
 }
 
+/// Whether `next` is a local path that is safe to redirect to.
+pub(crate) fn is_safe_next(next: &str) -> bool {
+    next.starts_with('/')
+        && !next.starts_with("//")
+        && !next.starts_with("/\\")
+        && !next.contains(|c: char| c.is_ascii_control())
+}
+
 /// Guards against open redirects: only local paths pass through,
 /// anything absolute, protocol-relative or malformed becomes the fallback.
 pub(crate) fn safe_next(next: Option<String>, fallback: &str) -> String {
     match next {
-        Some(next)
-            if next.starts_with('/')
-                && !next.starts_with("//")
-                && !next.starts_with("/\\")
-                && !next.contains(|c: char| c.is_ascii_control()) =>
-        {
-            next
-        }
+        Some(next) if is_safe_next(&next) => next,
         _ => fallback.to_string(),
     }
+}
+
+/// `page` with `method=` appended, so the page preselects that method's panel.
+pub(crate) fn with_method(page: &str, method: &str) -> String {
+    let separator = if page.contains('?') { '&' } else { '?' };
+    format!("{page}{separator}method={method}")
 }
 
 pub trait AxumRouter {

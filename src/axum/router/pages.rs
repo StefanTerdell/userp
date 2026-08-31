@@ -9,6 +9,8 @@ pub struct NextMessageErrorQuery {
     pub next: Option<String>,
     pub message: Option<String>,
     pub error: Option<String>,
+    /// Preselects that method's panel on the login/signup page.
+    pub method: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -162,6 +164,7 @@ pub async fn get_login<St>(
         next,
         message,
         error,
+        method,
         ..
     }): Query<NextMessageErrorQuery>,
 ) -> Result<impl IntoResponse, St::Error>
@@ -172,8 +175,13 @@ where
     Ok(if auth.logged_in().await? {
         Redirect::to(&auth.routes.pages.post_login).into_response()
     } else {
-        let view =
-            LoginTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
+        let view = LoginTemplate::with(
+            &auth,
+            next.as_deref(),
+            message.as_deref(),
+            error.as_deref(),
+            method.as_deref(),
+        );
         Html(auth.pages.render_login(&view)).into_response()
     })
 }
@@ -184,6 +192,7 @@ pub async fn get_signup<St>(
         next,
         message,
         error,
+        method,
         ..
     }): Query<NextMessageErrorQuery>,
 ) -> Result<impl IntoResponse, St::Error>
@@ -191,7 +200,13 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let view = SignupTemplate::with(&auth, next.as_deref(), message.as_deref(), error.as_deref());
+    let view = SignupTemplate::with(
+        &auth,
+        next.as_deref(),
+        message.as_deref(),
+        error.as_deref(),
+        method.as_deref(),
+    );
     Ok(Html(auth.pages.render_signup(&view)).into_response())
 }
 
@@ -213,6 +228,10 @@ where
     use crate::pages::MfaTemplate;
 
     let login_route = auth.routes.pages.login.clone();
+
+    // Only a safe local path may reach the template: the passkey script
+    // navigates to it after the second factor.
+    let next = next.filter(|next| crate::axum::router::is_safe_next(next));
 
     let Some(pending) = auth.mfa_pending_session().await? else {
         return Ok(Redirect::to(&login_route).into_response());

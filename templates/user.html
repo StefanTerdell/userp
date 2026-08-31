@@ -55,12 +55,21 @@
               </td>
               <td class="actions">
                 {% if !email.verified %}
-                <button type="button" class="btn btn-ghost" onclick="verifyEmail('{{ email.address }}')">Verify</button>
+                <form action="{{ email_info.verify_action_route }}" method="post">
+                  <input type="hidden" value="{{ email.address }}" name="email" />
+                  <button type="submit" class="btn btn-ghost">Verify</button>
+                </form>
                 {% endif %}
                 {% if email.allow_link_login %}
-                <button type="button" class="btn btn-ghost" onclick="toggleMagicLogin('{{ email.address }}', true)">Turn links off</button>
+                <form action="{{ email_info.disable_login_action_route }}" method="post">
+                  <input type="hidden" value="{{ email.address }}" name="email" />
+                  <button type="submit" class="btn btn-ghost">Turn links off</button>
+                </form>
                 {% else %}
-                <button type="button" class="btn btn-ghost" onclick="toggleMagicLogin('{{ email.address }}', false)">Turn links on</button>
+                <form action="{{ email_info.enable_login_action_route }}" method="post">
+                  <input type="hidden" value="{{ email.address }}" name="email" />
+                  <button type="submit" class="btn btn-ghost">Turn links on</button>
+                </form>
                 {% endif %}
                 <form action="{{ email_info.delete_action_route }}" method="post">
                   <input type="hidden" value="{{ email.address }}" name="email" />
@@ -76,29 +85,6 @@
           <button type="submit" class="btn btn-ghost">Add email</button>
         </form>
       </div>
-      <script>
-        function verifyEmail(email) {
-          fetch('{{ email_info.verify_action_route }}', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `email=${encodeURIComponent(email)}`
-          }).then(response => {
-            if (response.ok) { alert('Verification email sent to ' + email); }
-            else { alert('Failed to send verification email'); }
-          });
-        }
-
-        function toggleMagicLogin(email, enabled) {
-          const action = enabled ? '{{ email_info.disable_login_action_route  }}' : '{{ email_info.enable_login_action_route }}';
-          fetch(action, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `email=${encodeURIComponent(email)}`
-          }).then(response => {
-            if (response.ok) { location.reload(); } else { alert('Failed to update link login'); }
-          });
-        }
-      </script>
       {% endif %}
 
       {% if let Some(password) = password %}
@@ -203,7 +189,7 @@
           <tr>
             <td>
               <span class="with-icon">
-                <span class="icon" aria-hidden="true">{% if session.mobile %}smartphone{% else %}laptop_mac{% endif %}</span>
+                <svg class="icon" aria-hidden="true"><use href="#i-{% if session.mobile %}smartphone{% else %}laptop_mac{% endif %}"/></svg>
                 {% if let Some(device) = session.device %}{{ device }}{% else %}Unknown device{% endif %}
               </span>
             </td>
@@ -219,7 +205,11 @@
               {% endif %}
             </td>
             <td class="actions">
-              {% if session_id != session.id %}
+              {% if session_id == session.id %}
+              <form action="{{ logout_action_route }}" method="post">
+                <button type="submit" class="btn btn-ghost">Sign out</button>
+              </form>
+              {% else %}
               <form action="{{ session_delete_action_route }}" method="post">
                 <input type="hidden" value="{{ session.id }}" name="id" />
                 <button type="submit" class="btn btn-ghost">Sign out</button>
@@ -265,32 +255,20 @@
         {% endif %}
         <div class="inline" style="margin-top: var(--space-2);">
           <input class="input" type="text" id="passkey-name" placeholder="Name this passkey (optional)" maxlength="64">
-          <button type="button" id="add-passkey-button" class="btn btn-ghost">Add a passkey</button>
+          <button type="button" id="add-passkey-button" class="btn btn-ghost"{% if let Some(email_info) = email %}{% if let Some(first) = email_info.emails.first() %} data-display-name="{{ first.address }}"{% endif %}{% endif %}>Add a passkey</button>
         </div>
         <p class="notice notice-error" id="add-passkey-error" role="alert" style="display: none;"></p>
       </div>
       <script>
         (function () {
-          function fromB64url(s) {
-            s = s.replace(/-/g, '+').replace(/_/g, '/');
-            return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }).buffer;
-          }
-          function toB64url(b) {
-            return btoa(String.fromCharCode.apply(null, new Uint8Array(b)))
-              .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-          }
           function fail(e) {
             var el = document.getElementById('add-passkey-error');
             el.textContent = 'Adding passkey failed: ' + e;
             el.style.display = 'block';
           }
-          var displayName = 'user';
-          {% if let Some(email_info) = email %}
-          {% if let Some(first) = email_info.emails.first() %}
-          displayName = '{{ first.address }}';
-          {% endif %}
-          {% endif %}
-          document.getElementById('add-passkey-button').addEventListener('click', async function () {
+          var button = document.getElementById('add-passkey-button');
+          var displayName = button.dataset.displayName || 'user';
+          button.addEventListener('click', async function () {
             try {
               var res = await fetch('{{ webauthn.register_start_route }}', {
                 method: 'POST',
@@ -374,7 +352,7 @@
       {% endif %}
 
       <div class="danger-row">
-        <span class="icon" aria-hidden="true">delete</span>
+        <svg class="icon" aria-hidden="true"><use href="#i-delete"/></svg>
         <span>Delete account and all connected identities. This cannot be undone.</span>
         <form action="{{ user_delete_action_route }}" method="post" onsubmit="return confirm('Delete your account? This cannot be undone.');">
           <button type="submit" class="btn btn-secondary btn-danger">Delete account</button>
