@@ -36,11 +36,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .0
             .iter()
             .filter(|provider| {
-                provider.allow_signup().as_ref().unwrap_or(
-                    self.oauth
-                        .allow_signup
+                self.signup_allow(
+                    provider
+                        .allow_signup()
                         .as_ref()
-                        .unwrap_or(&self.allow_signup),
+                        .or(self.oauth.allow_signup.as_ref()),
                 ) != &Allow::Never
             })
             .collect()
@@ -55,11 +55,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             OAuthSignupInitError::ProviderNotFound(provider_name.clone()),
         )?;
 
-        if provider.allow_signup().as_ref().unwrap_or(
-            self.oauth
-                .allow_signup
+        if self.signup_allow(
+            provider
+                .allow_signup()
                 .as_ref()
-                .unwrap_or(&self.allow_signup),
+                .or(self.oauth.allow_signup.as_ref()),
         ) == &Allow::Never
         {
             return Err(OAuthSignupInitError::NotAllowed);
@@ -89,11 +89,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(|_| OAuthSignupInitError::ProviderNotFound(provider_name.to_string()))?;
 
-        if provider.allow_signup().as_ref().unwrap_or(
-            self.oauth
-                .allow_signup
+        if self.signup_allow(
+            provider
+                .allow_signup()
                 .as_ref()
-                .unwrap_or(&self.allow_signup),
+                .or(self.oauth.allow_signup.as_ref()),
         ) == &Allow::Never
         {
             return Err(OAuthSignupInitError::NotAllowed);
@@ -120,11 +120,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthSignupCallbackError::UnexpectedFlow(flow));
         };
 
-        let allow_login = provider
-            .allow_login()
-            .as_ref()
-            .unwrap_or(self.oauth.allow_login.as_ref().unwrap_or(&self.allow_login))
-            == &Allow::OnEither;
+        let allow_login = self.login_allow(
+            provider
+                .allow_login()
+                .as_ref()
+                .or(self.oauth.allow_login.as_ref()),
+        ) == &Allow::OnEither;
 
         let (user, token) = match self
             .store

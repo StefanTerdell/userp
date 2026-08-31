@@ -63,10 +63,7 @@ where
         }
     };
 
-    #[cfg(feature = "user")]
-    let user_route = auth.routes.pages.user.clone();
-    #[cfg(not(feature = "user"))]
-    let user_route = auth.routes.pages.post_login.clone();
+    let user_route = crate::axum::router::user_page(&auth.routes).clone();
 
     Ok(
         match auth
@@ -109,22 +106,10 @@ where
 {
     let login_route = auth.routes.pages.login.clone();
     let signup_route = auth.routes.pages.signup.clone();
-    #[cfg(feature = "user")]
-    let user_route = auth.routes.pages.user.clone();
-    #[cfg(not(feature = "user"))]
-    let user_route = auth.routes.pages.post_login.clone();
+    let user_route = crate::axum::router::user_page(&auth.routes).clone();
 
     match auth.oauth_callback(code, state).await {
-        Ok((auth, next)) => {
-            #[cfg(feature = "mfa")]
-            if auth.mfa_pending_session().await?.is_some() {
-                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                return Ok((auth, Redirect::to(&url)).into_response());
-            }
-
-            let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
+        Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
         Err(err) => match err {
             OAuthGenericCallbackError::Signup(OAuthSignupCallbackError::Store(err))
             | OAuthGenericCallbackError::Login(OAuthLoginCallbackError::Store(err))
@@ -158,10 +143,7 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     }
 
-    #[cfg(feature = "user")]
-    let user_route = auth.routes.pages.user.clone();
-    #[cfg(not(feature = "user"))]
-    let user_route = auth.routes.pages.post_login.clone();
+    let user_route = crate::axum::router::user_page(&auth.routes).clone();
 
     match auth.oauth_link_init(provider, next).await {
         Ok((auth, redirect_url)) => Ok((auth, Redirect::to(redirect_url.as_str())).into_response()),

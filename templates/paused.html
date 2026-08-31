@@ -30,9 +30,7 @@
           <label for="paused-email">Email</label>
           <input class="input" type="email" id="paused-email" name="email" required>
         </div>
-        {% if let Some(next) = next %}
-        <input type="hidden" name="next" value="{{ next }}" />
-        {% endif %}
+        {% include "next-hidden.html" %}
         <button type="submit" class="btn btn-primary btn-block">Send link</button>
       </form>
     </details>

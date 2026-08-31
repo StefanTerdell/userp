@@ -9,7 +9,7 @@ use thiserror::Error;
 pub enum OAuthRefreshCallbackError<StoreError: std::error::Error> {
     #[error(transparent)]
     OAuthCallbackError(#[from] OAuthCallbackError),
-    #[error("Expected a login flow, got {0}")]
+    #[error("Expected a refresh flow, got {0}")]
     UnexpectedFlow(OAuthFlow),
     #[error("Misformed token id in flow data")]
     MisformedId,

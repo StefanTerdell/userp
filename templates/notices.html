@@ -1,0 +1,6 @@
+{% if let Some(message) = message %}
+<p class="notice" role="status">{{ message }}</p>
+{% endif %}
+{% if let Some(error) = error %}
+<p class="notice notice-error" role="alert">{{ error }}</p>
+{% endif %}

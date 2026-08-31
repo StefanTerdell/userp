@@ -9,12 +9,7 @@
   <h1>Enter your code</h1>
   <p class="sub text-muted">Sent by email to <strong>{{ address }}</strong>. Codes are single-use and expire after a short while.</p>
 
-  {% if let Some(message) = message %}
-  <p class="notice" role="status">{{ message }}</p>
-  {% endif %}
-  {% if let Some(error) = error %}
-  <p class="notice notice-error" role="alert">{{ error }}</p>
-  {% endif %}
+  {% include "notices.html" %}
 
   <form action="{{ action_route }}" method="post" id="otp-form">
     <input type="hidden" name="email" value="{{ address }}" />
@@ -23,16 +18,12 @@
       <input class="input code" type="text" id="code" name="code" {% if let Some(mode) = code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code" required autofocus>
     </div>
     <button type="submit" class="btn btn-primary btn-block">Verify</button>
-    {% if let Some(next) = next %}
-    <input type="hidden" name="next" value="{{ next }}" />
-    {% endif %}
+    {% include "next-hidden.html" %}
   </form>
 
   <form action="{{ action_route }}" method="post" class="between">
     <input type="hidden" name="email" value="{{ address }}" />
-    {% if let Some(next) = next %}
-    <input type="hidden" name="next" value="{{ next }}" />
-    {% endif %}
+    {% include "next-hidden.html" %}
     <span class="small text-muted">Didn't get it?</span>
     <button type="submit" class="btn btn-ghost">Send a new code</button>
   </form>

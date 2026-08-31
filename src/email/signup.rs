@@ -59,12 +59,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         next: Option<String>,
     ) -> Result<(), EmailSignupInitError<S::Error>> {
         if !self.email.offer_links
-            || self
-                .email
-                .allow_signup
-                .as_ref()
-                .unwrap_or(&self.allow_signup)
-                == &Allow::Never
+            || self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never
         {
             return Err(EmailSignupInitError::NotAllowed);
         }
@@ -85,12 +80,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         code: String,
     ) -> Result<(Self, Option<String>), EmailSignupCallbackError<S::Error>> {
         if !self.email.offer_links
-            || self
-                .email
-                .allow_signup
-                .as_ref()
-                .unwrap_or(&self.allow_signup)
-                == &Allow::Never
+            || self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never
         {
             return Err(EmailSignupCallbackError::NotAllowed);
         }
@@ -110,8 +100,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             });
         }
 
-        let allow_login =
-            self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::OnEither;
+        let allow_login = self.login_allow(self.email.allow_login.as_ref()) == &Allow::OnEither;
 
         let user = match self
             .store

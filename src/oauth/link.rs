@@ -25,7 +25,7 @@ pub enum OAuthLinkCallbackError<StoreError: std::error::Error> {
     OAuthCallbackError(#[from] OAuthCallbackError),
     #[error("Linking not allowed")]
     NotAllowed,
-    #[error("Expected a login flow, got {0}")]
+    #[error("Expected a link flow, got {0}")]
     UnexpectedFlow(OAuthFlow),
     #[error("Misformed user id in flow data")]
     MisformedId,

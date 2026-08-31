@@ -36,11 +36,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .0
             .iter()
             .filter(|provider| {
-                provider
-                    .allow_login()
-                    .as_ref()
-                    .unwrap_or(self.oauth.allow_login.as_ref().unwrap_or(&self.allow_login))
-                    != &Allow::Never
+                self.login_allow(
+                    provider
+                        .allow_login()
+                        .as_ref()
+                        .or(self.oauth.allow_login.as_ref()),
+                ) != &Allow::Never
             })
             .collect()
     }
@@ -57,11 +58,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .cloned()
             .ok_or(OAuthLoginInitError::ProviderNotFound(provider_name.clone()))?;
 
-        if provider
-            .allow_login()
-            .as_ref()
-            .unwrap_or(self.oauth.allow_login.as_ref().unwrap_or(&self.allow_login))
-            == &Allow::Never
+        if self.login_allow(
+            provider
+                .allow_login()
+                .as_ref()
+                .or(self.oauth.allow_login.as_ref()),
+        ) == &Allow::Never
         {
             return Err(OAuthLoginInitError::NotAllowed);
         };
@@ -93,11 +95,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(|_| OAuthLoginInitError::ProviderNotFound(provider_name.to_string()))?;
 
-        if provider
-            .allow_login()
-            .as_ref()
-            .unwrap_or(self.oauth.allow_login.as_ref().unwrap_or(&self.allow_login))
-            == &Allow::Never
+        if self.login_allow(
+            provider
+                .allow_login()
+                .as_ref()
+                .or(self.oauth.allow_login.as_ref()),
+        ) == &Allow::Never
         {
             return Err(OAuthLoginInitError::NotAllowed);
         };
@@ -123,11 +126,11 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(OAuthLoginCallbackError::UnexpectedFlow(flow));
         };
 
-        let allow_signup = provider.allow_signup().as_ref().unwrap_or(
-            self.oauth
-                .allow_signup
+        let allow_signup = self.signup_allow(
+            provider
+                .allow_signup()
                 .as_ref()
-                .unwrap_or(&self.allow_signup),
+                .or(self.oauth.allow_signup.as_ref()),
         ) == &Allow::OnEither;
 
         let (user, token) = match self

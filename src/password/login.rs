@@ -28,7 +28,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         password_id: &str,
         password: &str,
     ) -> Result<Self, PasswordLoginError<S::Error>> {
-        if self.pass.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if self.login_allow(self.pass.allow_login.as_ref()) == &Allow::Never {
             return Err(PasswordLoginError::NotAllowed);
         };
 
@@ -36,12 +36,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             .await
             .map_err(PasswordLoginError::RateLimited)?;
 
-        let allow_signup = self
-            .pass
-            .allow_signup
-            .as_ref()
-            .unwrap_or(&self.allow_signup)
-            == &Allow::OnEither;
+        let allow_signup = self.signup_allow(self.pass.allow_signup.as_ref()) == &Allow::OnEither;
 
         let user = match self.store.get_user_by_password_id(password_id).await? {
             Some(user) => match user.get_password_hash() {

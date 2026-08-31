@@ -18,6 +18,55 @@ pub(crate) fn mfa_redirect_url(routes: &Routes<String>, next: Option<&str>) -> S
     }
 }
 
+/// The MFA page with a query pair appended, preserving `next`.
+#[cfg(any(feature = "email", feature = "sms"))]
+fn mfa_url_with(routes: &Routes<String>, key: &str, value: &str, next: Option<&str>) -> String {
+    let mut url = format!(
+        "{}?{key}={}",
+        routes.mfa.login_mfa,
+        urlencoding::encode(value)
+    );
+    if let Some(next) = next {
+        url.push_str(&format!("&next={}", urlencoding::encode(next)));
+    }
+    url
+}
+
+/// Complete a verified second factor: trust the device when asked, then
+/// redirect to the sanitized `next`.
+async fn finish_mfa<St>(
+    mut auth: AxumAuthery<St>,
+    next: Option<String>,
+    trust_device: Option<String>,
+) -> Result<axum::response::Response, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    if wants_trust(&trust_device) {
+        auth.trust_this_device().await?;
+    }
+    let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
+    Ok((auth, Redirect::to(&next)).into_response())
+}
+
+/// One form serves both steps: without `code` it requests a code to be sent,
+/// with `code` it verifies it. An empty `code` counts as absent.
+#[cfg(any(feature = "email", feature = "sms"))]
+#[derive(serde::Deserialize)]
+pub(crate) struct MfaCodeForm {
+    pub code: Option<String>,
+    pub next: Option<String>,
+    pub trust_device: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct MfaVerifyForm {
+    pub code: String,
+    pub next: Option<String>,
+    pub trust_device: Option<String>,
+}
+
 #[cfg(feature = "email")]
 pub(crate) use otp_factor::post_login_mfa_otp;
 
@@ -26,74 +75,51 @@ mod otp_factor {
     use super::*;
     use crate::mfa::MfaOtpError;
     use axum::Form;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    pub struct MfaOtpForm {
-        pub code: Option<String>,
-        pub next: Option<String>,
-        pub trust_device: Option<String>,
-    }
 
     /// Without `code`: mail a code to the pending user's verified address.
     /// With `code`: verify it and complete the login.
     pub(crate) async fn post_login_mfa_otp<St>(
         auth: AxumAuthery<St>,
-        Form(MfaOtpForm {
+        Form(MfaCodeForm {
             code,
             next,
             trust_device,
-        }): Form<MfaOtpForm>,
+        }): Form<MfaCodeForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
         St::Error: IntoResponse,
     {
-        let mfa_route = auth.routes.mfa.login_mfa.clone();
         let login_route = auth.routes.pages.login.clone();
         let routes = auth.routes.clone();
 
-        let with_query = |key: &str, value: &str| {
-            let mut url = format!("{mfa_route}?{key}={}", urlencoding::encode(value));
-            if let Some(next) = next.as_deref() {
-                url.push_str(&format!("&next={}", urlencoding::encode(next)));
-            }
-            url
-        };
-        let mfa_page = || match next.as_deref() {
-            Some(next) => format!("{mfa_route}?next={}", urlencoding::encode(next)),
-            None => mfa_route.clone(),
-        };
-
-        match code {
+        match code.filter(|code| !code.is_empty()) {
             None => match auth.mfa_otp_init().await {
-                Ok(_address) => {
-                    Ok(Redirect::to(&with_query("message", "Code sent!")).into_response())
-                }
+                Ok(_address) => Ok(Redirect::to(&mfa_url_with(
+                    &routes,
+                    "message",
+                    "Code sent!",
+                    next.as_deref(),
+                ))
+                .into_response()),
                 Err(MfaOtpError::Store(err)) => Err(err),
                 Err(MfaOtpError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
                 Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                     &routes,
                     &err,
-                    &mfa_page(),
+                    &mfa_redirect_url(&routes, next.as_deref()),
                     next.as_deref(),
                 ))
                 .into_response()),
             },
             Some(code) => match auth.mfa_otp_verify(&code).await {
-                Ok(mut auth) => {
-                    if wants_trust(&trust_device) {
-                        auth.trust_this_device().await?;
-                    }
-                    let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-                    Ok((auth, Redirect::to(&next)).into_response())
-                }
+                Ok(auth) => finish_mfa(auth, next, trust_device).await,
                 Err(MfaOtpError::Store(err)) => Err(err),
                 Err(MfaOtpError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
                 Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                     &routes,
                     &err,
-                    &mfa_page(),
+                    &mfa_redirect_url(&routes, next.as_deref()),
                     next.as_deref(),
                 ))
                 .into_response()),
@@ -123,11 +149,10 @@ mod webauthn_factor {
         match auth.mfa_webauthn_start().await {
             Ok(rcr) => Ok((auth, Json(rcr)).into_response()),
             Err(MfaWebauthnError::Store(err)) => Err(err),
-            Err(err) => Ok((
+            Err(err) => Ok(crate::axum::router::json_error(
                 StatusCode::BAD_REQUEST,
-                Json(json!({"error": err.to_string()})),
-            )
-                .into_response()),
+                &err,
+            )),
         }
     }
 
@@ -155,11 +180,10 @@ mod webauthn_factor {
                 Ok((auth, Json(json!({"next": post_login}))).into_response())
             }
             Err(MfaWebauthnError::Store(err)) => Err(err),
-            Err(err) => Ok((
+            Err(err) => Ok(crate::axum::router::json_error(
                 StatusCode::UNAUTHORIZED,
-                Json(json!({"error": err.to_string()})),
-            )
-                .into_response()),
+                &err,
+            )),
         }
     }
 }
@@ -172,50 +196,31 @@ mod totp_factor {
     use super::*;
     use crate::mfa::MfaTotpError;
     use axum::Form;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    pub struct MfaTotpForm {
-        pub code: String,
-        pub next: Option<String>,
-        pub trust_device: Option<String>,
-    }
 
     /// Verify an authenticator-app code and complete the login.
     pub(crate) async fn post_login_mfa_totp<St>(
         auth: AxumAuthery<St>,
-        Form(MfaTotpForm {
+        Form(MfaVerifyForm {
             code,
             next,
             trust_device,
-        }): Form<MfaTotpForm>,
+        }): Form<MfaVerifyForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
         St::Error: IntoResponse,
     {
-        let mfa_route = auth.routes.mfa.login_mfa.clone();
         let login_route = auth.routes.pages.login.clone();
         let routes = auth.routes.clone();
-        let mfa_page = || match next.as_deref() {
-            Some(next) => format!("{mfa_route}?next={}", urlencoding::encode(next)),
-            None => mfa_route.clone(),
-        };
 
         match auth.mfa_totp_verify(&code).await {
-            Ok(mut auth) => {
-                if wants_trust(&trust_device) {
-                    auth.trust_this_device().await?;
-                }
-                let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-                Ok((auth, Redirect::to(&next)).into_response())
-            }
+            Ok(auth) => finish_mfa(auth, next, trust_device).await,
             Err(MfaTotpError::Store(err)) => Err(err),
             Err(MfaTotpError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
             Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
                 &err,
-                &mfa_page(),
+                &mfa_redirect_url(&routes, next.as_deref()),
                 next.as_deref(),
             ))
             .into_response()),
@@ -231,74 +236,51 @@ mod sms_factor {
     use super::*;
     use crate::mfa::MfaSmsError;
     use axum::Form;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    pub struct MfaSmsForm {
-        pub code: Option<String>,
-        pub next: Option<String>,
-        pub trust_device: Option<String>,
-    }
 
     /// Without `code`: text a code to the pending user's verified number.
     /// With `code`: verify it and complete the login.
     pub(crate) async fn post_login_mfa_sms<St>(
         auth: AxumAuthery<St>,
-        Form(MfaSmsForm {
+        Form(MfaCodeForm {
             code,
             next,
             trust_device,
-        }): Form<MfaSmsForm>,
+        }): Form<MfaCodeForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
         St::Error: IntoResponse,
     {
-        let mfa_route = auth.routes.mfa.login_mfa.clone();
         let login_route = auth.routes.pages.login.clone();
         let routes = auth.routes.clone();
 
-        let with_query = |key: &str, value: &str| {
-            let mut url = format!("{mfa_route}?{key}={}", urlencoding::encode(value));
-            if let Some(next) = next.as_deref() {
-                url.push_str(&format!("&next={}", urlencoding::encode(next)));
-            }
-            url
-        };
-        let mfa_page = || match next.as_deref() {
-            Some(next) => format!("{mfa_route}?next={}", urlencoding::encode(next)),
-            None => mfa_route.clone(),
-        };
-
         match code.filter(|code| !code.is_empty()) {
             None => match auth.mfa_sms_init().await {
-                Ok(_number) => {
-                    Ok(Redirect::to(&with_query("message", "Code sent!")).into_response())
-                }
+                Ok(_number) => Ok(Redirect::to(&mfa_url_with(
+                    &routes,
+                    "message",
+                    "Code sent!",
+                    next.as_deref(),
+                ))
+                .into_response()),
                 Err(MfaSmsError::Store(err)) => Err(err),
                 Err(MfaSmsError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
                 Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                     &routes,
                     &err,
-                    &mfa_page(),
+                    &mfa_redirect_url(&routes, next.as_deref()),
                     next.as_deref(),
                 ))
                 .into_response()),
             },
             Some(code) => match auth.mfa_sms_verify(&code).await {
-                Ok(mut auth) => {
-                    if wants_trust(&trust_device) {
-                        auth.trust_this_device().await?;
-                    }
-                    let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-                    Ok((auth, Redirect::to(&next)).into_response())
-                }
+                Ok(auth) => finish_mfa(auth, next, trust_device).await,
                 Err(MfaSmsError::Store(err)) => Err(err),
                 Err(MfaSmsError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
                 Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                     &routes,
                     &err,
-                    &mfa_page(),
+                    &mfa_redirect_url(&routes, next.as_deref()),
                     next.as_deref(),
                 ))
                 .into_response()),
@@ -313,50 +295,31 @@ mod recovery_factor {
     use super::*;
     use crate::mfa::MfaRecoveryError;
     use axum::Form;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    pub struct MfaRecoveryForm {
-        pub code: String,
-        pub next: Option<String>,
-        pub trust_device: Option<String>,
-    }
 
     /// Consume a single-use recovery code and complete the login.
     pub(crate) async fn post_login_mfa_recovery<St>(
         auth: AxumAuthery<St>,
-        Form(MfaRecoveryForm {
+        Form(MfaVerifyForm {
             code,
             next,
             trust_device,
-        }): Form<MfaRecoveryForm>,
+        }): Form<MfaVerifyForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
         St::Error: IntoResponse,
     {
-        let mfa_route = auth.routes.mfa.login_mfa.clone();
         let login_route = auth.routes.pages.login.clone();
         let routes = auth.routes.clone();
-        let mfa_page = || match next.as_deref() {
-            Some(next) => format!("{mfa_route}?next={}", urlencoding::encode(next)),
-            None => mfa_route.clone(),
-        };
 
         match auth.mfa_recovery_verify(&code).await {
-            Ok(mut auth) => {
-                if wants_trust(&trust_device) {
-                    auth.trust_this_device().await?;
-                }
-                let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-                Ok((auth, Redirect::to(&next)).into_response())
-            }
+            Ok(auth) => finish_mfa(auth, next, trust_device).await,
             Err(MfaRecoveryError::Store(err)) => Err(err),
             Err(MfaRecoveryError::NoPending) => Ok(Redirect::to(&login_route).into_response()),
             Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
                 &err,
-                &mfa_page(),
+                &mfa_redirect_url(&routes, next.as_deref()),
                 next.as_deref(),
             ))
             .into_response()),

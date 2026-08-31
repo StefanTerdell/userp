@@ -249,11 +249,42 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
     }
 
+    /// The effective login policy: the method override if set, else the global.
+    #[cfg(any(
+        feature = "password",
+        feature = "email",
+        feature = "oauth",
+        feature = "sms"
+    ))]
+    pub(crate) fn login_allow<'a>(&'a self, method: Option<&'a Allow>) -> &'a Allow {
+        method.unwrap_or(&self.allow_login)
+    }
+
+    /// The effective signup policy: the method override if set, else the global.
+    #[cfg(any(
+        feature = "password",
+        feature = "email",
+        feature = "oauth",
+        feature = "sms"
+    ))]
+    pub(crate) fn signup_allow<'a>(&'a self, method: Option<&'a Allow>) -> &'a Allow {
+        method.unwrap_or(&self.allow_signup)
+    }
+
     pub async fn logged_in(&self) -> Result<bool, S::Error> {
         Ok(self.session().await?.is_some())
     }
 
     pub async fn session(&self) -> Result<Option<S::LoginSession>, S::Error> {
+        self.session_matching(Self::is_login_session).await
+    }
+
+    /// The cookie's session, if it passes `filter`. Evicts expired sessions
+    /// and enforces the idle timeout.
+    pub(crate) async fn session_matching(
+        &self,
+        filter: impl FnOnce(&S::LoginSession) -> bool,
+    ) -> Result<Option<S::LoginSession>, S::Error> {
         let Some(session_id) = self.session_id_cookie() else {
             return Ok(None);
         };
@@ -289,7 +320,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             }
         }
 
-        Ok(Some(session).filter(Self::is_login_session))
+        Ok(Some(session).filter(filter))
     }
 
     pub async fn user_session(&self) -> Result<Option<(S::User, S::LoginSession)>, S::Error> {

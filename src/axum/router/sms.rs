@@ -42,17 +42,7 @@ where
             .into_response()),
         },
         Some(code) => match auth.sms_login_verify(&number, &code).await {
-            Ok((auth, next)) => {
-                #[cfg(feature = "mfa")]
-                if auth.mfa_pending_session().await?.is_some() {
-                    let url =
-                        crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                    return Ok((auth, Redirect::to(&url)).into_response());
-                }
-
-                let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-                Ok((auth, Redirect::to(&next)).into_response())
-            }
+            Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
             Err(SmsVerifyError::Store(err)) => Err(err),
             Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,
@@ -93,17 +83,7 @@ where
             .into_response()),
         },
         Some(code) => match auth.sms_signup_verify(&number, &code).await {
-            Ok((auth, next)) => {
-                #[cfg(feature = "mfa")]
-                if auth.mfa_pending_session().await?.is_some() {
-                    let url =
-                        crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                    return Ok((auth, Redirect::to(&url)).into_response());
-                }
-
-                let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-                Ok((auth, Redirect::to(&next)).into_response())
-            }
+            Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
             Err(SmsVerifyError::Store(err)) => Err(err),
             Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &routes,

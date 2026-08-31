@@ -168,7 +168,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: String,
         next: Option<String>,
     ) -> Result<(), SmsInitError<S::Error>> {
-        if self.sms.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if self.login_allow(self.sms.allow_login.as_ref()) == &Allow::Never {
             return Err(SmsInitError::NotAllowed);
         }
 
@@ -181,7 +181,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: String,
         next: Option<String>,
     ) -> Result<(), SmsInitError<S::Error>> {
-        if self.sms.allow_signup.as_ref().unwrap_or(&self.allow_signup) == &Allow::Never {
+        if self.signup_allow(self.sms.allow_signup.as_ref()) == &Allow::Never {
             return Err(SmsInitError::NotAllowed);
         }
 
@@ -239,14 +239,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), SmsVerifyError<S::Error>> {
-        if self.sms.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never {
+        if self.login_allow(self.sms.allow_login.as_ref()) == &Allow::Never {
             return Err(SmsVerifyError::NotAllowed);
         }
 
         let challenge = self.sms_consume_challenge(number, code).await?;
 
-        let allow_signup =
-            self.sms.allow_signup.as_ref().unwrap_or(&self.allow_signup) == &Allow::OnEither;
+        let allow_signup = self.signup_allow(self.sms.allow_signup.as_ref()) == &Allow::OnEither;
 
         let user = match self
             .store
@@ -274,14 +273,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), SmsVerifyError<S::Error>> {
-        if self.sms.allow_signup.as_ref().unwrap_or(&self.allow_signup) == &Allow::Never {
+        if self.signup_allow(self.sms.allow_signup.as_ref()) == &Allow::Never {
             return Err(SmsVerifyError::NotAllowed);
         }
 
         let challenge = self.sms_consume_challenge(number, code).await?;
 
-        let allow_login =
-            self.sms.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::OnEither;
+        let allow_login = self.login_allow(self.sms.allow_login.as_ref()) == &Allow::OnEither;
 
         let user = match self
             .store

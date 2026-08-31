@@ -249,6 +249,59 @@ pub(crate) fn with_method(page: &str, method: &str) -> String {
     format!("{page}{separator}method={method}")
 }
 
+/// The account page when the `user` feature is on, the post-login page
+/// otherwise.
+#[cfg(any(feature = "oauth", feature = "email", feature = "user"))]
+pub(crate) fn user_page(routes: &Routes<String>) -> &String {
+    #[cfg(feature = "user")]
+    {
+        &routes.pages.user
+    }
+    #[cfg(not(feature = "user"))]
+    {
+        &routes.pages.post_login
+    }
+}
+
+/// Complete a fresh login: redirect to the MFA page when a second factor is
+/// pending, else to the sanitized `next`.
+#[cfg(any(
+    feature = "email",
+    feature = "sms",
+    feature = "password",
+    feature = "oauth"
+))]
+pub(crate) async fn complete_login<St>(
+    auth: crate::axum::AxumAuthery<St>,
+    next: Option<String>,
+) -> Result<axum::response::Response, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    #[cfg(feature = "mfa")]
+    if auth.mfa_pending_session().await?.is_some() {
+        let url = mfa::mfa_redirect_url(&auth.routes, next.as_deref());
+        return Ok((auth, Redirect::to(&url)).into_response());
+    }
+
+    let next = safe_next(next, &auth.routes.pages.post_login);
+    Ok((auth, Redirect::to(&next)).into_response())
+}
+
+/// A `{ "error": … }` JSON body with the given status.
+#[cfg(feature = "webauthn")]
+pub(crate) fn json_error(
+    status: StatusCode,
+    err: &impl std::fmt::Display,
+) -> axum::response::Response {
+    (
+        status,
+        axum::Json(serde_json::json!({ "error": err.to_string() })),
+    )
+        .into_response()
+}
+
 pub trait AxumRouter {
     fn routes(&self) -> &Routes;
 
@@ -435,26 +488,23 @@ pub trait AxumRouter {
 
         #[cfg(feature = "oauth")]
         {
-            #[cfg(feature = "oauth")]
-            {
-                router = router
-                    .route(
-                        self.routes().oauth.login_oauth.as_str(),
-                        post(oauth::post_login_oauth::<St>),
-                    )
-                    .route(
-                        self.routes().oauth.signup_oauth.as_str(),
-                        post(oauth::post_signup_oauth::<St>),
-                    )
-                    .route(
-                        self.routes().oauth.user_oauth_link.as_str(),
-                        post(oauth::post_user_oauth_link::<St>),
-                    )
-                    .route(
-                        self.routes().oauth.user_oauth_refresh.as_str(),
-                        post(oauth::post_user_oauth_refresh::<St>),
-                    );
-            }
+            router = router
+                .route(
+                    self.routes().oauth.login_oauth.as_str(),
+                    post(oauth::post_login_oauth::<St>),
+                )
+                .route(
+                    self.routes().oauth.signup_oauth.as_str(),
+                    post(oauth::post_signup_oauth::<St>),
+                )
+                .route(
+                    self.routes().oauth.user_oauth_link.as_str(),
+                    post(oauth::post_user_oauth_link::<St>),
+                )
+                .route(
+                    self.routes().oauth.user_oauth_refresh.as_str(),
+                    post(oauth::post_user_oauth_refresh::<St>),
+                );
 
             router = router.route(
                 self.routes().oauth.callback.as_str(),

@@ -78,7 +78,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         next: Option<String>,
     ) -> Result<(), OtpInitError<S::Error>> {
         if !self.email.offer_otp
-            || self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never
+            || self.login_allow(self.email.allow_login.as_ref()) == &Allow::Never
         {
             return Err(OtpInitError::NotAllowed);
         }
@@ -94,13 +94,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: String,
         next: Option<String>,
     ) -> Result<(), OtpInitError<S::Error>> {
-        if self
-            .email
-            .allow_signup
-            .as_ref()
-            .unwrap_or(&self.allow_signup)
-            == &Allow::Never
-        {
+        if self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never {
             return Err(OtpInitError::NotAllowed);
         }
 
@@ -132,12 +126,9 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             )
             .await?;
 
-        self.send_email(
-            challenge.get_address(),
-            "Your login code",
-            format!("<p>Your login code is:</p><h1>{digits}</h1><p>It expires shortly. If you did not request it, ignore this email.</p>"),
-        )
-        .await
+        let content = self.email.messages.login_code(&digits);
+        self.send_email(challenge.get_address(), &content.subject, content.html_body)
+            .await
     }
 
     /// Verify a login code sent to the address and log the user in,
@@ -149,19 +140,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         code: &str,
     ) -> Result<(Self, Option<String>), OtpVerifyError<S::Error>> {
         if !self.email.offer_otp
-            || self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::Never
+            || self.login_allow(self.email.allow_login.as_ref()) == &Allow::Never
         {
             return Err(OtpVerifyError::NotAllowed);
         }
 
         let challenge = self.otp_consume_challenge(address, code).await?;
 
-        let allow_signup = self
-            .email
-            .allow_signup
-            .as_ref()
-            .unwrap_or(&self.allow_signup)
-            == &Allow::OnEither;
+        let allow_signup = self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::OnEither;
 
         let user = match self
             .store
@@ -189,20 +175,13 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), OtpVerifyError<S::Error>> {
-        if self
-            .email
-            .allow_signup
-            .as_ref()
-            .unwrap_or(&self.allow_signup)
-            == &Allow::Never
-        {
+        if self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never {
             return Err(OtpVerifyError::NotAllowed);
         }
 
         let challenge = self.otp_consume_challenge(address, code).await?;
 
-        let allow_login =
-            self.email.allow_login.as_ref().unwrap_or(&self.allow_login) == &Allow::OnEither;
+        let allow_login = self.login_allow(self.email.allow_login.as_ref()) == &Allow::OnEither;
 
         let user = match self
             .store

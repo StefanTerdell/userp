@@ -131,23 +131,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     }
 
     pub async fn reset_session(&self) -> Result<Option<S::LoginSession>, S::Error> {
-        let Some(session_id) = self.session_id_cookie() else {
-            return Ok(None);
-        };
-
-        let Some(session) = self.store.get_session(&session_id).await? else {
-            return Ok(None);
-        };
-
-        if session.is_expired() {
-            self.store
-                .delete_session(&session.get_user_id(), &session.get_id())
-                .await?;
-            return Ok(None);
-        }
-
-        Ok(Some(session)
-            .filter(|s| matches!(s.get_method(), LoginMethod::PasswordReset { address: _ })))
+        self.session_matching(|s| matches!(s.get_method(), LoginMethod::PasswordReset { .. }))
+            .await
     }
 
     pub async fn reset_user_session(&self) -> Result<Option<(S::User, S::LoginSession)>, S::Error> {

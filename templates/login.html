@@ -8,12 +8,7 @@
   <h1>Sign in</h1>
   <p class="sub text-muted">Welcome back. Pick how you'd like to prove it's you.</p>
 
-  {% if let Some(message) = message %}
-  <p class="notice" role="status">{{ message }}</p>
-  {% endif %}
-  {% if let Some(error) = error %}
-  <p class="notice notice-error" role="alert">{{ error }}</p>
-  {% endif %}
+  {% include "notices.html" %}
 
   {% if password.is_some() || otp.is_some() || email.is_some() || sms.is_some() %}
   <div class="methods">
@@ -48,9 +43,7 @@
         <input class="input" type="password" id="password" name="password" autocomplete="current-password" required>
       </div>
       <button type="submit" class="btn btn-primary btn-block">Sign in</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
+      {% include "next-hidden.html" %}
     </form>
     {% endif %}
 
@@ -62,9 +55,7 @@
       </div>
       <p class="hint text-muted">We'll email you a code to type in here.</p>
       <button type="submit" class="btn btn-primary btn-block">Email me a code</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
+      {% include "next-hidden.html" %}
     </form>
     {% endif %}
 
@@ -76,9 +67,7 @@
       </div>
       <p class="hint text-muted">We'll email you a link that signs you in.</p>
       <button type="submit" class="btn btn-primary btn-block">Send me a link</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
+      {% include "next-hidden.html" %}
     </form>
     {% endif %}
 
@@ -90,9 +79,7 @@
       </div>
       <p class="hint text-muted">We'll text you a code to type in here.</p>
       <button type="submit" class="btn btn-primary btn-block">Text me a code</button>
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
+      {% include "next-hidden.html" %}
     </form>
     {% endif %}
   </div>
@@ -107,9 +94,7 @@
     {% for provider in oauth.providers %}
     <form action="{{ oauth.action_route }}" method="post">
       <input type="hidden" name="provider" value="{{ provider.name }}" />
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
+      {% include "next-hidden.html" %}
       <button type="submit" class="btn btn-secondary prov"><span class="mono">{{ provider.display_name.chars().next().unwrap_or('•') }}</span>{{ provider.display_name }}</button>
     </form>
     {% endfor %}

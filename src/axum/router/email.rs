@@ -105,16 +105,7 @@ where
     let routes = auth.routes.clone();
 
     match auth.email_login_callback(code).await {
-        Ok((auth, next)) => {
-            #[cfg(feature = "mfa")]
-            if auth.mfa_pending_session().await?.is_some() {
-                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                return Ok((auth, Redirect::to(&url)).into_response());
-            }
-
-            let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
+        Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
         Err(err) => match err {
             EmailLoginCallbackError::Store(err) => Err(err),
             EmailLoginCallbackError::EmailLoginError(EmailLoginError::Store(err)) => Err(err),
@@ -172,16 +163,7 @@ where
     let routes = auth.routes.clone();
 
     match auth.email_signup_callback(code).await {
-        Ok((auth, next)) => {
-            #[cfg(feature = "mfa")]
-            if auth.mfa_pending_session().await?.is_some() {
-                let url = crate::axum::router::mfa::mfa_redirect_url(&auth.routes, next.as_deref());
-                return Ok((auth, Redirect::to(&url)).into_response());
-            }
-
-            let next = crate::axum::router::safe_next(next, &auth.routes.pages.post_login);
-            Ok((auth, Redirect::to(&next)).into_response())
-        }
+        Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
         Err(err) => match err {
             EmailSignupCallbackError::Store(err) => Err(err),
             EmailSignupCallbackError::ChallengeExpired { address } => {
@@ -208,10 +190,7 @@ where
 {
     let login_route = auth.routes.pages.login.clone();
 
-    #[cfg(feature = "user")]
-    let user_route = auth.routes.pages.user.clone();
-    #[cfg(not(feature = "user"))]
-    let user_route = auth.routes.pages.post_login.clone();
+    let user_route = crate::axum::router::user_page(&auth.routes).clone();
 
     match auth.email_verify_callback(code).await {
         Ok((address, next)) => {
@@ -262,10 +241,7 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    #[cfg(feature = "user")]
-    let user_route = auth.routes.pages.user.clone();
-    #[cfg(not(feature = "user"))]
-    let user_route = auth.routes.pages.post_login.clone();
+    let user_route = crate::axum::router::user_page(&auth.routes).clone();
 
     match auth.email_verify_init(email.clone(), next).await {
         Ok(()) => {
@@ -392,7 +368,7 @@ where
                 Ok(Redirect::to(&email_expired_url(&routes, "reset", &address)).into_response())
             }
             _ => Ok(Redirect::to(&format!(
-                "{login_route}?err={}",
+                "{login_route}?error={}",
                 urlencoding::encode(&err.to_string())
             ))
             .into_response()),

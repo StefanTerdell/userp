@@ -64,14 +64,27 @@ impl AxumAutheryCookies {
 }
 
 impl AxumAutheryCookies {
-    fn put(&mut self, cookie: Cookie<'static>) {
+    /// Read through the jar handle, locking in shared mode.
+    fn with_jar<R>(&self, f: impl FnOnce(&PrivateCookieJar) -> R) -> R {
+        match &self.jar {
+            JarHandle::Owned(jar) => f(jar),
+            JarHandle::Shared(shared) => f(&shared.jar.lock().unwrap()),
+        }
+    }
+
+    /// Replace the jar through the handle, locking in shared mode.
+    fn map_jar(&mut self, f: impl FnOnce(PrivateCookieJar) -> PrivateCookieJar) {
         match &mut self.jar {
-            JarHandle::Owned(jar) => *jar = jar.clone().add(cookie),
+            JarHandle::Owned(jar) => *jar = f(jar.clone()),
             JarHandle::Shared(shared) => {
                 let mut jar = shared.jar.lock().unwrap();
-                *jar = jar.clone().add(cookie);
+                *jar = f(jar.clone());
             }
         }
+    }
+
+    fn put(&mut self, cookie: Cookie<'static>) {
+        self.map_jar(|jar| jar.add(cookie));
     }
 }
 
@@ -89,15 +102,7 @@ impl AutheryCookies for AxumAutheryCookies {
     }
 
     fn get(&self, key: &str) -> Option<String> {
-        let primary = match &self.jar {
-            JarHandle::Owned(jar) => jar.get(key).map(|c| c.value().to_owned()),
-            JarHandle::Shared(shared) => shared
-                .jar
-                .lock()
-                .unwrap()
-                .get(key)
-                .map(|c| c.value().to_owned()),
-        };
+        let primary = self.with_jar(|jar| jar.get(key).map(|c| c.value().to_owned()));
         if primary.is_some() {
             return primary;
         }
@@ -123,26 +128,11 @@ impl AutheryCookies for AxumAutheryCookies {
         // The removal cookie must carry the same Path (and domain) as the
         // original or the browser won't match it and the cookie survives.
         let cookie = self.build_cookie(key, "");
-        match &mut self.jar {
-            JarHandle::Owned(jar) => *jar = jar.clone().remove(cookie),
-            JarHandle::Shared(shared) => {
-                let mut jar = shared.jar.lock().unwrap();
-                *jar = jar.clone().remove(cookie);
-            }
-        }
+        self.map_jar(|jar| jar.remove(cookie));
     }
 
     fn list_encoded(&self) -> Vec<String> {
-        match &self.jar {
-            JarHandle::Owned(jar) => jar.iter().map(|c| c.encoded().to_string()).collect(),
-            JarHandle::Shared(shared) => shared
-                .jar
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|c| c.encoded().to_string())
-                .collect(),
-        }
+        self.with_jar(|jar| jar.iter().map(|c| c.encoded().to_string()).collect())
     }
 }
 

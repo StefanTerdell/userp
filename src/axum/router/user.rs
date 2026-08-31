@@ -283,10 +283,7 @@ where
 
     auth.store.delete_session(&user.get_id(), &id).await?;
 
-    #[cfg(feature = "pages")]
-    let user_route = auth.routes.pages.user;
-    #[cfg(not(feature = "pages"))]
-    let user_route = auth.routes.pages.post_login;
+    let user_route = crate::axum::router::user_page(&auth.routes);
 
     Ok(Redirect::to(&format!("{user_route}?message=Session deleted")).into_response())
 }
@@ -302,10 +299,7 @@ where
         return Ok(StatusCode::UNAUTHORIZED.into_response());
     };
 
-    #[cfg(feature = "pages")]
-    let user_route = &auth.routes.pages.user;
-    #[cfg(not(feature = "pages"))]
-    let user_route = &auth.routes.pages.post_login;
+    let user_route = crate::axum::router::user_page(&auth.routes);
 
     Ok(Redirect::to(&format!(
         "{user_route}?message={}",

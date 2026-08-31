@@ -20,9 +20,7 @@
   {% if let Some(resend) = resend_action_route %}
   <form action="{{ resend }}" method="post">
     <input type="hidden" name="email" value="{{ address }}" />
-    {% if let Some(next) = next %}
-    <input type="hidden" name="next" value="{{ next }}" />
-    {% endif %}
+    {% include "next-hidden.html" %}
     <button type="submit" class="btn btn-secondary">Resend</button>
   </form>
   {% endif %}
@@ -40,9 +38,7 @@
     {% if let Some(otp) = otp_action_route %}
     <form action="{{ otp }}" method="post" style="display: inline;">
       <input type="hidden" name="email" value="{{ address }}" />
-      {% if let Some(next) = next %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      {% endif %}
+      {% include "next-hidden.html" %}
       Prefer a code? <button type="submit" class="btn btn-ghost" style="font-size: 12px; padding: 0 2px;">Send one instead</button>
     </form>
     {% else %}
