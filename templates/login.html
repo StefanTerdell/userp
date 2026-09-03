@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in{% endblock %}
+
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <h1>Sign in</h1>
+  <p class="sub text-muted">Welcome back. Pick how you'd like to prove it's you.</p>
+
+  {% include "notices.html" %}
+
+  {% if password.is_some() || otp.is_some() || email.is_some() || sms.is_some() %}
+  <div class="methods">
+    <div class="seg" role="radiogroup" aria-label="Sign-in method" id="method-switch">
+      {% if password.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-password" {% if selected_method == "password" %}checked{% endif %}>Password</label>
+      {% endif %}
+      {% if otp.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-otp" {% if selected_method == "otp" %}checked{% endif %}>One-time code</label>
+      {% endif %}
+      {% if email.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-email" {% if selected_method == "email" %}checked{% endif %}>Link</label>
+      {% endif %}
+      {% if sms.is_some() %}
+      <label class="seg-opt"><input type="radio" name="method" id="m-sms" {% if selected_method == "sms" %}checked{% endif %}>Text</label>
+      {% endif %}
+    </div>
+
+    {% if let Some(password) = password %}
+    <form action="{{ password.action_route }}" method="post" class="panel panel-password" id="login-form">
+      <div class="field">
+        <label for="email">Email</label>
+        <input class="input" type="email" id="email" name="password_id" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <div class="field-row">
+          <label for="password">Password</label>
+          {% if let Some(reset_route) = password.reset_route %}
+          <a class="small" href="{{ reset_route }}">Forgot?</a>
+          {% endif %}
+        </div>
+        <input class="input" type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      {% include "next-hidden.html" %}
+    </form>
+    {% endif %}
+
+    {% if let Some(otp) = otp %}
+    <form action="{{ otp.action_route }}" method="post" class="panel panel-otp">
+      <div class="field">
+        <label for="otp-email">Email</label>
+        <input class="input" type="email" id="otp-email" name="email" autocomplete="username" required>
+      </div>
+      <p class="hint text-muted">We'll email you a code to type in here.</p>
+      <button type="submit" class="btn btn-primary btn-block">Email me a code</button>
+      {% include "next-hidden.html" %}
+    </form>
+    {% endif %}
+
+    {% if let Some(email) = email %}
+    <form action="{{ email.action_route }}" method="post" class="panel panel-email">
+      <div class="field">
+        <label for="magic-email">Email</label>
+        <input class="input" type="email" id="magic-email" name="email" autocomplete="username" required>
+      </div>
+      <p class="hint text-muted">We'll email you a link that signs you in.</p>
+      <button type="submit" class="btn btn-primary btn-block">Send me a link</button>
+      {% include "next-hidden.html" %}
+    </form>
+    {% endif %}
+
+    {% if let Some(sms) = sms %}
+    <form action="{{ sms.action_route }}" method="post" class="panel panel-sms">
+      <div class="field">
+        <label for="sms-number">Phone number</label>
+        <input class="input" type="tel" id="sms-number" name="number" placeholder="+46701234567" autocomplete="tel" required>
+      </div>
+      <p class="hint text-muted">We'll text you a code to type in here.</p>
+      <button type="submit" class="btn btn-primary btn-block">Text me a code</button>
+      {% include "next-hidden.html" %}
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if oauth.is_some() || webauthn.is_some() %}
+  <div class="caps text-muted kicker">Or continue with</div>
+  {% endif %}
+
+  {% include "oauth-grid.html" %}
+
+  {% if let Some(webauthn) = webauthn %}
+  <div class="stack" style="margin-top: var(--space-2);">
+    <button type="button" id="passkey-login-button" class="btn btn-secondary prov"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Passkey on this device</button>
+    <p class="notice notice-error" id="passkey-login-error" role="alert" style="display: none;"></p>
+  </div>
+  {% include "passkey-js.html" %}
+  <script>
+    (function () {
+      function fail(e) {
+        var el = document.getElementById('passkey-login-error');
+        el.textContent = 'Passkey login failed: ' + e;
+        el.style.display = 'block';
+      }
+      document.getElementById('passkey-login-button').addEventListener('click', function () {
+        passkeyGet('{{ webauthn.start_route }}', '{{ webauthn.finish_route }}')
+          .then(function (out) { window.location = out.next || '/'; })
+          .catch(fail);
+      });
+    })();
+  </script>
+  {% endif %}
+
+  <div class="foot text-muted">No account yet? <a href="{{ signup_route }}">Create one</a></div>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}This link has expired{% endblock %}
+
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <svg class="icon icon-hero warn" aria-hidden="true"><use href="#i-hourglass_empty"/></svg>
+  <h1>This link has expired</h1>
+  <p class="lede">Emailed links are single-use and only valid for a short while.
+    {% if let Some(address) = address %}This one was sent to <strong>{{ address }}</strong>.{% endif %}
+  </p>
+
+  {% if let Some(address) = address %}
+  {% if let Some(resend) = resend_action_route %}
+  <form action="{{ resend }}" method="post" style="margin-top: var(--space-2);">
+    <input type="hidden" name="email" value="{{ address }}" />
+    <button type="submit" class="btn btn-primary">Send a new link</button>
+  </form>
+  {% endif %}
+  {% endif %}
+
+  <div style="margin-top: var(--space-8);">
+    <div class="caps text-muted" style="margin-bottom: var(--space-2);">Other ways in</div>
+    <div class="chips">
+      {% if let Some(address) = address %}
+      {% if let Some(otp) = otp_action_route %}
+      <form action="{{ otp }}" method="post">
+        <input type="hidden" name="email" value="{{ address }}" />
+        <button type="submit" class="btn btn-ghost">One-time code</button>
+      </form>
+      {% endif %}
+      {% endif %}
+      <a class="btn btn-ghost" href="{{ login_page_route }}">
+        {% match purpose %}
+        {% when crate::pages::EmailLinkPurpose::Verify %}Back to your account
+        {% when _ %}All sign-in options
+        {% endmatch %}
+      </a>
+    </div>
+  </div>
+
+  <div class="foot text-muted">Codes and links are single-use and expire on their own.</div>
+</div>
+{% endblock %}

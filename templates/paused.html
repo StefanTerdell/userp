@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Sign-in paused{% endblock %}
+
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <svg class="icon icon-hero warn" aria-hidden="true"><use href="#i-lock"/></svg>
+  <h1>Sign-in paused</h1>
+  <p class="lede">
+    That was tried too many times in a short period.
+    {% if let Some(secs) = retry_after_secs %}
+    It reopens in {% if *secs >= 120 %}{{ secs / 60 }} minutes{% else %}{{ secs }} seconds{% endif %}, to keep the account safe.
+    {% else %}
+    Please wait a while before trying again, to keep the account safe.
+    {% endif %}
+  </p>
+
+  {% if webauthn || email_login_action_route.is_some() || password_send_reset_page_route.is_some() %}
+  <div class="caps text-muted kicker">You can still</div>
+  <div class="stack">
+    {% if webauthn %}
+    <a class="btn btn-secondary prov" href="{{ login_page_route }}{% if let Some(next) = next %}?next={{ next|urlencode }}{% endif %}"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Sign in with a passkey</a>
+    {% endif %}
+    {% if let Some(email_login) = email_login_action_route %}
+    <details>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>Email yourself a sign-in link</summary>
+      <form action="{{ email_login }}" method="post" style="margin-top: var(--space-2);">
+        <div class="field">
+          <label for="paused-email">Email</label>
+          <input class="input" type="email" id="paused-email" name="email" required>
+        </div>
+        {% include "next-hidden.html" %}
+        <button type="submit" class="btn btn-primary btn-block">Send link</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if let Some(reset) = password_send_reset_page_route %}
+    <a class="btn btn-secondary prov" href="{{ reset }}"><svg class="icon" aria-hidden="true"><use href="#i-support"/></svg>Reset your password</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="foot text-muted"><a href="{{ login_page_route }}">Back to sign in</a></div>
+</div>
+{% endblock %}

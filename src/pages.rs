@@ -1,0 +1,933 @@
+#![cfg_attr(not(feature = "default"), allow(unused))]
+
+use crate::models::LoginMethod;
+#[cfg(feature = "email")]
+use crate::models::email::UserEmail;
+use crate::models::{AutheryCookies, LoginSession, User};
+use crate::{core::CoreAuthery, store::AutheryStore};
+#[cfg(feature = "oauth")]
+use crate::{models::oauth::OAuthToken, oauth::provider::OAuthProvider};
+use askama::Template;
+use std::sync::Arc;
+
+#[cfg(feature = "user")]
+pub struct TemplateLoginSession {
+    pub id: String,
+    pub method: LoginMethod,
+    /// "Chrome · macOS"-style summary of the user agent.
+    pub device: Option<String>,
+    pub mobile: bool,
+    pub ip_address: Option<String>,
+    pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires: chrono::DateTime<chrono::Utc>,
+}
+
+/// Browser and platform names from a user-agent string, best effort.
+#[cfg(feature = "user")]
+fn describe_user_agent(ua: &str) -> (String, bool) {
+    let browser = [
+        ("EdgiOS/", "Edge"),
+        ("EdgA/", "Edge"),
+        ("Edg/", "Edge"),
+        ("OPT/", "Opera"),
+        ("OPR/", "Opera"),
+        ("FxiOS/", "Firefox"),
+        ("Firefox/", "Firefox"),
+        ("CriOS/", "Chrome"),
+        ("Chrome/", "Chrome"),
+        ("Safari/", "Safari"),
+        ("curl/", "curl"),
+    ]
+    .iter()
+    .find(|(needle, _)| ua.contains(needle))
+    .map(|(_, name)| *name);
+    let platform = [
+        ("iPhone", "iPhone"),
+        ("iPad", "iPad"),
+        ("Android", "Android"),
+        ("Windows", "Windows"),
+        ("Mac OS X", "macOS"),
+        ("CrOS", "ChromeOS"),
+        ("Linux", "Linux"),
+    ]
+    .iter()
+    .find(|(needle, _)| ua.contains(needle))
+    .map(|(_, name)| *name);
+    let mobile = if ua.contains("iPad") || ua.contains("Tablet") {
+        false
+    } else {
+        ua.contains("iPhone") || ua.contains("Mobile")
+    };
+    let label = match (browser, platform) {
+        (Some(b), Some(p)) => format!("{b} · {p}"),
+        (Some(b), None) => b.to_string(),
+        (None, Some(p)) => p.to_string(),
+        (None, None) => ua.chars().take(40).collect(),
+    };
+    (label, mobile)
+}
+
+#[cfg(feature = "user")]
+impl<T: LoginSession> From<&T> for TemplateLoginSession {
+    fn from(value: &T) -> Self {
+        let (device, mobile) = value.get_user_agent().map(describe_user_agent).unzip();
+        TemplateLoginSession {
+            id: value.get_id().to_string(),
+            method: value.get_method(),
+            device,
+            mobile: mobile.unwrap_or(false),
+            ip_address: value.get_ip_address().map(str::to_owned),
+            last_seen: value.get_last_seen(),
+            expires: value.get_expires(),
+        }
+    }
+}
+
+pub struct TemplateUserEmail<'a> {
+    address: &'a str,
+    verified: bool,
+    allow_link_login: bool,
+    verified_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(feature = "email")]
+impl<'a, T: UserEmail> From<&'a T> for TemplateUserEmail<'a> {
+    fn from(value: &'a T) -> Self {
+        Self {
+            address: value.get_address(),
+            verified: value.get_verified(),
+            allow_link_login: value.get_allow_link_login(),
+            verified_at: value.get_verified_at(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TemplateOAuthToken<'a> {
+    pub id: String,
+    pub provider_name: &'a str,
+    pub scopes: Option<Vec<String>>,
+    pub created: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(feature = "oauth")]
+impl<'a, T: OAuthToken> From<&'a T> for TemplateOAuthToken<'a> {
+    fn from(value: &'a T) -> Self {
+        Self {
+            id: value.get_id().to_string(),
+            provider_name: value.get_provider_name(),
+            scopes: value.get_scopes(),
+            created: value.get_created(),
+        }
+    }
+}
+
+pub struct TemplateOAuthProvider<'a> {
+    pub name: &'a str,
+    pub display_name: &'a str,
+}
+
+#[cfg(feature = "oauth")]
+impl<'a> From<&'a Arc<dyn OAuthProvider>> for TemplateOAuthProvider<'a> {
+    fn from(value: &'a Arc<dyn OAuthProvider>) -> Self {
+        Self {
+            name: value.name(),
+            display_name: value.display_name(),
+        }
+    }
+}
+
+#[cfg(all(feature = "password", feature = "email"))]
+#[derive(Template)]
+#[template(path = "reset-password.html")]
+pub struct ResetPasswordTemplate<'a> {
+    pub login_page_route: &'a str,
+    pub reset_password_action_route: &'a str,
+    pub error: Option<&'a str>,
+    /// For the input's `pattern` attribute.
+    pub pattern: Option<String>,
+    pub pattern_hint: Option<String>,
+}
+
+/// What an emailed link was for; selects copy and the resend action.
+#[cfg(feature = "email")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmailLinkPurpose {
+    Login,
+    Signup,
+    Verify,
+    Reset,
+}
+
+#[cfg(feature = "email")]
+impl EmailLinkPurpose {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Login => "login",
+            Self::Signup => "signup",
+            Self::Verify => "verify",
+            Self::Reset => "reset",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "login" => Some(Self::Login),
+            "signup" => Some(Self::Signup),
+            "verify" => Some(Self::Verify),
+            "reset" => Some(Self::Reset),
+            _ => None,
+        }
+    }
+}
+
+/// "Check your inbox" after an emailed link was sent.
+#[cfg(feature = "email")]
+#[derive(Template)]
+#[template(path = "email-sent.html")]
+pub struct EmailSentTemplate<'a> {
+    pub address: &'a str,
+    pub purpose: EmailLinkPurpose,
+    /// Re-sends the link; posts `email` (and `next`).
+    pub resend_action_route: Option<&'a str>,
+    /// Requests a code instead; posts `email` (and `next`).
+    pub otp_action_route: Option<&'a str>,
+    pub login_page_route: &'a str,
+    pub next: Option<&'a str>,
+}
+
+/// An emailed link was used after it expired.
+#[cfg(feature = "email")]
+#[derive(Template)]
+#[template(path = "email-expired.html")]
+pub struct EmailExpiredTemplate<'a> {
+    pub address: Option<&'a str>,
+    pub purpose: EmailLinkPurpose,
+    pub resend_action_route: Option<&'a str>,
+    pub otp_action_route: Option<&'a str>,
+    pub login_page_route: &'a str,
+    pub password: bool,
+    pub webauthn: bool,
+}
+
+/// The rate limiter refused an attempt.
+#[derive(Template)]
+#[template(path = "paused.html")]
+pub struct PausedTemplate<'a> {
+    pub retry_after_secs: Option<i64>,
+    pub next: Option<&'a str>,
+    pub login_page_route: &'a str,
+    pub webauthn: bool,
+    pub email_login_action_route: Option<&'a str>,
+    pub password_send_reset_page_route: Option<&'a str>,
+}
+
+#[cfg(all(feature = "password", feature = "email"))]
+#[derive(Template)]
+#[template(path = "send-reset-password.html")]
+pub struct SendResetPasswordTemplate<'a> {
+    pub login_page_route: &'a str,
+    pub sent: bool,
+    pub address: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub send_reset_password_action_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplatePasswordInfo<'a> {
+    pub has_password: bool,
+    pub delete_action_route: &'a str,
+    pub set_action_route: &'a str,
+    /// For the input's `pattern` attribute.
+    pub pattern: Option<String>,
+    pub pattern_hint: Option<String>,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateEmailInfo<'a> {
+    pub emails: Vec<TemplateUserEmail<'a>>,
+    pub delete_action_route: &'a str,
+    pub add_action_route: &'a str,
+    pub verify_action_route: &'a str,
+    pub enable_login_action_route: &'a str,
+    pub disable_login_action_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateOAuthInfo<'a> {
+    pub tokens: Vec<TemplateOAuthToken<'a>>,
+    pub providers: Vec<TemplateOAuthProvider<'a>>,
+    pub delete_action_route: &'a str,
+    pub refresh_action_route: &'a str,
+    pub link_action_route: &'a str,
+    pub user_page_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+#[derive(Template)]
+#[template(path = "user.html")]
+pub struct UserTemplate<'a> {
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub session_id: String,
+    pub sessions: Vec<TemplateLoginSession>,
+    pub home_page_route: &'a str,
+    pub login_page_route: &'a str,
+    pub logout_action_route: &'a str,
+    pub session_delete_action_route: &'a str,
+    pub sessions_delete_others_action_route: &'a str,
+    pub user_delete_action_route: &'a str,
+    pub verify_session_action_route: &'a str,
+    pub password: Option<UserTemplatePasswordInfo<'a>>,
+    pub email: Option<UserTemplateEmailInfo<'a>>,
+    pub oauth: Option<UserTemplateOAuthInfo<'a>>,
+    pub webauthn: Option<UserTemplateWebauthnInfo<'a>>,
+    pub totp: Option<UserTemplateTotpInfo<'a>>,
+    pub recovery: Option<UserTemplateRecoveryInfo<'a>>,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateRecoveryInfo<'a> {
+    /// Unused codes remaining.
+    pub count: usize,
+    pub generate_action_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateTotpInfo<'a> {
+    pub enabled: bool,
+    pub enroll_action_route: &'a str,
+    pub disable_action_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+impl UserTemplate<'_> {
+    /// Assemble the account page's view-model from the auth context. See
+    /// [`LoginTemplate::with`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn with<'a, S: AutheryStore, C: AutheryCookies>(
+        auth: &'a CoreAuthery<S, C>,
+        user: &'a S::User,
+        session: &'a S::LoginSession,
+        sessions: &'a [S::LoginSession],
+        message: Option<&'a str>,
+        error: Option<&'a str>,
+        #[cfg(feature = "email")] emails: &'a [S::UserEmail],
+        #[cfg(feature = "oauth")] oauth_tokens: &'a [S::OAuthToken],
+        #[cfg(feature = "webauthn")] passkeys: &'a [crate::models::PasskeyRecord],
+        #[cfg(feature = "totp")] totp_enabled: bool,
+        #[cfg(feature = "mfa")] recovery_codes_count: usize,
+    ) -> UserTemplate<'a> {
+        UserTemplate {
+            message,
+            error,
+            session_id: session.get_id().to_string(),
+            sessions: sessions.iter().map(|s| s.into()).collect(),
+            home_page_route: &auth.routes.pages.home,
+            login_page_route: &auth.routes.pages.login,
+            logout_action_route: &auth.routes.logout,
+            session_delete_action_route: &auth.routes.user.user_session_delete,
+            sessions_delete_others_action_route: &auth.routes.user.user_session_delete_others,
+            user_delete_action_route: &auth.routes.user.user_delete,
+            verify_session_action_route: &auth.routes.user_verify_session,
+            #[cfg(feature = "password")]
+            password: Some(UserTemplatePasswordInfo {
+                has_password: user.get_password_hash().is_some(),
+                delete_action_route: &auth.routes.user.user_password_delete,
+                set_action_route: &auth.routes.user.user_password_set,
+                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+                pattern_hint: auth
+                    .pass
+                    .pattern
+                    .as_ref()
+                    .and_then(|p| p.hint().map(str::to_owned)),
+            }),
+            #[cfg(not(feature = "password"))]
+            password: None,
+            #[cfg(feature = "email")]
+            email: Some(UserTemplateEmailInfo {
+                emails: emails.iter().map(|e| e.into()).collect(),
+                delete_action_route: &auth.routes.user.user_email_delete,
+                add_action_route: &auth.routes.user.user_email_add,
+                verify_action_route: &auth.routes.email.user_email_verify,
+                enable_login_action_route: &auth.routes.user.user_email_enable_login,
+                disable_login_action_route: &auth.routes.user.user_email_disable_login,
+            }),
+            #[cfg(not(feature = "email"))]
+            email: None,
+            #[cfg(feature = "oauth")]
+            oauth: {
+                Some(UserTemplateOAuthInfo {
+                    tokens: oauth_tokens.iter().map(|t| t.into()).collect(),
+                    providers: auth
+                        .oauth_link_providers()
+                        .into_iter()
+                        .filter_map(|p| {
+                            if oauth_tokens
+                                .iter()
+                                .any(|t| t.get_provider_name() == p.name())
+                            {
+                                None
+                            } else {
+                                Some(p.into())
+                            }
+                        })
+                        .collect(),
+                    delete_action_route: &auth.routes.user.user_oauth_delete,
+                    refresh_action_route: &auth.routes.oauth.user_oauth_refresh,
+                    link_action_route: &auth.routes.oauth.user_oauth_link,
+                    user_page_route: &auth.routes.pages.user,
+                })
+            },
+            #[cfg(not(feature = "oauth"))]
+            oauth: None,
+            #[cfg(feature = "webauthn")]
+            webauthn: Some(UserTemplateWebauthnInfo {
+                passkeys: passkeys.iter().map(TemplatePasskey::from).collect(),
+                register_start_route: &auth.routes.webauthn.user_webauthn_register_start,
+                register_finish_route: &auth.routes.webauthn.user_webauthn_register_finish,
+                delete_action_route: &auth.routes.webauthn.user_webauthn_delete,
+            }),
+            #[cfg(not(feature = "webauthn"))]
+            webauthn: None,
+            #[cfg(feature = "totp")]
+            totp: Some(UserTemplateTotpInfo {
+                enabled: totp_enabled,
+                enroll_action_route: &auth.routes.user.user_totp_enroll,
+                disable_action_route: &auth.routes.user.user_totp_disable,
+            }),
+            #[cfg(not(feature = "totp"))]
+            totp: None,
+            #[cfg(feature = "mfa")]
+            recovery: Some(UserTemplateRecoveryInfo {
+                count: recovery_codes_count,
+                generate_action_route: &auth.routes.user.user_recovery_codes,
+            }),
+            #[cfg(not(feature = "mfa"))]
+            recovery: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "axum")]
+    pub fn render_with<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        user: &S::User,
+        session: &S::LoginSession,
+        sessions: &[S::LoginSession],
+        message: Option<&str>,
+        error: Option<&str>,
+        #[cfg(feature = "email")] emails: &[S::UserEmail],
+        #[cfg(feature = "oauth")] oauth_tokens: &[S::OAuthToken],
+        #[cfg(feature = "webauthn")] passkeys: &[crate::models::PasskeyRecord],
+        #[cfg(feature = "totp")] totp_enabled: bool,
+        #[cfg(feature = "mfa")] recovery_codes_count: usize,
+    ) -> Result<String, askama::Error> {
+        Self::with(
+            auth,
+            user,
+            session,
+            sessions,
+            message,
+            error,
+            #[cfg(feature = "email")]
+            emails,
+            #[cfg(feature = "oauth")]
+            oauth_tokens,
+            #[cfg(feature = "webauthn")]
+            passkeys,
+            #[cfg(feature = "totp")]
+            totp_enabled,
+            #[cfg(feature = "mfa")]
+            recovery_codes_count,
+        )
+        .render()
+    }
+}
+
+pub struct TemplateOAuthInfo<'a> {
+    pub providers: Vec<TemplateOAuthProvider<'a>>,
+    pub action_route: &'a str,
+}
+
+pub struct TemplateEmailInfo<'a> {
+    pub action_route: &'a str,
+}
+
+pub struct TemplateOtpInfo<'a> {
+    pub action_route: &'a str,
+}
+
+pub struct TemplateWebauthnInfo<'a> {
+    pub start_route: &'a str,
+    pub finish_route: &'a str,
+}
+
+#[cfg(feature = "user")]
+pub struct UserTemplateWebauthnInfo<'a> {
+    pub passkeys: Vec<TemplatePasskey>,
+    pub register_start_route: &'a str,
+    pub register_finish_route: &'a str,
+    pub delete_action_route: &'a str,
+}
+
+pub struct TemplatePasswordInfo<'a> {
+    pub action_route: &'a str,
+    pub reset_route: Option<&'a str>,
+    /// For the input's `pattern` attribute.
+    pub pattern: Option<String>,
+    pub pattern_hint: Option<String>,
+}
+
+pub struct TemplatePasskey {
+    /// Hex-encoded credential id.
+    pub credential_id: String,
+    pub name: Option<String>,
+    pub created: chrono::DateTime<chrono::Utc>,
+    pub last_used: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(feature = "webauthn")]
+impl From<&crate::models::PasskeyRecord> for TemplatePasskey {
+    fn from(record: &crate::models::PasskeyRecord) -> Self {
+        Self {
+            credential_id: record.credential_id_hex(),
+            name: record.name.clone(),
+            created: record.created,
+            last_used: record.last_used,
+        }
+    }
+}
+
+/// The method panels shared by the login and signup pages.
+struct AuthMethodViews<'a> {
+    password: Option<TemplatePasswordInfo<'a>>,
+    email: Option<TemplateEmailInfo<'a>>,
+    otp: Option<TemplateOtpInfo<'a>>,
+    sms: Option<TemplateSmsInfo<'a>>,
+    oauth: Option<TemplateOAuthInfo<'a>>,
+}
+
+impl<'a> AuthMethodViews<'a> {
+    fn with<S: AutheryStore, C: AutheryCookies>(
+        auth: &'a CoreAuthery<S, C>,
+        intent: crate::models::Intent,
+    ) -> Self {
+        use crate::models::Intent;
+
+        // Some features never read `intent`.
+        let _ = intent;
+
+        Self {
+            #[cfg(feature = "password")]
+            password: Some(TemplatePasswordInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.password.login_password,
+                    Intent::SignUp => &auth.routes.password.signup_password,
+                },
+                #[cfg(feature = "email")]
+                reset_route: Some(&auth.routes.pages.password_send_reset),
+                #[cfg(not(feature = "email"))]
+                reset_route: None,
+                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+                pattern_hint: auth
+                    .pass
+                    .pattern
+                    .as_ref()
+                    .and_then(|p| p.hint().map(str::to_owned)),
+            }),
+            #[cfg(not(feature = "password"))]
+            password: None,
+            #[cfg(feature = "email")]
+            email: auth.email.offer_links.then(|| TemplateEmailInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.email.login_email,
+                    Intent::SignUp => &auth.routes.email.signup_email,
+                },
+            }),
+            #[cfg(not(feature = "email"))]
+            email: None,
+            #[cfg(feature = "email")]
+            otp: auth.email.offer_otp.then(|| TemplateOtpInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.email.login_otp,
+                    Intent::SignUp => &auth.routes.email.signup_otp,
+                },
+            }),
+            #[cfg(not(feature = "email"))]
+            otp: None,
+            #[cfg(feature = "sms")]
+            sms: Some(TemplateSmsInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.sms.login_sms,
+                    Intent::SignUp => &auth.routes.sms.signup_sms,
+                },
+            }),
+            #[cfg(not(feature = "sms"))]
+            sms: None,
+            #[cfg(feature = "oauth")]
+            oauth: {
+                let providers = auth.oauth_sign_providers(intent);
+                let action_route = match intent {
+                    Intent::LogIn => &auth.routes.oauth.login_oauth,
+                    Intent::SignUp => &auth.routes.oauth.signup_oauth,
+                };
+                (!providers.is_empty()).then(|| TemplateOAuthInfo {
+                    providers: providers.into_iter().map(|p| p.into()).collect(),
+                    action_route,
+                })
+            },
+            #[cfg(not(feature = "oauth"))]
+            oauth: None,
+        }
+    }
+
+    /// Which method panel starts selected, honoring the request when that
+    /// method is offered.
+    fn selected_method(&self, requested: Option<&str>) -> &'static str {
+        match requested {
+            Some("password") if self.password.is_some() => "password",
+            Some("otp") if self.otp.is_some() => "otp",
+            Some("email") if self.email.is_some() => "email",
+            Some("sms") if self.sms.is_some() => "sms",
+            _ if self.password.is_some() => "password",
+            _ if self.otp.is_some() => "otp",
+            _ if self.email.is_some() => "email",
+            _ if self.sms.is_some() => "sms",
+            _ => "",
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "login.html")]
+pub struct LoginTemplate<'a> {
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub password: Option<TemplatePasswordInfo<'a>>,
+    pub email: Option<TemplateEmailInfo<'a>>,
+    pub otp: Option<TemplateOtpInfo<'a>>,
+    pub sms: Option<TemplateSmsInfo<'a>>,
+    pub webauthn: Option<TemplateWebauthnInfo<'a>>,
+    pub oauth: Option<TemplateOAuthInfo<'a>>,
+    pub signup_route: &'a str,
+    /// Which method panel starts selected: "password", "otp", "email", "sms" or "".
+    pub selected_method: &'static str,
+}
+
+pub struct TemplateSmsInfo<'a> {
+    pub action_route: &'a str,
+}
+
+impl LoginTemplate<'_> {
+    /// Assemble the login page's view-model from the auth context. Public so
+    /// apps writing their own handlers - or a custom [`Pages`] renderer - can
+    /// reuse the exact data the built-in template sees.
+    pub fn with<'a, S: AutheryStore, C: AutheryCookies>(
+        auth: &'a CoreAuthery<S, C>,
+        next: Option<&'a str>,
+        message: Option<&'a str>,
+        error: Option<&'a str>,
+        method: Option<&str>,
+    ) -> LoginTemplate<'a> {
+        let methods = AuthMethodViews::with(auth, crate::models::Intent::LogIn);
+        let selected_method = methods.selected_method(method);
+
+        LoginTemplate {
+            next,
+            message,
+            error,
+            password: methods.password,
+            email: methods.email,
+            otp: methods.otp,
+            sms: methods.sms,
+            #[cfg(feature = "webauthn")]
+            webauthn: Some(TemplateWebauthnInfo {
+                start_route: &auth.routes.webauthn.login_webauthn_start,
+                finish_route: &auth.routes.webauthn.login_webauthn_finish,
+            }),
+            #[cfg(not(feature = "webauthn"))]
+            webauthn: None,
+            oauth: methods.oauth,
+            signup_route: &auth.routes.pages.signup,
+            selected_method,
+        }
+    }
+
+    pub fn render_with<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        next: Option<&str>,
+        message: Option<&str>,
+        error: Option<&str>,
+        method: Option<&str>,
+    ) -> Result<String, askama::Error> {
+        Self::with(auth, next, message, error, method).render()
+    }
+}
+
+#[derive(Template)]
+#[template(path = "signup.html")]
+pub struct SignupTemplate<'a> {
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub password: Option<TemplatePasswordInfo<'a>>,
+    pub email: Option<TemplateEmailInfo<'a>>,
+    pub otp: Option<TemplateOtpInfo<'a>>,
+    pub sms: Option<TemplateSmsInfo<'a>>,
+    pub oauth: Option<TemplateOAuthInfo<'a>>,
+    pub login_route: &'a str,
+    /// Which method panel starts selected: "password", "otp", "email", "sms" or "".
+    pub selected_method: &'static str,
+}
+
+impl SignupTemplate<'_> {
+    /// Assemble the signup page's view-model from the auth context. See
+    /// [`LoginTemplate::with`].
+    pub fn with<'a, S: AutheryStore, C: AutheryCookies>(
+        auth: &'a CoreAuthery<S, C>,
+        next: Option<&'a str>,
+        message: Option<&'a str>,
+        error: Option<&'a str>,
+        method: Option<&str>,
+    ) -> SignupTemplate<'a> {
+        let methods = AuthMethodViews::with(auth, crate::models::Intent::SignUp);
+        let selected_method = methods.selected_method(method);
+
+        SignupTemplate {
+            next,
+            message,
+            error,
+            password: methods.password,
+            email: methods.email,
+            otp: methods.otp,
+            sms: methods.sms,
+            oauth: methods.oauth,
+            login_route: &auth.routes.pages.login,
+            selected_method,
+        }
+    }
+
+    pub fn render_with<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        next: Option<&str>,
+        message: Option<&str>,
+        error: Option<&str>,
+        method: Option<&str>,
+    ) -> Result<String, askama::Error> {
+        Self::with(auth, next, message, error, method).render()
+    }
+}
+
+/// The authenticator-app enrollment page: QR code plus confirmation form.
+#[cfg(feature = "totp")]
+#[derive(Template)]
+#[template(path = "totp-enroll.html")]
+pub struct TotpEnrollTemplate<'a> {
+    pub qr_png_base64: &'a str,
+    pub otpauth_url: &'a str,
+    pub secret: &'a str,
+    pub confirm_action_route: &'a str,
+    pub user_page_route: &'a str,
+    pub error: Option<&'a str>,
+}
+
+#[cfg(feature = "mfa")]
+pub struct MfaOtpTemplateInfo<'a> {
+    pub action_route: &'a str,
+    /// A masked rendering of the address the code goes to, e.g. `s***@x.com`.
+    pub address_hint: String,
+    pub code_input: CodeInputHints,
+}
+
+#[cfg(feature = "mfa")]
+pub struct MfaSmsTemplateInfo<'a> {
+    pub action_route: &'a str,
+    /// A masked rendering of the number the code goes to, e.g. `+46***89`.
+    pub number_hint: String,
+    pub code_input: CodeInputHints,
+}
+
+#[cfg(feature = "mfa")]
+pub struct MfaWebauthnTemplateInfo<'a> {
+    pub start_route: &'a str,
+    pub finish_route: &'a str,
+}
+
+/// The second-factor picker shown after a first factor succeeded but the MFA
+/// policy demands more. Offers only factors the pending user actually has.
+#[cfg(feature = "mfa")]
+#[derive(Template)]
+#[template(path = "mfa.html")]
+pub struct MfaTemplate<'a> {
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    /// Offer "trust this device" for this many days, when enabled.
+    pub trust_device_days: Option<i64>,
+    pub otp: Option<MfaOtpTemplateInfo<'a>>,
+    /// The SMS second-factor form, when the user has a verified number.
+    pub sms: Option<MfaSmsTemplateInfo<'a>>,
+    /// The action route for authenticator-app codes, when the user has one.
+    pub totp: Option<&'a str>,
+    /// The action route for recovery codes, when the user has unused ones.
+    pub recovery: Option<&'a str>,
+    pub webauthn: Option<MfaWebauthnTemplateInfo<'a>>,
+}
+
+/// How the bundled pages should render a code input, derived from the
+/// channel's [`CodeGenerator`](crate::codes::CodeGenerator) hints.
+pub struct CodeInputHints {
+    pub input_mode: Option<String>,
+    pub max_length: Option<u8>,
+    pub pattern: Option<String>,
+}
+
+impl CodeInputHints {
+    #[cfg(any(feature = "email", feature = "sms"))]
+    pub fn from_generator(generator: &dyn crate::codes::CodeGenerator) -> Self {
+        let input_mode = generator.html_input_mode().map(str::to_string);
+        let max_length = generator.code_length();
+        let pattern = match (input_mode.as_deref(), max_length) {
+            (Some("numeric"), Some(len)) => Some(format!("[0-9]{{{len}}}")),
+            (Some("numeric"), None) => Some("[0-9]*".to_string()),
+            _ => None,
+        };
+
+        Self {
+            input_mode,
+            max_length,
+            pattern,
+        }
+    }
+}
+
+/// The code entry page: the user has been sent a one-time code by email or
+/// text and types it here. `action_route` is the login or signup route the
+/// form posts back to, with the identifier carried in a hidden field.
+#[cfg(any(feature = "email", feature = "sms"))]
+#[derive(Template)]
+#[template(path = "code-entry.html")]
+pub struct CodeEntryTemplate<'a> {
+    pub login_page_route: &'a str,
+    /// The address or number the code went to.
+    pub identifier: &'a str,
+    /// `"email"` or `"sms"`; picks the copy and the posted field name.
+    pub channel: &'static str,
+    pub action_route: &'a str,
+    pub next: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub code_input: CodeInputHints,
+}
+
+/// The freshly generated recovery codes, shown exactly once.
+#[cfg(feature = "mfa")]
+#[derive(Template)]
+#[template(path = "recovery-codes.html")]
+pub struct RecoveryCodesTemplate<'a> {
+    pub codes: Vec<String>,
+    pub user_page_route: &'a str,
+}
+
+/// Renders the built-in pages to HTML. Implement this and register it with
+/// [`crate::config::AutheryConfig::with_pages`] to replace the bundled Askama
+/// templates with your own markup while keeping the built-in router and flows.
+///
+/// Each method receives the same view-model the bundled template sees - the
+/// public `*Template` structs, whose fields carry every route and flag the page
+/// needs. Return the rendered HTML as a string.
+pub trait Pages: std::fmt::Debug + Send + Sync {
+    fn render_login(&self, view: &LoginTemplate<'_>) -> String;
+    fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
+    #[cfg(any(feature = "email", feature = "sms"))]
+    fn render_code_entry(&self, view: &CodeEntryTemplate<'_>) -> String;
+    #[cfg(feature = "mfa")]
+    fn render_recovery_codes(&self, view: &RecoveryCodesTemplate<'_>) -> String;
+    #[cfg(feature = "mfa")]
+    fn render_mfa(&self, view: &MfaTemplate<'_>) -> String;
+    #[cfg(feature = "totp")]
+    fn render_totp_enroll(&self, view: &TotpEnrollTemplate<'_>) -> String;
+    #[cfg(feature = "user")]
+    fn render_user(&self, view: &UserTemplate<'_>) -> String;
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_send_reset_password(&self, view: &SendResetPasswordTemplate<'_>) -> String;
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_reset_password(&self, view: &ResetPasswordTemplate<'_>) -> String;
+    #[cfg(feature = "email")]
+    fn render_email_sent(&self, view: &EmailSentTemplate<'_>) -> String;
+    #[cfg(feature = "email")]
+    fn render_email_expired(&self, view: &EmailExpiredTemplate<'_>) -> String;
+    fn render_paused(&self, view: &PausedTemplate<'_>) -> String;
+}
+
+/// The default [`Pages`] renderer, backed by the bundled Askama templates.
+#[derive(Debug, Clone, Default)]
+pub struct AskamaPages;
+
+/// Render a template to a string, falling back to the error text so a broken
+/// template surfaces the problem rather than an empty page.
+fn render_or_err<T: Template>(template: &T) -> String {
+    template.render().unwrap_or_else(|err| err.to_string())
+}
+
+impl Pages for AskamaPages {
+    fn render_login(&self, view: &LoginTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    fn render_signup(&self, view: &SignupTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(any(feature = "email", feature = "sms"))]
+    fn render_code_entry(&self, view: &CodeEntryTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "mfa")]
+    fn render_recovery_codes(&self, view: &RecoveryCodesTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "mfa")]
+    fn render_mfa(&self, view: &MfaTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "totp")]
+    fn render_totp_enroll(&self, view: &TotpEnrollTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "user")]
+    fn render_user(&self, view: &UserTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_send_reset_password(&self, view: &SendResetPasswordTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(all(feature = "password", feature = "email"))]
+    fn render_reset_password(&self, view: &ResetPasswordTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "email")]
+    fn render_email_sent(&self, view: &EmailSentTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    #[cfg(feature = "email")]
+    fn render_email_expired(&self, view: &EmailExpiredTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+
+    fn render_paused(&self, view: &PausedTemplate<'_>) -> String {
+        render_or_err(view)
+    }
+}

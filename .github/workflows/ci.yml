@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main, authery]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt -p authery --check
+      - run: cargo clippy -p authery --all-features -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-rdme
+      # README.md is generated from the crate docs in src/lib.rs. cargo-rdme
+      # resolves intra-doc links with a pinned nightly it installs itself.
+      - run: cargo rdme install-rust-toolchain-for-intralinks
+      - run: cargo rdme --check
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  feature-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "password"
+          - "email"
+          - "oauth"
+          - "webauthn"
+          - "email,mfa,password"
+          - "totp,mfa,password"
+          - "sms"
+          - "sms,mfa"
+          - "oauth,axum,pages"
+          - "oauth,axum,pages,user,email,password,webauthn,mfa,totp,sms"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p authery --no-default-features --features "${{ matrix.features }}"
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p authery --all-features
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Core flow tests (no external services needed).
+      - run: cargo test -p authery --no-default-features --features password,email,mfa,user,totp,sms
+      # Default features: same flow tests against the full store trait; the
+      # Keycloak-dependent test self-skips when it is not reachable.
+      - run: cargo test -p authery
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Each app is a standalone workspace (per-app feature resolution, and
+      # IDE-correct: rust-analyzer unifies features per workspace); they
+      # share examples/target via examples/.cargo/config.toml.
+      - run: cargo build
+        working-directory: examples/full
+      - run: cargo build
+        working-directory: examples/password-only
+      - run: cargo build
+        working-directory: examples/email-otp
+      - run: cargo build
+        working-directory: examples/multi-tenant
