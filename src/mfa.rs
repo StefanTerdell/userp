@@ -532,6 +532,8 @@ mod webauthn_factor {
         FactorUnavailable,
         #[error("No ceremony in progress")]
         NoCeremony,
+        #[error("Unknown credential")]
+        UnknownCredential,
         #[error("Webauthn: {0}")]
         Webauthn(#[from] WebauthnError),
         #[error("Corrupt ceremony state: {0}")]
@@ -624,17 +626,21 @@ mod webauthn_factor {
                 .get_passkeys(&user_id)
                 .await
                 .map_err(MfaWebauthnError::Store)?;
-            if let Some(mut record) = passkeys
+            let Some(mut record) = passkeys
                 .into_iter()
                 .find(|p| p.passkey.cred_id() == result.cred_id())
-            {
-                record.passkey.update_credential(&result);
-                record.last_used = Some(chrono::Utc::now());
-                self.store
-                    .update_passkey(&user_id, record)
-                    .await
-                    .map_err(MfaWebauthnError::Store)?;
-            }
+            else {
+                // The passkey was deleted after the ceremony started;
+                // revocation wins, as it does on the login path.
+                return Err(MfaWebauthnError::UnknownCredential);
+            };
+
+            record.passkey.update_credential(&result);
+            record.last_used = Some(chrono::Utc::now());
+            self.store
+                .update_passkey(&user_id, record)
+                .await
+                .map_err(MfaWebauthnError::Store)?;
 
             let credential_id = result
                 .cred_id()
