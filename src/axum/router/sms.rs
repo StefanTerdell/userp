@@ -1,12 +1,9 @@
-use crate::{axum::AxumAuthery, sms::SmsVerifyError, store::AutheryStore};
-use axum::{
-    Form,
-    response::{IntoResponse, Redirect},
-};
+use crate::{axum::AxumAuthery, models::Intent, sms::SmsFlow, store::AutheryStore};
+use axum::{Form, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
 /// One form serves both steps: without `code` it requests a code to be sent,
-/// with `code` it verifies it.
+/// with `code` it verifies it. An empty `code` counts as absent.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SmsForm {
     pub number: String,
@@ -22,37 +19,17 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let sms_route = auth.routes.sms.login_sms.clone();
-    let routes = auth.routes.clone();
-
-    match code {
-        None => match auth.sms_login_init(number.clone(), next.clone()).await {
-            Ok(()) => Ok(Redirect::to(&format!(
-                "{sms_route}?address={}&message=Code sent!",
-                urlencoding::encode(&number)
-            ))
-            .into_response()),
-            Err(crate::sms::SmsInitError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
-                &routes,
-                &err,
-                &crate::axum::router::with_method(&routes.pages.login, "sms"),
-                next.as_deref(),
-            ))
-            .into_response()),
-        },
-        Some(code) => match auth.sms_login_verify(&number, &code).await {
-            Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
-            Err(SmsVerifyError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
-                &routes,
-                &err,
-                &format!("{sms_route}?address={}", urlencoding::encode(&number)),
-                next.as_deref(),
-            ))
-            .into_response()),
-        },
-    }
+    let route = auth.routes.sms.login_sms.clone();
+    crate::axum::router::post_code_flow::<St, SmsFlow>(
+        auth,
+        number,
+        code,
+        next,
+        Intent::LogIn,
+        route,
+        "sms",
+    )
+    .await
 }
 
 pub(crate) async fn post_signup_sms<St>(
@@ -63,35 +40,15 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let sms_route = auth.routes.sms.signup_sms.clone();
-    let routes = auth.routes.clone();
-
-    match code {
-        None => match auth.sms_signup_init(number.clone(), next.clone()).await {
-            Ok(()) => Ok(Redirect::to(&format!(
-                "{sms_route}?address={}&message=Code sent!",
-                urlencoding::encode(&number)
-            ))
-            .into_response()),
-            Err(crate::sms::SmsInitError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
-                &routes,
-                &err,
-                &crate::axum::router::with_method(&routes.pages.signup, "sms"),
-                next.as_deref(),
-            ))
-            .into_response()),
-        },
-        Some(code) => match auth.sms_signup_verify(&number, &code).await {
-            Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
-            Err(SmsVerifyError::Store(err)) => Err(err),
-            Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
-                &routes,
-                &err,
-                &format!("{sms_route}?address={}", urlencoding::encode(&number)),
-                next.as_deref(),
-            ))
-            .into_response()),
-        },
-    }
+    let route = auth.routes.sms.signup_sms.clone();
+    crate::axum::router::post_code_flow::<St, SmsFlow>(
+        auth,
+        number,
+        code,
+        next,
+        Intent::SignUp,
+        route,
+        "sms",
+    )
+    .await
 }

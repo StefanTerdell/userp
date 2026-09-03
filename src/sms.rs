@@ -15,16 +15,16 @@
 pub mod providers;
 
 use crate::{
+    code_flow::{CodeFlow, CodeInitError, CodeLoginFlow, CodeVerifyError},
     core::CoreAuthery,
-    models::{Allow, AutheryCookies, LoginMethod, User, email::EmailChallenge, sms::UserPhone},
+    models::{Allow, AutheryCookies, Intent, LoginMethod, sms::UserPhone},
     ratelimit::{RateLimitOp, RateLimited},
     store::AutheryStore,
 };
-use chrono::{Duration, Utc};
+use chrono::Duration;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use thiserror::Error;
 
 /// Boxed error so senders can surface any provider error without authery
 /// depending on an error crate.
@@ -116,105 +116,95 @@ impl SmsConfig {
     }
 }
 
-fn challenge_key(number: &str, code: &str) -> String {
-    format!("sms:{number}:{code}")
+pub type SmsInitError<StoreError> = CodeInitError<StoreError, SmsSendError>;
+pub type SmsVerifyError<StoreError> = CodeVerifyError<StoreError>;
+
+impl crate::ratelimit::MaybeRateLimited for SmsSendError {
+    fn rate_limited(&self) -> Option<&RateLimited> {
+        None
+    }
 }
 
-#[derive(Debug, Error)]
-pub enum SmsInitError<StoreError: std::error::Error> {
-    #[error("Sms login not allowed")]
-    NotAllowed,
-    /// Gateway failure; the cause is reported through
-    /// [`AuthEvent::DeliveryFailed`](crate::events::AuthEvent::DeliveryFailed).
-    #[error("Could not send the text message, please try again later")]
-    Send(#[from] SmsSendError),
-    #[error(transparent)]
-    RateLimited(RateLimited),
-    #[error(transparent)]
-    Store(StoreError),
+/// The SMS one-time-code channel.
+pub(crate) struct SmsFlow;
+
+impl CodeFlow for SmsFlow {
+    type SendError<E: std::error::Error> = SmsSendError;
+
+    fn challenge_key(identifier: &str, code: &str) -> String {
+        format!("sms:{identifier}:{code}")
+    }
+
+    fn rejected_channel() -> crate::events::CodeChannel {
+        crate::events::CodeChannel::Sms
+    }
+
+    fn login_method(identifier: String) -> LoginMethod {
+        LoginMethod::Sms { number: identifier }
+    }
+
+    fn send_op(identifier: &str) -> RateLimitOp<'_> {
+        RateLimitOp::SmsSend { number: identifier }
+    }
+
+    fn attempt_op(identifier: &str) -> RateLimitOp<'_> {
+        RateLimitOp::SmsAttempt { number: identifier }
+    }
+
+    fn generator<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> &dyn crate::codes::CodeGenerator {
+        &*auth.sms.code_generator
+    }
+
+    fn challenge_lifetime<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> chrono::Duration {
+        auth.sms.challenge_lifetime
+    }
+
+    async fn deliver<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        to: &str,
+        code: &str,
+    ) -> Result<(), SmsSendError> {
+        auth.send_sms(to, &auth.sms.messages.login_code(code)).await
+    }
 }
 
-crate::ratelimit::impl_maybe_rate_limited!(SmsInitError, RateLimited);
+impl CodeLoginFlow for SmsFlow {
+    fn allow_login_override<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> Option<&Allow> {
+        auth.sms.allow_login.as_ref()
+    }
 
-#[derive(Debug, Error)]
-pub enum SmsVerifyError<StoreError: std::error::Error> {
-    #[error("Sms login not allowed")]
-    NotAllowed,
-    #[error("User already exists")]
-    UserExists,
-    #[error("Sms user not found")]
-    NoUser,
-    #[error("Wrong or expired code")]
-    WrongCode,
-    #[error(transparent)]
-    RateLimited(RateLimited),
-    #[error(transparent)]
-    Store(#[from] StoreError),
+    fn allow_signup_override<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> Option<&Allow> {
+        auth.sms.allow_signup.as_ref()
+    }
+
+    async fn lookup_user<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        identifier: &str,
+    ) -> Result<Option<(S::User, bool)>, S::Error> {
+        Ok(auth
+            .store
+            .get_user_by_phone(identifier)
+            .await?
+            .map(|(user, phone)| (user, phone.get_allow_login())))
+    }
+
+    async fn create_user<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        identifier: &str,
+    ) -> Result<S::User, S::Error> {
+        Ok(auth.store.create_user_by_phone(identifier).await?.0)
+    }
 }
-
-crate::ratelimit::impl_maybe_rate_limited!(SmsVerifyError, RateLimited);
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
-    fn emit_sms_code_rejected(&self, number: &str) {
-        self.emit(crate::events::AuthEvent::CodeRejected {
-            channel: crate::events::CodeChannel::Sms,
-            identifier: number.to_string(),
-        });
-    }
-
-    /// Send a login code to the number.
-    pub async fn sms_login_init(
-        &self,
-        number: String,
-        next: Option<String>,
-    ) -> Result<(), SmsInitError<S::Error>> {
-        if self.login_allow(self.sms.allow_login.as_ref()) == &Allow::Never {
-            return Err(SmsInitError::NotAllowed);
-        }
-
-        self.sms_send_code(number, next).await
-    }
-
-    /// Send a signup code to the number.
-    pub async fn sms_signup_init(
-        &self,
-        number: String,
-        next: Option<String>,
-    ) -> Result<(), SmsInitError<S::Error>> {
-        if self.signup_allow(self.sms.allow_signup.as_ref()) == &Allow::Never {
-            return Err(SmsInitError::NotAllowed);
-        }
-
-        self.sms_send_code(number, next).await
-    }
-
-    async fn sms_send_code(
-        &self,
-        number: String,
-        next: Option<String>,
-    ) -> Result<(), SmsInitError<S::Error>> {
-        self.check_rate(RateLimitOp::SmsSend { number: &number })
-            .await
-            .map_err(SmsInitError::RateLimited)?;
-
-        let digits = self.sms.code_generator.generate();
-        let key = challenge_key(&number, &digits);
-
-        let challenge = self
-            .store
-            .create_challenge(number, key, next, Utc::now() + self.sms.challenge_lifetime)
-            .await
-            .map_err(SmsInitError::Store)?;
-
-        self.send_sms(
-            challenge.get_address(),
-            &self.sms.messages.login_code(&digits),
-        )
-        .await?;
-
-        Ok(())
-    }
-
     /// Sends through the configured sender, emitting
     /// [`AuthEvent::DeliveryFailed`](crate::events::AuthEvent::DeliveryFailed) on failure.
     pub(crate) async fn send_sms(&self, to: &str, message: &str) -> Result<(), SmsSendError> {
@@ -231,6 +221,25 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         result
     }
 
+    /// Send a login code to the number.
+    pub async fn sms_login_init(
+        &self,
+        number: String,
+        next: Option<String>,
+    ) -> Result<(), SmsInitError<S::Error>> {
+        self.code_init::<SmsFlow>(number, next, Intent::LogIn).await
+    }
+
+    /// Send a signup code to the number.
+    pub async fn sms_signup_init(
+        &self,
+        number: String,
+        next: Option<String>,
+    ) -> Result<(), SmsInitError<S::Error>> {
+        self.code_init::<SmsFlow>(number, next, Intent::SignUp)
+            .await
+    }
+
     /// Verify a login code and log the user in, creating the user first if
     /// signup-on-login is allowed.
     #[must_use = "Don't forget to return the auth session as part of the response!"]
@@ -239,30 +248,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), SmsVerifyError<S::Error>> {
-        if self.login_allow(self.sms.allow_login.as_ref()) == &Allow::Never {
-            return Err(SmsVerifyError::NotAllowed);
-        }
-
-        let challenge = self.sms_consume_challenge(number, code).await?;
-
-        let allow_signup = self.signup_allow(self.sms.allow_signup.as_ref()) == &Allow::OnEither;
-
-        let user = match self
-            .store
-            .get_user_by_phone(challenge.get_address())
-            .await?
-        {
-            Some((user, phone)) if phone.get_allow_login() => Ok(user),
-            Some(_) => Err(SmsVerifyError::NotAllowed),
-            None if allow_signup => Ok(self
-                .store
-                .create_user_by_phone(challenge.get_address())
-                .await?
-                .0),
-            None => Err(SmsVerifyError::NoUser),
-        }?;
-
-        self.sms_log_in(challenge, user).await
+        self.code_verify::<SmsFlow>(number, code, Intent::LogIn)
+            .await
     }
 
     /// Verify a signup code, create the user, and log them in - or log in an
@@ -273,72 +260,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         number: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), SmsVerifyError<S::Error>> {
-        if self.signup_allow(self.sms.allow_signup.as_ref()) == &Allow::Never {
-            return Err(SmsVerifyError::NotAllowed);
-        }
-
-        let challenge = self.sms_consume_challenge(number, code).await?;
-
-        let allow_login = self.login_allow(self.sms.allow_login.as_ref()) == &Allow::OnEither;
-
-        let user = match self
-            .store
-            .get_user_by_phone(challenge.get_address())
-            .await?
-        {
-            Some((user, phone)) if allow_login && phone.get_allow_login() => Ok(user),
-            Some(_) if allow_login => Err(SmsVerifyError::NotAllowed),
-            Some(_) => Err(SmsVerifyError::UserExists),
-            None => Ok(self
-                .store
-                .create_user_by_phone(challenge.get_address())
-                .await?
-                .0),
-        }?;
-
-        self.sms_log_in(challenge, user).await
-    }
-
-    async fn sms_consume_challenge(
-        &self,
-        number: &str,
-        code: &str,
-    ) -> Result<S::EmailChallenge, SmsVerifyError<S::Error>> {
-        self.check_rate(RateLimitOp::SmsAttempt { number })
+        self.code_verify::<SmsFlow>(number, code, Intent::SignUp)
             .await
-            .map_err(SmsVerifyError::RateLimited)?;
-
-        let Some(challenge) = self
-            .store
-            .consume_challenge(challenge_key(number, code))
-            .await?
-        else {
-            self.emit_sms_code_rejected(number);
-            return Err(SmsVerifyError::WrongCode);
-        };
-
-        if challenge.get_expires() < Utc::now() {
-            self.emit_sms_code_rejected(number);
-            return Err(SmsVerifyError::WrongCode);
-        }
-
-        Ok(challenge)
-    }
-
-    async fn sms_log_in(
-        self,
-        challenge: S::EmailChallenge,
-        user: S::User,
-    ) -> Result<(Self, Option<String>), SmsVerifyError<S::Error>> {
-        Ok((
-            self.log_in(
-                LoginMethod::Sms {
-                    number: challenge.get_address().to_owned(),
-                },
-                &user.get_id(),
-            )
-            .await?,
-            challenge.get_next().clone(),
-        ))
     }
 }

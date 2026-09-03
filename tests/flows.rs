@@ -229,7 +229,7 @@ async fn email_mechanisms_can_be_withheld_by_config() {
         .otp_login_verify("alice@x.com", "123456")
         .await
         .unwrap_err();
-    assert_eq!(err.to_string(), "Otp login not allowed");
+    assert_eq!(err.to_string(), "Login not allowed");
 
     let mut no_links = auth(&store);
     no_links.email.offer_links = false;
@@ -484,7 +484,7 @@ mod sms_tests {
         let user_facing = err.to_string();
         assert_eq!(
             user_facing,
-            "Could not send the text message, please try again later"
+            "Could not send the code, please try again later"
         );
         assert!(!user_facing.contains("sk_live"), "gateway error leaked");
 

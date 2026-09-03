@@ -302,125 +302,214 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     }
 }
 
-#[cfg(feature = "email")]
-mod otp_factor {
+#[cfg(any(feature = "email", feature = "sms"))]
+mod code_factor {
     use super::*;
-    use crate::email::SendEmailChallengeError;
-    use crate::models::email::EmailChallenge;
-    use crate::ratelimit::{RateLimitOp, RateLimited};
-    use chrono::Utc;
+    use crate::code_flow::{ConsumeCodeError, MfaCodeFlow, SendCodeError};
+    use crate::ratelimit::RateLimited;
 
-    fn challenge_key(address: &str, code: &str) -> String {
-        format!("mfa:{address}:{code}")
-    }
-
+    /// A code-channel second factor failed.
     #[derive(Debug, Error)]
-    pub enum MfaOtpError<StoreError: std::error::Error> {
+    pub enum MfaCodeError<
+        StoreError: std::error::Error,
+        SendError: std::fmt::Debug + std::fmt::Display,
+    > {
         #[error("No MFA login in progress")]
         NoPending,
         #[error("This second factor is not available")]
         FactorUnavailable,
         #[error("Wrong or expired code")]
         WrongCode,
+        /// Delivery failure; the cause is reported through
+        /// [`AuthEvent::DeliveryFailed`](crate::events::AuthEvent::DeliveryFailed).
+        #[error("Could not send the code, please try again later")]
+        Send(SendError),
         #[error(transparent)]
         RateLimited(RateLimited),
-        #[error(transparent)]
-        SendingEmail(SendEmailChallengeError<StoreError>),
         #[error(transparent)]
         Store(StoreError),
     }
 
-    crate::ratelimit::impl_maybe_rate_limited!(MfaOtpError, RateLimited);
+    impl<
+        E: std::error::Error,
+        SE: std::fmt::Debug + std::fmt::Display + crate::ratelimit::MaybeRateLimited,
+    > crate::ratelimit::MaybeRateLimited for MfaCodeError<E, SE>
+    {
+        fn rate_limited(&self) -> Option<&RateLimited> {
+            match self {
+                Self::RateLimited(limited) => Some(limited),
+                Self::Send(inner) => inner.rate_limited(),
+                _ => None,
+            }
+        }
+    }
+
+    impl<E: std::error::Error, SE: std::fmt::Debug + std::fmt::Display> From<SendCodeError<E, SE>>
+        for MfaCodeError<E, SE>
+    {
+        fn from(err: SendCodeError<E, SE>) -> Self {
+            match err {
+                SendCodeError::RateLimited(limited) => Self::RateLimited(limited),
+                SendCodeError::Send(inner) => Self::Send(inner),
+                SendCodeError::Store(inner) => Self::Store(inner),
+            }
+        }
+    }
+
+    impl<E: std::error::Error, SE: std::fmt::Debug + std::fmt::Display> From<ConsumeCodeError<E>>
+        for MfaCodeError<E, SE>
+    {
+        fn from(err: ConsumeCodeError<E>) -> Self {
+            match err {
+                ConsumeCodeError::RateLimited(limited) => Self::RateLimited(limited),
+                ConsumeCodeError::WrongCode => Self::WrongCode,
+                ConsumeCodeError::Store(inner) => Self::Store(inner),
+            }
+        }
+    }
 
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
-        /// Mail a second-factor code to the pending user's own verified
-        /// address. The address is never taken from the request.
-        pub async fn mfa_otp_init(&self) -> Result<String, MfaOtpError<S::Error>> {
-            let (_pending, address) = self.mfa_otp_target().await?;
-
-            self.check_rate(RateLimitOp::EmailSend { address: &address })
-                .await
-                .map_err(MfaOtpError::RateLimited)?;
-
-            let digits = self.email.code_generator.generate();
-            let key = challenge_key(&address, &digits);
-
-            self.store
-                .create_challenge(
-                    address.clone(),
-                    key,
-                    None,
-                    Utc::now() + self.email.challenge_lifetime,
-                )
-                .await
-                .map_err(MfaOtpError::Store)?;
-
-            let content = self.email.messages.mfa_code(&digits);
-            self.send_email(&address, &content.subject, content.html_body)
-                .await
-                .map_err(MfaOtpError::SendingEmail)?;
-
-            Ok(address)
-        }
-
-        /// Verify the mailed code and upgrade the pending session.
-        #[must_use = "Don't forget to return the auth session as part of the response!"]
-        pub async fn mfa_otp_verify(self, code: &str) -> Result<Self, MfaOtpError<S::Error>> {
-            let (pending, address) = self.mfa_otp_target().await?;
-
-            self.check_rate(RateLimitOp::OtpAttempt { address: &address })
-                .await
-                .map_err(MfaOtpError::RateLimited)?;
-
-            let Some(challenge) = self
-                .store
-                .consume_challenge(challenge_key(&address, code))
-                .await
-                .map_err(MfaOtpError::Store)?
-            else {
-                self.emit(crate::events::AuthEvent::CodeRejected {
-                    channel: crate::events::CodeChannel::MfaEmail,
-                    identifier: address.clone(),
-                });
-                return Err(MfaOtpError::WrongCode);
-            };
-
-            if challenge.get_expires() < Utc::now() {
-                self.emit(crate::events::AuthEvent::CodeRejected {
-                    channel: crate::events::CodeChannel::MfaEmail,
-                    identifier: address,
-                });
-                return Err(MfaOtpError::WrongCode);
-            }
-
-            self.mfa_upgrade(pending, LoginMethod::Otp { address })
-                .await
-                .map_err(MfaOtpError::Store)
-        }
-
-        /// The pending session and the verified address codes go to.
-        async fn mfa_otp_target(&self) -> Result<(S::LoginSession, String), MfaOtpError<S::Error>> {
+        /// The pending session and the verified contact this factor sends to.
+        async fn mfa_code_target<Ch: MfaCodeFlow>(
+            &self,
+        ) -> Result<(S::LoginSession, String), MfaCodeError<S::Error, Ch::SendError<S::Error>>>
+        {
             let Some(pending) = self
                 .mfa_pending_session()
                 .await
-                .map_err(MfaOtpError::Store)?
+                .map_err(MfaCodeError::Store)?
             else {
-                return Err(MfaOtpError::NoPending);
+                return Err(MfaCodeError::NoPending);
             };
 
             let LoginMethod::MfaPending { first } = pending.get_method() else {
-                return Err(MfaOtpError::NoPending);
+                return Err(MfaCodeError::NoPending);
             };
 
             let factors = self
                 .mfa_factors(&pending.get_user_id(), &first)
                 .await
-                .map_err(MfaOtpError::Store)?;
+                .map_err(MfaCodeError::Store)?;
 
-            match factors.otp_address {
-                Some(address) => Ok((pending, address)),
-                None => Err(MfaOtpError::FactorUnavailable),
+            match Ch::factor_target(factors) {
+                Some(target) => Ok((pending, target)),
+                None => Err(MfaCodeError::FactorUnavailable),
             }
+        }
+
+        /// Send a second-factor code to the pending user's own verified
+        /// contact - never one taken from the request.
+        pub(crate) async fn mfa_code_init<Ch: MfaCodeFlow>(
+            &self,
+        ) -> Result<String, MfaCodeError<S::Error, Ch::SendError<S::Error>>> {
+            let (_pending, target) = self.mfa_code_target::<Ch>().await?;
+
+            self.send_code::<Ch>(target.clone(), None).await?;
+
+            Ok(target)
+        }
+
+        /// Verify a second-factor code and upgrade the pending session.
+        pub(crate) async fn mfa_code_verify<Ch: MfaCodeFlow>(
+            self,
+            code: &str,
+        ) -> Result<Self, MfaCodeError<S::Error, Ch::SendError<S::Error>>> {
+            let (pending, target) = self.mfa_code_target::<Ch>().await?;
+
+            self.consume_code::<Ch>(&target, code).await?;
+
+            self.mfa_upgrade(pending, Ch::login_method(target))
+                .await
+                .map_err(MfaCodeError::Store)
+        }
+    }
+}
+
+#[cfg(any(feature = "email", feature = "sms"))]
+pub use code_factor::MfaCodeError;
+
+#[cfg(feature = "email")]
+mod otp_factor {
+    use super::*;
+    use crate::code_flow::{CodeFlow, MfaCodeFlow};
+    use crate::email::SendEmailChallengeError;
+    use crate::ratelimit::RateLimitOp;
+
+    pub type MfaOtpError<StoreError> =
+        MfaCodeError<StoreError, SendEmailChallengeError<StoreError>>;
+
+    /// The emailed MFA code factor.
+    pub(crate) struct MfaEmailFlow;
+
+    impl CodeFlow for MfaEmailFlow {
+        type SendError<E: std::error::Error> = SendEmailChallengeError<E>;
+
+        fn challenge_key(identifier: &str, code: &str) -> String {
+            format!("mfa:{identifier}:{code}")
+        }
+
+        fn rejected_channel() -> crate::events::CodeChannel {
+            crate::events::CodeChannel::MfaEmail
+        }
+
+        fn login_method(identifier: String) -> LoginMethod {
+            LoginMethod::Otp {
+                address: identifier,
+            }
+        }
+
+        fn send_op(identifier: &str) -> RateLimitOp<'_> {
+            RateLimitOp::EmailSend {
+                address: identifier,
+            }
+        }
+
+        fn attempt_op(identifier: &str) -> RateLimitOp<'_> {
+            RateLimitOp::OtpAttempt {
+                address: identifier,
+            }
+        }
+
+        fn generator<S: AutheryStore, C: AutheryCookies>(
+            auth: &CoreAuthery<S, C>,
+        ) -> &dyn crate::codes::CodeGenerator {
+            &*auth.email.code_generator
+        }
+
+        fn challenge_lifetime<S: AutheryStore, C: AutheryCookies>(
+            auth: &CoreAuthery<S, C>,
+        ) -> chrono::Duration {
+            auth.email.challenge_lifetime
+        }
+
+        async fn deliver<S: AutheryStore, C: AutheryCookies>(
+            auth: &CoreAuthery<S, C>,
+            to: &str,
+            code: &str,
+        ) -> Result<(), SendEmailChallengeError<S::Error>> {
+            let content = auth.email.messages.mfa_code(code);
+            auth.send_email(to, &content.subject, content.html_body)
+                .await
+        }
+    }
+
+    impl MfaCodeFlow for MfaEmailFlow {
+        fn factor_target(factors: MfaFactors) -> Option<String> {
+            factors.otp_address
+        }
+    }
+
+    impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+        /// Mail a second-factor code to the pending user's own verified
+        /// address. The address is never taken from the request.
+        pub async fn mfa_otp_init(&self) -> Result<String, MfaOtpError<S::Error>> {
+            self.mfa_code_init::<MfaEmailFlow>().await
+        }
+
+        /// Verify the mailed code and upgrade the pending session.
+        #[must_use = "Don't forget to return the auth session as part of the response!"]
+        pub async fn mfa_otp_verify(self, code: &str) -> Result<Self, MfaOtpError<S::Error>> {
+            self.mfa_code_verify::<MfaEmailFlow>(code).await
         }
     }
 }
@@ -616,120 +705,76 @@ pub use totp_factor::MfaTotpError;
 #[cfg(feature = "sms")]
 mod sms_factor {
     use super::*;
-    use crate::models::email::EmailChallenge;
-    use crate::ratelimit::{RateLimitOp, RateLimited};
+    use crate::code_flow::{CodeFlow, MfaCodeFlow};
+    use crate::ratelimit::RateLimitOp;
     use crate::sms::SmsSendError;
-    use chrono::Utc;
 
-    fn challenge_key(number: &str, code: &str) -> String {
-        format!("mfasms:{number}:{code}")
+    pub type MfaSmsError<StoreError> = MfaCodeError<StoreError, SmsSendError>;
+
+    /// The texted MFA code factor.
+    pub(crate) struct MfaSmsFlow;
+
+    impl CodeFlow for MfaSmsFlow {
+        type SendError<E: std::error::Error> = SmsSendError;
+
+        fn challenge_key(identifier: &str, code: &str) -> String {
+            format!("mfasms:{identifier}:{code}")
+        }
+
+        fn rejected_channel() -> crate::events::CodeChannel {
+            crate::events::CodeChannel::MfaSms
+        }
+
+        fn login_method(identifier: String) -> LoginMethod {
+            LoginMethod::Sms { number: identifier }
+        }
+
+        fn send_op(identifier: &str) -> RateLimitOp<'_> {
+            RateLimitOp::SmsSend { number: identifier }
+        }
+
+        fn attempt_op(identifier: &str) -> RateLimitOp<'_> {
+            RateLimitOp::SmsAttempt { number: identifier }
+        }
+
+        fn generator<S: AutheryStore, C: AutheryCookies>(
+            auth: &CoreAuthery<S, C>,
+        ) -> &dyn crate::codes::CodeGenerator {
+            &*auth.sms.code_generator
+        }
+
+        fn challenge_lifetime<S: AutheryStore, C: AutheryCookies>(
+            auth: &CoreAuthery<S, C>,
+        ) -> chrono::Duration {
+            auth.sms.challenge_lifetime
+        }
+
+        async fn deliver<S: AutheryStore, C: AutheryCookies>(
+            auth: &CoreAuthery<S, C>,
+            to: &str,
+            code: &str,
+        ) -> Result<(), SmsSendError> {
+            auth.send_sms(to, &auth.sms.messages.mfa_code(code)).await
+        }
     }
 
-    #[derive(Debug, Error)]
-    pub enum MfaSmsError<StoreError: std::error::Error> {
-        #[error("No MFA login in progress")]
-        NoPending,
-        #[error("This second factor is not available")]
-        FactorUnavailable,
-        #[error("Wrong or expired code")]
-        WrongCode,
-        #[error("Could not send the text message, please try again later")]
-        Send(#[from] SmsSendError),
-        #[error(transparent)]
-        RateLimited(RateLimited),
-        #[error(transparent)]
-        Store(StoreError),
+    impl MfaCodeFlow for MfaSmsFlow {
+        fn factor_target(factors: MfaFactors) -> Option<String> {
+            factors.sms_number
+        }
     }
-
-    crate::ratelimit::impl_maybe_rate_limited!(MfaSmsError, RateLimited);
 
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         /// Text a second-factor code to the pending user's own verified
         /// number. The number is never taken from the request.
         pub async fn mfa_sms_init(&self) -> Result<String, MfaSmsError<S::Error>> {
-            let (_pending, number) = self.mfa_sms_target().await?;
-
-            self.check_rate(RateLimitOp::SmsSend { number: &number })
-                .await
-                .map_err(MfaSmsError::RateLimited)?;
-
-            let digits = self.sms.code_generator.generate();
-            let key = challenge_key(&number, &digits);
-
-            self.store
-                .create_challenge(
-                    number.clone(),
-                    key,
-                    None,
-                    Utc::now() + self.sms.challenge_lifetime,
-                )
-                .await
-                .map_err(MfaSmsError::Store)?;
-
-            self.send_sms(&number, &self.sms.messages.mfa_code(&digits))
-                .await?;
-
-            Ok(number)
+            self.mfa_code_init::<MfaSmsFlow>().await
         }
 
         /// Verify the texted code and upgrade the pending session.
         #[must_use = "Don't forget to return the auth session as part of the response!"]
         pub async fn mfa_sms_verify(self, code: &str) -> Result<Self, MfaSmsError<S::Error>> {
-            let (pending, number) = self.mfa_sms_target().await?;
-
-            self.check_rate(RateLimitOp::SmsAttempt { number: &number })
-                .await
-                .map_err(MfaSmsError::RateLimited)?;
-
-            let Some(challenge) = self
-                .store
-                .consume_challenge(challenge_key(&number, code))
-                .await
-                .map_err(MfaSmsError::Store)?
-            else {
-                self.emit(crate::events::AuthEvent::CodeRejected {
-                    channel: crate::events::CodeChannel::MfaSms,
-                    identifier: number.clone(),
-                });
-                return Err(MfaSmsError::WrongCode);
-            };
-
-            if challenge.get_expires() < Utc::now() {
-                self.emit(crate::events::AuthEvent::CodeRejected {
-                    channel: crate::events::CodeChannel::MfaSms,
-                    identifier: number,
-                });
-                return Err(MfaSmsError::WrongCode);
-            }
-
-            self.mfa_upgrade(pending, LoginMethod::Sms { number })
-                .await
-                .map_err(MfaSmsError::Store)
-        }
-
-        /// The pending session and the verified number codes go to.
-        async fn mfa_sms_target(&self) -> Result<(S::LoginSession, String), MfaSmsError<S::Error>> {
-            let Some(pending) = self
-                .mfa_pending_session()
-                .await
-                .map_err(MfaSmsError::Store)?
-            else {
-                return Err(MfaSmsError::NoPending);
-            };
-
-            let LoginMethod::MfaPending { first } = pending.get_method() else {
-                return Err(MfaSmsError::NoPending);
-            };
-
-            let factors = self
-                .mfa_factors(&pending.get_user_id(), &first)
-                .await
-                .map_err(MfaSmsError::Store)?;
-
-            match factors.sms_number {
-                Some(number) => Ok((pending, number)),
-                None => Err(MfaSmsError::FactorUnavailable),
-            }
+            self.mfa_code_verify::<MfaSmsFlow>(code).await
         }
     }
 }

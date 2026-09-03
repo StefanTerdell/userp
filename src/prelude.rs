@@ -25,7 +25,10 @@ pub use crate::email::reset::*;
 pub use crate::password::PasswordReset;
 
 #[cfg(feature = "email")]
-pub use crate::email::{EmailConfig, SendEmailChallengeError, SmtpSettings};
+pub use crate::email::{
+    EmailChallengeError, EmailConfig, EmailLinkInitError, EmailSignCallbackError,
+    SendEmailChallengeError, SmtpSettings,
+};
 #[cfg(feature = "email")]
 pub use crate::email::{login::*, signup::*, verify::*};
 
@@ -34,8 +37,9 @@ pub use crate::password::{PasswordConfig, hasher::*, login::*, signup::*};
 
 #[cfg(feature = "oauth")]
 pub use crate::oauth::{
-    OAuthCallbackError, OAuthConfig, OAuthFlow, OAuthGenericCallbackError, OAuthProviderResolver,
-    OAuthProviders, ProviderResolverFuture, RefreshInitResult,
+    OAuthCallbackError, OAuthConfig, OAuthFlow, OAuthGenericCallbackError, OAuthInitError,
+    OAuthProviderResolver, OAuthProviders, OAuthSignCallbackError, ProviderResolverFuture,
+    RefreshInitResult,
     client::*,
     link::*,
     login::*,
@@ -59,9 +63,11 @@ pub use crate::models::email::*;
 #[cfg(feature = "oauth")]
 pub use crate::models::oauth::*;
 pub use crate::models::{
-    Allow, AutheryCookies, LoginMethod, LoginMethodRules, LoginSession, SessionMeta, User,
+    Allow, AutheryCookies, Intent, LoginMethod, LoginMethodRules, LoginSession, SessionMeta, User,
 };
 
+#[cfg(any(feature = "email", feature = "sms"))]
+pub use crate::code_flow::{CodeInitError, CodeVerifyError, ResolveUserError, SendCodeError};
 #[cfg(any(feature = "email", feature = "sms"))]
 pub use crate::codes::{CodeGenerator, NumericCode};
 pub use crate::events::{AuthEvent, AuthEventHandler, CodeChannel, TracingEvents};

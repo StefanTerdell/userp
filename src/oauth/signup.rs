@@ -1,49 +1,19 @@
-use super::provider::OAuthProvider;
-use super::{Allow, AutheryStore, CoreAuthery, OAuthCallbackError, OAuthFlow};
-use crate::models::LoginMethod;
-use crate::models::{
-    AutheryCookies, User,
-    oauth::{OAuthToken, UnmatchedOAuthToken},
+use super::{OAuthInitError, OAuthSignCallbackError, provider::OAuthProvider};
+use crate::{
+    core::CoreAuthery,
+    models::{AutheryCookies, Intent},
+    store::AutheryStore,
 };
 use std::sync::Arc;
-use thiserror::Error;
 use url::Url;
 
-#[derive(Error, Debug)]
-pub enum OAuthSignupCallbackError<StoreError: std::error::Error> {
-    #[error(transparent)]
-    OAuthCallbackError(#[from] OAuthCallbackError),
-    #[error("Expected a signup flow, got {0}")]
-    UnexpectedFlow(OAuthFlow),
-    #[error("User already exists")]
-    UserExists,
-    #[error(transparent)]
-    Store(StoreError),
-}
-
-#[derive(Debug, Error)]
-pub enum OAuthSignupInitError {
-    #[error("Signup not allowed")]
-    NotAllowed,
-    #[error("No provider found with name: {0}")]
-    ProviderNotFound(String),
-}
+pub type OAuthSignupInitError = OAuthInitError;
+pub type OAuthSignupCallbackError<StoreError> = OAuthSignCallbackError<StoreError>;
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    /// The providers offered for signup under the current policies.
     pub fn oauth_signup_providers(&self) -> Vec<&Arc<dyn OAuthProvider>> {
-        self.oauth
-            .providers
-            .0
-            .iter()
-            .filter(|provider| {
-                self.signup_allow(
-                    provider
-                        .allow_signup()
-                        .as_ref()
-                        .or(self.oauth.allow_signup.as_ref()),
-                ) != &Allow::Never
-            })
-            .collect()
+        self.oauth_sign_providers(Intent::SignUp)
     }
 
     pub async fn oauth_signup_init(
@@ -51,29 +21,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         provider_name: String,
         next: Option<String>,
     ) -> Result<(Self, Url), OAuthSignupInitError> {
-        let provider = self.oauth.providers.get(&provider_name).cloned().ok_or(
-            OAuthSignupInitError::ProviderNotFound(provider_name.clone()),
-        )?;
-
-        if self.signup_allow(
-            provider
-                .allow_signup()
-                .as_ref()
-                .or(self.oauth.allow_signup.as_ref()),
-        ) == &Allow::Never
-        {
-            return Err(OAuthSignupInitError::NotAllowed);
-        };
-
-        Ok(self
-            .oauth_init(
-                provider,
-                OAuthFlow::SignUp {
-                    next,
-                    context: None,
-                },
-            )
-            .await)
+        self.oauth_sign_init(Intent::SignUp, provider_name, None, next)
+            .await
     }
 
     /// Begin a signup through a dynamically resolved provider. See
@@ -84,74 +33,12 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         provider_name: &str,
         next: Option<String>,
     ) -> Result<(Self, Url), OAuthSignupInitError> {
-        let provider = self
-            .oauth_resolve_provider(Some(&context), provider_name)
-            .await
-            .map_err(|_| OAuthSignupInitError::ProviderNotFound(provider_name.to_string()))?;
-
-        if self.signup_allow(
-            provider
-                .allow_signup()
-                .as_ref()
-                .or(self.oauth.allow_signup.as_ref()),
-        ) == &Allow::Never
-        {
-            return Err(OAuthSignupInitError::NotAllowed);
-        };
-
-        Ok(self
-            .oauth_init(
-                provider,
-                OAuthFlow::SignUp {
-                    next,
-                    context: Some(context),
-                },
-            )
-            .await)
-    }
-
-    pub(crate) async fn oauth_signup_callback_inner(
-        self,
-        provider: Arc<dyn OAuthProvider>,
-        unmatched_token: UnmatchedOAuthToken,
-        flow: OAuthFlow,
-    ) -> Result<(Self, Option<String>), OAuthSignupCallbackError<S::Error>> {
-        let OAuthFlow::SignUp { next, .. } = flow else {
-            return Err(OAuthSignupCallbackError::UnexpectedFlow(flow));
-        };
-
-        let allow_login = self.login_allow(
-            provider
-                .allow_login()
-                .as_ref()
-                .or(self.oauth.allow_login.as_ref()),
-        ) == &Allow::OnEither;
-
-        let (user, token) = match self
-            .store
-            .get_user_by_unmatched_token(unmatched_token.clone())
-            .await
-            .map_err(OAuthSignupCallbackError::Store)?
-        {
-            Some(user_token) if allow_login => Ok(user_token),
-            Some(_) => Err(OAuthSignupCallbackError::UserExists),
-            None => Ok(self
-                .store
-                .create_user_from_unmatched_token(unmatched_token)
-                .await
-                .map_err(OAuthSignupCallbackError::Store)?),
-        }?;
-
-        Ok((
-            self.log_in(
-                LoginMethod::OAuth {
-                    token_id: token.get_id().to_string(),
-                },
-                &user.get_id(),
-            )
-            .await
-            .map_err(OAuthSignupCallbackError::Store)?,
+        self.oauth_sign_init(
+            Intent::SignUp,
+            provider_name.to_string(),
+            Some(context),
             next,
-        ))
+        )
+        .await
     }
 }

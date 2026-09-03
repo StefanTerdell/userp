@@ -10,65 +10,107 @@
 //! attempts tightly in your limiter.
 
 use super::SendEmailChallengeError;
-use crate::ratelimit::{RateLimitOp, RateLimited};
-use crate::{
-    core::CoreAuthery,
-    models::{
-        Allow, AutheryCookies, LoginMethod, User,
-        email::{EmailChallenge, UserEmail},
-    },
-    store::AutheryStore,
-};
-use chrono::Utc;
-use thiserror::Error;
+use crate::code_flow::{CodeFlow, CodeInitError, CodeLoginFlow, CodeVerifyError};
+use crate::core::CoreAuthery;
+use crate::models::{Allow, AutheryCookies, Intent, LoginMethod, email::UserEmail};
+use crate::ratelimit::RateLimitOp;
+use crate::store::AutheryStore;
 
-fn challenge_key(address: &str, code: &str) -> String {
-    format!("otp:{address}:{code}")
-}
+pub type OtpInitError<StoreError> = CodeInitError<StoreError, SendEmailChallengeError<StoreError>>;
+pub type OtpVerifyError<StoreError> = CodeVerifyError<StoreError>;
 
-#[derive(Debug, Error)]
-pub enum OtpInitError<StoreError: std::error::Error> {
-    #[error(transparent)]
-    SendingEmail(#[from] SendEmailChallengeError<StoreError>),
-    #[error("Otp login not allowed")]
-    NotAllowed,
-}
+/// The email one-time-code channel.
+pub(crate) struct EmailOtpFlow;
 
-impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for OtpInitError<E> {
-    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
-        match self {
-            Self::SendingEmail(inner) => inner.rate_limited(),
-            Self::NotAllowed => None,
+impl CodeFlow for EmailOtpFlow {
+    type SendError<E: std::error::Error> = SendEmailChallengeError<E>;
+
+    fn challenge_key(identifier: &str, code: &str) -> String {
+        format!("otp:{identifier}:{code}")
+    }
+
+    fn rejected_channel() -> crate::events::CodeChannel {
+        crate::events::CodeChannel::EmailOtp
+    }
+
+    fn login_method(identifier: String) -> LoginMethod {
+        LoginMethod::Otp {
+            address: identifier,
         }
     }
-}
 
-#[derive(Error, Debug)]
-pub enum OtpVerifyError<StoreError: std::error::Error> {
-    #[error("Otp login not allowed")]
-    NotAllowed,
-    #[error("User already exists")]
-    UserExists,
-    #[error("Otp user not found")]
-    NoUser,
-    #[error("Wrong or expired code")]
-    WrongCode,
-    #[error(transparent)]
-    RateLimited(RateLimited),
-    #[error(transparent)]
-    Store(#[from] StoreError),
-}
-
-crate::ratelimit::impl_maybe_rate_limited!(OtpVerifyError, RateLimited);
-
-impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
-    fn emit_otp_code_rejected(&self, address: &str) {
-        self.emit(crate::events::AuthEvent::CodeRejected {
-            channel: crate::events::CodeChannel::EmailOtp,
-            identifier: address.to_string(),
-        });
+    fn send_op(identifier: &str) -> RateLimitOp<'_> {
+        RateLimitOp::EmailSend {
+            address: identifier,
+        }
     }
 
+    fn attempt_op(identifier: &str) -> RateLimitOp<'_> {
+        RateLimitOp::OtpAttempt {
+            address: identifier,
+        }
+    }
+
+    fn generator<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> &dyn crate::codes::CodeGenerator {
+        &*auth.email.code_generator
+    }
+
+    fn challenge_lifetime<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> chrono::Duration {
+        auth.email.challenge_lifetime
+    }
+
+    async fn deliver<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        to: &str,
+        code: &str,
+    ) -> Result<(), SendEmailChallengeError<S::Error>> {
+        let content = auth.email.messages.login_code(code);
+        auth.send_email(to, &content.subject, content.html_body)
+            .await
+    }
+}
+
+impl CodeLoginFlow for EmailOtpFlow {
+    fn offer_login<S: AutheryStore, C: AutheryCookies>(auth: &CoreAuthery<S, C>) -> bool {
+        auth.email.offer_otp
+    }
+
+    fn allow_login_override<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> Option<&Allow> {
+        auth.email.allow_login.as_ref()
+    }
+
+    fn allow_signup_override<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+    ) -> Option<&Allow> {
+        auth.email.allow_signup.as_ref()
+    }
+
+    async fn lookup_user<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        identifier: &str,
+    ) -> Result<Option<(S::User, bool)>, S::Error> {
+        Ok(auth
+            .store
+            .get_user_by_email_address(identifier)
+            .await?
+            .map(|(user, email)| (user, email.get_allow_link_login())))
+    }
+
+    async fn create_user<S: AutheryStore, C: AutheryCookies>(
+        auth: &CoreAuthery<S, C>,
+        identifier: &str,
+    ) -> Result<S::User, S::Error> {
+        Ok(auth.store.create_user_by_email_address(identifier).await?.0)
+    }
+}
+
+impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     /// Send a login code to the address. The generic error message on the
     /// verify side means this deliberately does not reveal whether a user
     /// exists.
@@ -77,15 +119,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: String,
         next: Option<String>,
     ) -> Result<(), OtpInitError<S::Error>> {
-        if !self.email.offer_otp
-            || self.login_allow(self.email.allow_login.as_ref()) == &Allow::Never
-        {
-            return Err(OtpInitError::NotAllowed);
-        }
-
-        self.send_otp_code(address, next).await?;
-
-        Ok(())
+        self.code_init::<EmailOtpFlow>(address, next, Intent::LogIn)
+            .await
     }
 
     /// Send a signup code to the address.
@@ -94,40 +129,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: String,
         next: Option<String>,
     ) -> Result<(), OtpInitError<S::Error>> {
-        if self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never {
-            return Err(OtpInitError::NotAllowed);
-        }
-
-        self.send_otp_code(address, next).await?;
-
-        Ok(())
-    }
-
-    async fn send_otp_code(
-        &self,
-        address: String,
-        next: Option<String>,
-    ) -> Result<(), SendEmailChallengeError<S::Error>> {
-        self.check_rate(RateLimitOp::EmailSend { address: &address })
-            .await
-            .map_err(SendEmailChallengeError::RateLimited)?;
-
-        let digits = self.email.code_generator.generate();
-        // Store the code namespaced per address; mail only the digits.
-        let key = challenge_key(&address, &digits);
-
-        let challenge = self
-            .store
-            .create_challenge(
-                address,
-                key,
-                next,
-                Utc::now() + self.email.challenge_lifetime,
-            )
-            .await?;
-
-        let content = self.email.messages.login_code(&digits);
-        self.send_email(challenge.get_address(), &content.subject, content.html_body)
+        self.code_init::<EmailOtpFlow>(address, next, Intent::SignUp)
             .await
     }
 
@@ -139,32 +141,8 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), OtpVerifyError<S::Error>> {
-        if !self.email.offer_otp
-            || self.login_allow(self.email.allow_login.as_ref()) == &Allow::Never
-        {
-            return Err(OtpVerifyError::NotAllowed);
-        }
-
-        let challenge = self.otp_consume_challenge(address, code).await?;
-
-        let allow_signup = self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::OnEither;
-
-        let user = match self
-            .store
-            .get_user_by_email_address(challenge.get_address())
-            .await?
-        {
-            Some((user, email)) if email.get_allow_link_login() => Ok(user),
-            Some(_) => Err(OtpVerifyError::NotAllowed),
-            None if allow_signup => Ok(self
-                .store
-                .create_user_by_email_address(challenge.get_address())
-                .await?
-                .0),
-            None => Err(OtpVerifyError::NoUser),
-        }?;
-
-        self.otp_log_in(challenge, user).await
+        self.code_verify::<EmailOtpFlow>(address, code, Intent::LogIn)
+            .await
     }
 
     /// Verify a signup code sent to the address, create the user, and log
@@ -175,72 +153,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         address: &str,
         code: &str,
     ) -> Result<(Self, Option<String>), OtpVerifyError<S::Error>> {
-        if self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never {
-            return Err(OtpVerifyError::NotAllowed);
-        }
-
-        let challenge = self.otp_consume_challenge(address, code).await?;
-
-        let allow_login = self.login_allow(self.email.allow_login.as_ref()) == &Allow::OnEither;
-
-        let user = match self
-            .store
-            .get_user_by_email_address(challenge.get_address())
-            .await?
-        {
-            Some((user, email)) if allow_login && email.get_allow_link_login() => Ok(user),
-            Some(_) if allow_login => Err(OtpVerifyError::NotAllowed),
-            Some(_) => Err(OtpVerifyError::UserExists),
-            None => Ok(self
-                .store
-                .create_user_by_email_address(challenge.get_address())
-                .await?
-                .0),
-        }?;
-
-        self.otp_log_in(challenge, user).await
-    }
-
-    async fn otp_consume_challenge(
-        &self,
-        address: &str,
-        code: &str,
-    ) -> Result<S::EmailChallenge, OtpVerifyError<S::Error>> {
-        self.check_rate(RateLimitOp::OtpAttempt { address })
+        self.code_verify::<EmailOtpFlow>(address, code, Intent::SignUp)
             .await
-            .map_err(OtpVerifyError::RateLimited)?;
-
-        let Some(challenge) = self
-            .store
-            .consume_challenge(challenge_key(address, code))
-            .await?
-        else {
-            self.emit_otp_code_rejected(address);
-            return Err(OtpVerifyError::WrongCode);
-        };
-
-        if challenge.get_expires() < Utc::now() {
-            self.emit_otp_code_rejected(address);
-            return Err(OtpVerifyError::WrongCode);
-        }
-
-        Ok(challenge)
-    }
-
-    async fn otp_log_in(
-        self,
-        challenge: S::EmailChallenge,
-        user: S::User,
-    ) -> Result<(Self, Option<String>), OtpVerifyError<S::Error>> {
-        Ok((
-            self.log_in(
-                LoginMethod::Otp {
-                    address: challenge.get_address().to_owned(),
-                },
-                &user.get_id(),
-            )
-            .await?,
-            challenge.get_next().clone(),
-        ))
     }
 }

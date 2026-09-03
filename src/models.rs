@@ -25,6 +25,22 @@ impl Id for Uuid {
     }
 }
 
+/// Whether a flow signs an existing user in or signs a new user up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Intent {
+    LogIn,
+    SignUp,
+}
+
+impl std::fmt::Display for Intent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Intent::LogIn => "Login",
+            Intent::SignUp => "Signup",
+        })
+    }
+}
+
 /// Used to control if the method (like email, password, oauth) or specific oauth provider
 /// can be used for either logging in, signing up, both, or none
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]

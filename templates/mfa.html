@@ -47,6 +47,7 @@
     {% if let Some(webauthn) = webauthn %}
     <button type="button" id="mfa-passkey-button" class="btn btn-secondary prov"{% if let Some(next) = next %} data-next="{{ next }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Use a passkey</button>
     <p class="notice notice-error" id="mfa-passkey-error" role="alert" style="display: none; margin: 0;"></p>
+    {% include "passkey-js.html" %}
     <script>
       (function () {
         function fail(e) {
@@ -54,44 +55,15 @@
           el.textContent = 'Passkey verification failed: ' + e;
           el.style.display = 'block';
         }
-        document.getElementById('mfa-passkey-button').addEventListener('click', async function () {
-          try {
-            var res = await fetch('{{ webauthn.start_route }}', { method: 'POST' });
-            var rcr = await res.json();
-            if (!res.ok) { return fail(rcr.error || res.status); }
-            var pk = rcr.publicKey;
-            pk.challenge = fromB64url(pk.challenge);
-            if (pk.allowCredentials) {
-              pk.allowCredentials = pk.allowCredentials.map(function (c) {
-                c.id = fromB64url(c.id); return c;
-              });
-            }
-            var cred = await navigator.credentials.get({ publicKey: pk });
-            var body = {
-              id: cred.id,
-              rawId: toB64url(cred.rawId),
-              type: cred.type,
-              extensions: cred.getClientExtensionResults(),
-              response: {
-                authenticatorData: toB64url(cred.response.authenticatorData),
-                clientDataJSON: toB64url(cred.response.clientDataJSON),
-                signature: toB64url(cred.response.signature),
-                userHandle: cred.response.userHandle ? toB64url(cred.response.userHandle) : null
-              }
-            };
-            var trust = document.getElementById('trust-device');
-            var finishUrl = '{{ webauthn.finish_route }}' + (trust && trust.checked ? '?trust_device=1' : '');
-            var fin = await fetch(finishUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body)
-            });
-            var out = await fin.json();
-            if (fin.ok) {
+        document.getElementById('mfa-passkey-button').addEventListener('click', function () {
+          var trust = document.getElementById('trust-device');
+          var finishUrl = '{{ webauthn.finish_route }}' + (trust && trust.checked ? '?trust_device=1' : '');
+          passkeyGet('{{ webauthn.start_route }}', finishUrl)
+            .then(function (out) {
               var btn = document.getElementById('mfa-passkey-button');
               window.location = btn.dataset.next || out.next || '/';
-            } else { fail(out.error || fin.status); }
-          } catch (e) { fail(e); }
+            })
+            .catch(fail);
         });
       })();
     </script>

@@ -89,23 +89,14 @@
   <div class="caps text-muted kicker">Or continue with</div>
   {% endif %}
 
-  {% if let Some(oauth) = oauth %}
-  <div class="grid-2">
-    {% for provider in oauth.providers %}
-    <form action="{{ oauth.action_route }}" method="post">
-      <input type="hidden" name="provider" value="{{ provider.name }}" />
-      {% include "next-hidden.html" %}
-      <button type="submit" class="btn btn-secondary prov"><span class="mono">{{ provider.display_name.chars().next().unwrap_or('•') }}</span>{{ provider.display_name }}</button>
-    </form>
-    {% endfor %}
-  </div>
-  {% endif %}
+  {% include "oauth-grid.html" %}
 
   {% if let Some(webauthn) = webauthn %}
   <div class="stack" style="margin-top: var(--space-2);">
     <button type="button" id="passkey-login-button" class="btn btn-secondary prov"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Passkey on this device</button>
     <p class="notice notice-error" id="passkey-login-error" role="alert" style="display: none;"></p>
   </div>
+  {% include "passkey-js.html" %}
   <script>
     (function () {
       function fail(e) {
@@ -113,39 +104,10 @@
         el.textContent = 'Passkey login failed: ' + e;
         el.style.display = 'block';
       }
-      document.getElementById('passkey-login-button').addEventListener('click', async function () {
-        try {
-          var res = await fetch('{{ webauthn.start_route }}', { method: 'POST' });
-          var rcr = await res.json();
-          if (!res.ok) { return fail(rcr.error || res.status); }
-          var pk = rcr.publicKey;
-          pk.challenge = fromB64url(pk.challenge);
-          if (pk.allowCredentials) {
-            pk.allowCredentials = pk.allowCredentials.map(function (c) {
-              c.id = fromB64url(c.id); return c;
-            });
-          }
-          var cred = await navigator.credentials.get({ publicKey: pk });
-          var body = {
-            id: cred.id,
-            rawId: toB64url(cred.rawId),
-            type: cred.type,
-            extensions: cred.getClientExtensionResults(),
-            response: {
-              authenticatorData: toB64url(cred.response.authenticatorData),
-              clientDataJSON: toB64url(cred.response.clientDataJSON),
-              signature: toB64url(cred.response.signature),
-              userHandle: cred.response.userHandle ? toB64url(cred.response.userHandle) : null
-            }
-          };
-          var fin = await fetch('{{ webauthn.finish_route }}', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          });
-          var out = await fin.json();
-          if (fin.ok) { window.location = out.next || '/'; } else { fail(out.error || fin.status); }
-        } catch (e) { fail(e); }
+      document.getElementById('passkey-login-button').addEventListener('click', function () {
+        passkeyGet('{{ webauthn.start_route }}', '{{ webauthn.finish_route }}')
+          .then(function (out) { window.location = out.next || '/'; })
+          .catch(fail);
       });
     })();
   </script>

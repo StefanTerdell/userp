@@ -331,3 +331,148 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         Ok(())
     }
 }
+
+/// Consume-or-expiry failure for an emailed challenge.
+#[derive(Debug, Error)]
+pub enum EmailChallengeError<StoreError: std::error::Error> {
+    #[error("Challenge expired")]
+    Expired { address: String },
+    #[error("Challenge not found")]
+    NotFound,
+    #[error(transparent)]
+    Store(#[from] StoreError),
+}
+
+#[derive(Debug, Error)]
+pub enum EmailLinkInitError<StoreError: std::error::Error> {
+    #[error(transparent)]
+    SendingEmail(#[from] SendEmailChallengeError<StoreError>),
+    #[error("{0} not allowed")]
+    NotAllowed(crate::models::Intent),
+}
+
+impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailLinkInitError<E> {
+    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
+        match self {
+            Self::SendingEmail(inner) => inner.rate_limited(),
+            Self::NotAllowed(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum EmailSignCallbackError<StoreError: std::error::Error> {
+    #[error("{0} not allowed")]
+    NotAllowed(crate::models::Intent),
+    #[error("Challenge expired")]
+    ChallengeExpired { address: String },
+    #[error("Challenge not found")]
+    ChallengeNotFound,
+    #[error(transparent)]
+    Resolve(crate::code_flow::ResolveUserError<StoreError>),
+    #[error(transparent)]
+    Store(StoreError),
+}
+
+impl<E: std::error::Error> From<EmailChallengeError<E>> for EmailSignCallbackError<E> {
+    fn from(err: EmailChallengeError<E>) -> Self {
+        match err {
+            EmailChallengeError::Expired { address } => Self::ChallengeExpired { address },
+            EmailChallengeError::NotFound => Self::ChallengeNotFound,
+            EmailChallengeError::Store(inner) => Self::Store(inner),
+        }
+    }
+}
+
+impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    /// Consume an emailed challenge and check its expiry.
+    pub(crate) async fn consume_email_challenge(
+        &self,
+        code: String,
+    ) -> Result<S::EmailChallenge, EmailChallengeError<S::Error>> {
+        let Some(challenge) = self.store.consume_challenge(code).await? else {
+            return Err(EmailChallengeError::NotFound);
+        };
+
+        if challenge.get_expires() < Utc::now() {
+            return Err(EmailChallengeError::Expired {
+                address: challenge.get_address().to_owned(),
+            });
+        }
+
+        Ok(challenge)
+    }
+
+    /// Whether emailed links serve this intent under the current policies.
+    fn email_link_allowed(&self, intent: crate::models::Intent) -> bool {
+        use crate::models::{Allow, Intent};
+
+        self.email.offer_links
+            && match intent {
+                Intent::LogIn => self.login_allow(self.email.allow_login.as_ref()) != &Allow::Never,
+                Intent::SignUp => {
+                    self.signup_allow(self.email.allow_signup.as_ref()) != &Allow::Never
+                }
+            }
+    }
+
+    /// Send a login or signup link to the address.
+    pub(crate) async fn email_sign_init(
+        &self,
+        intent: crate::models::Intent,
+        email: String,
+        next: Option<String>,
+    ) -> Result<(), EmailLinkInitError<S::Error>> {
+        use crate::models::Intent;
+
+        if !self.email_link_allowed(intent) {
+            return Err(EmailLinkInitError::NotAllowed(intent));
+        }
+
+        let (route, kind) = match intent {
+            Intent::LogIn => (self.routes.email.login_email.clone(), EmailLinkKind::LogIn),
+            Intent::SignUp => (
+                self.routes.email.signup_email.clone(),
+                EmailLinkKind::SignUp,
+            ),
+        };
+
+        self.send_email_challenge(route, email, kind, next).await?;
+
+        Ok(())
+    }
+
+    /// Verify a link challenge and log the user in - creating the user or
+    /// crossing over to login when the intent and policy allow it.
+    pub(crate) async fn email_sign_callback(
+        self,
+        intent: crate::models::Intent,
+        code: String,
+    ) -> Result<(Self, Option<String>), EmailSignCallbackError<S::Error>> {
+        use crate::models::User;
+
+        if !self.email_link_allowed(intent) {
+            return Err(EmailSignCallbackError::NotAllowed(intent));
+        }
+
+        let challenge = self.consume_email_challenge(code).await?;
+
+        // Links resolve users exactly like the email code channel does.
+        let user = self
+            .resolve_user::<otp::EmailOtpFlow>(challenge.get_address(), intent)
+            .await
+            .map_err(EmailSignCallbackError::Resolve)?;
+
+        Ok((
+            self.log_in(
+                crate::models::LoginMethod::Email {
+                    address: challenge.get_address().to_owned(),
+                },
+                &user.get_id(),
+            )
+            .await
+            .map_err(EmailSignCallbackError::Store)?,
+            challenge.get_next().clone(),
+        ))
+    }
+}

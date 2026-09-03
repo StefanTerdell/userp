@@ -5,7 +5,7 @@ pub mod provider;
 pub mod refresh;
 pub mod signup;
 
-use crate::models::Allow;
+use crate::models::{Allow, Intent, LoginMethod, User, oauth::OAuthToken};
 use crate::{
     core::CoreAuthery,
     models::{
@@ -16,10 +16,8 @@ use crate::{
 };
 
 use self::link::OAuthLinkCallbackError;
-use self::login::OAuthLoginCallbackError;
 use self::provider::OAuthProvider;
 use self::refresh::OAuthRefreshCallbackError;
-use self::signup::OAuthSignupCallbackError;
 
 use chrono::Utc;
 use oauth2::ExtraTokenFields;
@@ -231,14 +229,36 @@ pub enum OAuthCallbackError {
     ExchangeAuthorizationCodeError(#[from] anyhow::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum OAuthInitError {
+    #[error("{0} not allowed")]
+    NotAllowed(Intent),
+    #[error("No provider found with name: {0}")]
+    ProviderNotFound(String),
+}
+
+#[derive(Error, Debug)]
+pub enum OAuthSignCallbackError<StoreError: std::error::Error> {
+    #[error(transparent)]
+    OAuthCallbackError(#[from] OAuthCallbackError),
+    #[error("Expected a {0} flow, got {1}")]
+    UnexpectedFlow(Intent, OAuthFlow),
+    #[error("User doesn't exists")]
+    NoUser,
+    #[error("User already exists")]
+    UserExists,
+    #[error(transparent)]
+    Store(StoreError),
+}
+
 #[derive(Error, Debug)]
 pub enum OAuthGenericCallbackError<StoreError: std::error::Error> {
     #[error(transparent)]
     Callback(#[from] OAuthCallbackError),
     #[error(transparent)]
-    Signup(#[from] OAuthSignupCallbackError<StoreError>),
+    Signup(OAuthSignCallbackError<StoreError>),
     #[error(transparent)]
-    Login(#[from] OAuthLoginCallbackError<StoreError>),
+    Login(OAuthSignCallbackError<StoreError>),
     #[error(transparent)]
     Link(#[from] OAuthLinkCallbackError<StoreError>),
     #[error(transparent)]
@@ -349,6 +369,120 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         }
     }
 
+    /// The effective policy for a provider under an intent: the provider
+    /// override, then the config override, then the global default.
+    pub(crate) fn oauth_allow(&self, provider: &dyn OAuthProvider, intent: Intent) -> Allow {
+        match intent {
+            Intent::LogIn => *self.login_allow(
+                provider
+                    .allow_login()
+                    .as_ref()
+                    .or(self.oauth.allow_login.as_ref()),
+            ),
+            Intent::SignUp => *self.signup_allow(
+                provider
+                    .allow_signup()
+                    .as_ref()
+                    .or(self.oauth.allow_signup.as_ref()),
+            ),
+        }
+    }
+
+    /// The providers offered for the intent under the current policies.
+    pub(crate) fn oauth_sign_providers(&self, intent: Intent) -> Vec<&Arc<dyn OAuthProvider>> {
+        self.oauth
+            .providers
+            .0
+            .iter()
+            .filter(|provider| self.oauth_allow(provider.as_ref(), intent) != Allow::Never)
+            .collect()
+    }
+
+    /// Begin a login or signup flow: resolve the provider (through the app's
+    /// resolver when a context is given), gate on the policy, and stash the
+    /// flow in the state cookie.
+    pub(crate) async fn oauth_sign_init(
+        self,
+        intent: Intent,
+        provider_name: String,
+        context: Option<String>,
+        next: Option<String>,
+    ) -> Result<(Self, Url), OAuthInitError> {
+        let provider = self
+            .oauth_resolve_provider(context.as_deref(), &provider_name)
+            .await
+            .map_err(|_| OAuthInitError::ProviderNotFound(provider_name))?;
+
+        if self.oauth_allow(provider.as_ref(), intent) == Allow::Never {
+            return Err(OAuthInitError::NotAllowed(intent));
+        }
+
+        let flow = match intent {
+            Intent::LogIn => OAuthFlow::LogIn { next, context },
+            Intent::SignUp => OAuthFlow::SignUp { next, context },
+        };
+
+        Ok(self.oauth_init(provider, flow).await)
+    }
+
+    /// Complete a login or signup flow: resolve or create the user behind
+    /// the exchanged token and log them in.
+    pub(crate) async fn oauth_sign_callback_inner(
+        self,
+        intent: Intent,
+        provider: Arc<dyn OAuthProvider>,
+        unmatched_token: UnmatchedOAuthToken,
+        flow: OAuthFlow,
+    ) -> Result<(Self, Option<String>), OAuthSignCallbackError<S::Error>> {
+        let next = match (intent, flow) {
+            (Intent::LogIn, OAuthFlow::LogIn { next, .. }) => next,
+            (Intent::SignUp, OAuthFlow::SignUp { next, .. }) => next,
+            (intent, flow) => return Err(OAuthSignCallbackError::UnexpectedFlow(intent, flow)),
+        };
+
+        // Crossing over (logging in a fresh user, signing up an existing
+        // one) is allowed when the opposite intent's policy is `OnEither`.
+        let cross_allowed = self.oauth_allow(
+            provider.as_ref(),
+            match intent {
+                Intent::LogIn => Intent::SignUp,
+                Intent::SignUp => Intent::LogIn,
+            },
+        ) == Allow::OnEither;
+
+        let existing = self
+            .store
+            .get_user_by_unmatched_token(unmatched_token.clone())
+            .await
+            .map_err(OAuthSignCallbackError::Store)?;
+
+        let (user, token) = match (existing, intent) {
+            (Some(user_token), Intent::LogIn) => user_token,
+            (Some(user_token), Intent::SignUp) if cross_allowed => user_token,
+            (Some(_), Intent::SignUp) => return Err(OAuthSignCallbackError::UserExists),
+            (None, Intent::LogIn) if !cross_allowed => {
+                return Err(OAuthSignCallbackError::NoUser);
+            }
+            (None, _) => self
+                .store
+                .create_user_from_unmatched_token(unmatched_token)
+                .await
+                .map_err(OAuthSignCallbackError::Store)?,
+        };
+
+        Ok((
+            self.log_in(
+                LoginMethod::OAuth {
+                    token_id: token.get_id().to_string(),
+                },
+                &user.get_id(),
+            )
+            .await
+            .map_err(OAuthSignCallbackError::Store)?,
+            next,
+        ))
+    }
+
     /// Complete any OAuth flow: the flow type, provider and PKCE/nonce
     /// material all come from the encrypted state cookie selected by `state`.
     #[must_use = "Don't forget to return the auth session as part of the response!"]
@@ -368,14 +502,14 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         };
 
         Ok(match &flow {
-            OAuthFlow::LogIn { .. } => {
-                self.oauth_login_callback_inner(provider, unmatched_token, flow)
-                    .await?
-            }
-            OAuthFlow::SignUp { .. } => {
-                self.oauth_signup_callback_inner(provider, unmatched_token, flow)
-                    .await?
-            }
+            OAuthFlow::LogIn { .. } => self
+                .oauth_sign_callback_inner(Intent::LogIn, provider, unmatched_token, flow)
+                .await
+                .map_err(OAuthGenericCallbackError::Login)?,
+            OAuthFlow::SignUp { .. } => self
+                .oauth_sign_callback_inner(Intent::SignUp, provider, unmatched_token, flow)
+                .await
+                .map_err(OAuthGenericCallbackError::Signup)?,
             OAuthFlow::Link { .. } => {
                 let next = self
                     .oauth_link_callback_inner(provider, unmatched_token, flow)

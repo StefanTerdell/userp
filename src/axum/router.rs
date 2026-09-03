@@ -289,6 +289,69 @@ where
     Ok((auth, Redirect::to(&next)).into_response())
 }
 
+/// One code-flow POST step: without `code` it sends a code to the identifier,
+/// with one it verifies it and completes the login. An empty `code` counts as
+/// absent.
+#[cfg(any(feature = "email", feature = "sms"))]
+pub(crate) async fn post_code_flow<St, Ch>(
+    auth: crate::axum::AxumAuthery<St>,
+    identifier: String,
+    code: Option<String>,
+    next: Option<String>,
+    intent: crate::models::Intent,
+    action_route: String,
+    method: &str,
+) -> Result<axum::response::Response, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+    Ch: crate::code_flow::CodeLoginFlow,
+{
+    use crate::code_flow::{CodeInitError, CodeVerifyError};
+    use crate::models::Intent;
+
+    let routes = auth.routes.clone();
+    let page = match intent {
+        Intent::LogIn => &routes.pages.login,
+        Intent::SignUp => &routes.pages.signup,
+    };
+
+    match code.filter(|code| !code.is_empty()) {
+        None => match auth
+            .code_init::<Ch>(identifier.clone(), next.clone(), intent)
+            .await
+        {
+            Ok(()) => Ok(Redirect::to(&format!(
+                "{action_route}?address={}&message=Code sent!",
+                urlencoding::encode(&identifier)
+            ))
+            .into_response()),
+            Err(CodeInitError::Store(err)) => Err(err),
+            Err(err) => Ok(Redirect::to(&error_redirect(
+                &routes,
+                &err,
+                &with_method(page, method),
+                next.as_deref(),
+            ))
+            .into_response()),
+        },
+        Some(code) => match auth.code_verify::<Ch>(&identifier, &code, intent).await {
+            Ok((auth, next)) => complete_login(auth, next).await,
+            Err(CodeVerifyError::Store(err)) => Err(err),
+            Err(err) => Ok(Redirect::to(&error_redirect(
+                &routes,
+                &err,
+                &format!(
+                    "{action_route}?address={}",
+                    urlencoding::encode(&identifier)
+                ),
+                next.as_deref(),
+            ))
+            .into_response()),
+        },
+    }
+}
+
 /// A `{ "error": … }` JSON body with the given status.
 #[cfg(feature = "webauthn")]
 pub(crate) fn json_error(

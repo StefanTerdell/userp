@@ -1,0 +1,11 @@
+{% if let Some(oauth) = oauth %}
+<div class="grid-2">
+  {% for provider in oauth.providers %}
+  <form action="{{ oauth.action_route }}" method="post">
+    <input type="hidden" name="provider" value="{{ provider.name }}" />
+    {% include "next-hidden.html" %}
+    <button type="submit" class="btn btn-secondary prov"><span class="mono">{{ provider.display_name.chars().next().unwrap_or('•') }}</span>{{ provider.display_name }}</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}

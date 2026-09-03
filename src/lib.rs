@@ -457,6 +457,8 @@
 #![cfg_attr(not(feature = "default"), allow(unused))]
 
 #[cfg(any(feature = "email", feature = "sms"))]
+pub mod code_flow;
+#[cfg(any(feature = "email", feature = "sms"))]
 pub mod codes;
 pub mod config;
 pub mod cookie_names;

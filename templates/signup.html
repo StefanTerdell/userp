@@ -84,18 +84,10 @@
   </div>
   {% endif %}
 
-  {% if let Some(oauth) = oauth %}
+  {% if oauth.is_some() %}
   <div class="caps text-muted kicker">Or continue with</div>
-  <div class="grid-2">
-    {% for provider in oauth.providers %}
-    <form action="{{ oauth.action_route }}" method="post">
-      <input type="hidden" name="provider" value="{{ provider.name }}" />
-      {% include "next-hidden.html" %}
-      <button type="submit" class="btn btn-secondary prov"><span class="mono">{{ provider.display_name.chars().next().unwrap_or('•') }}</span>{{ provider.display_name }}</button>
-    </form>
-    {% endfor %}
-  </div>
   {% endif %}
+  {% include "oauth-grid.html" %}
 
   <div class="foot text-muted">Already registered? <a href="{{ login_route }}">Sign in</a></div>
 </div>

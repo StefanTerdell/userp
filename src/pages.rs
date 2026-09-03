@@ -500,6 +500,106 @@ impl From<&crate::models::PasskeyRecord> for TemplatePasskey {
     }
 }
 
+/// The method panels shared by the login and signup pages.
+struct AuthMethodViews<'a> {
+    password: Option<TemplatePasswordInfo<'a>>,
+    email: Option<TemplateEmailInfo<'a>>,
+    otp: Option<TemplateOtpInfo<'a>>,
+    sms: Option<TemplateSmsInfo<'a>>,
+    oauth: Option<TemplateOAuthInfo<'a>>,
+}
+
+impl<'a> AuthMethodViews<'a> {
+    fn with<S: AutheryStore, C: AutheryCookies>(
+        auth: &'a CoreAuthery<S, C>,
+        intent: crate::models::Intent,
+    ) -> Self {
+        use crate::models::Intent;
+
+        // Some features never read `intent`.
+        let _ = intent;
+
+        Self {
+            #[cfg(feature = "password")]
+            password: Some(TemplatePasswordInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.password.login_password,
+                    Intent::SignUp => &auth.routes.password.signup_password,
+                },
+                #[cfg(feature = "email")]
+                reset_route: Some(&auth.routes.pages.password_send_reset),
+                #[cfg(not(feature = "email"))]
+                reset_route: None,
+                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
+                pattern_hint: auth
+                    .pass
+                    .pattern
+                    .as_ref()
+                    .and_then(|p| p.hint().map(str::to_owned)),
+            }),
+            #[cfg(not(feature = "password"))]
+            password: None,
+            #[cfg(feature = "email")]
+            email: auth.email.offer_links.then(|| TemplateEmailInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.email.login_email,
+                    Intent::SignUp => &auth.routes.email.signup_email,
+                },
+            }),
+            #[cfg(not(feature = "email"))]
+            email: None,
+            #[cfg(feature = "email")]
+            otp: auth.email.offer_otp.then(|| TemplateOtpInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.email.login_otp,
+                    Intent::SignUp => &auth.routes.email.signup_otp,
+                },
+            }),
+            #[cfg(not(feature = "email"))]
+            otp: None,
+            #[cfg(feature = "sms")]
+            sms: Some(TemplateSmsInfo {
+                action_route: match intent {
+                    Intent::LogIn => &auth.routes.sms.login_sms,
+                    Intent::SignUp => &auth.routes.sms.signup_sms,
+                },
+            }),
+            #[cfg(not(feature = "sms"))]
+            sms: None,
+            #[cfg(feature = "oauth")]
+            oauth: {
+                let providers = auth.oauth_sign_providers(intent);
+                let action_route = match intent {
+                    Intent::LogIn => &auth.routes.oauth.login_oauth,
+                    Intent::SignUp => &auth.routes.oauth.signup_oauth,
+                };
+                (!providers.is_empty()).then(|| TemplateOAuthInfo {
+                    providers: providers.into_iter().map(|p| p.into()).collect(),
+                    action_route,
+                })
+            },
+            #[cfg(not(feature = "oauth"))]
+            oauth: None,
+        }
+    }
+
+    /// Which method panel starts selected, honoring the request when that
+    /// method is offered.
+    fn selected_method(&self, requested: Option<&str>) -> &'static str {
+        match requested {
+            Some("password") if self.password.is_some() => "password",
+            Some("otp") if self.otp.is_some() => "otp",
+            Some("email") if self.email.is_some() => "email",
+            Some("sms") if self.sms.is_some() => "sms",
+            _ if self.password.is_some() => "password",
+            _ if self.otp.is_some() => "otp",
+            _ if self.email.is_some() => "email",
+            _ if self.sms.is_some() => "sms",
+            _ => "",
+        }
+    }
+}
+
 #[derive(Template)]
 #[template(path = "login.html")]
 pub struct LoginTemplate<'a> {
@@ -532,47 +632,17 @@ impl LoginTemplate<'_> {
         error: Option<&'a str>,
         method: Option<&str>,
     ) -> LoginTemplate<'a> {
-        #[cfg(feature = "oauth")]
-        let oauth_login_providers = auth.oauth_login_providers();
+        let methods = AuthMethodViews::with(auth, crate::models::Intent::LogIn);
+        let selected_method = methods.selected_method(method);
 
-        let mut view = LoginTemplate {
+        LoginTemplate {
             next,
             message,
             error,
-            #[cfg(feature = "password")]
-            password: Some(TemplatePasswordInfo {
-                action_route: &auth.routes.password.login_password,
-                #[cfg(feature = "email")]
-                reset_route: Some(&auth.routes.pages.password_send_reset),
-                #[cfg(not(feature = "email"))]
-                reset_route: None,
-                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
-                pattern_hint: auth
-                    .pass
-                    .pattern
-                    .as_ref()
-                    .and_then(|p| p.hint().map(str::to_owned)),
-            }),
-            #[cfg(not(feature = "password"))]
-            password: None,
-            #[cfg(feature = "email")]
-            email: auth.email.offer_links.then(|| TemplateEmailInfo {
-                action_route: &auth.routes.email.login_email,
-            }),
-            #[cfg(not(feature = "email"))]
-            email: None,
-            #[cfg(feature = "email")]
-            otp: auth.email.offer_otp.then(|| TemplateOtpInfo {
-                action_route: &auth.routes.email.login_otp,
-            }),
-            #[cfg(not(feature = "email"))]
-            otp: None,
-            #[cfg(feature = "sms")]
-            sms: Some(TemplateSmsInfo {
-                action_route: &auth.routes.sms.login_sms,
-            }),
-            #[cfg(not(feature = "sms"))]
-            sms: None,
+            password: methods.password,
+            email: methods.email,
+            otp: methods.otp,
+            sms: methods.sms,
             #[cfg(feature = "webauthn")]
             webauthn: Some(TemplateWebauthnInfo {
                 start_route: &auth.routes.webauthn.login_webauthn_start,
@@ -580,37 +650,10 @@ impl LoginTemplate<'_> {
             }),
             #[cfg(not(feature = "webauthn"))]
             webauthn: None,
-            #[cfg(feature = "oauth")]
-            oauth: ({
-                if oauth_login_providers.is_empty() {
-                    None
-                } else {
-                    Some(TemplateOAuthInfo {
-                        providers: oauth_login_providers
-                            .into_iter()
-                            .map(|p| p.into())
-                            .collect(),
-                        action_route: &auth.routes.oauth.login_oauth,
-                    })
-                }
-            }),
-            #[cfg(not(feature = "oauth"))]
-            oauth: None,
+            oauth: methods.oauth,
             signup_route: &auth.routes.pages.signup,
-            selected_method: "",
-        };
-        view.selected_method = match method {
-            Some("password") if view.password.is_some() => "password",
-            Some("otp") if view.otp.is_some() => "otp",
-            Some("email") if view.email.is_some() => "email",
-            Some("sms") if view.sms.is_some() => "sms",
-            _ if view.password.is_some() => "password",
-            _ if view.otp.is_some() => "otp",
-            _ if view.email.is_some() => "email",
-            _ if view.sms.is_some() => "sms",
-            _ => "",
-        };
-        view
+            selected_method,
+        }
     }
 
     pub fn render_with<S: AutheryStore, C: AutheryCookies>(
@@ -650,78 +693,21 @@ impl SignupTemplate<'_> {
         error: Option<&'a str>,
         method: Option<&str>,
     ) -> SignupTemplate<'a> {
-        #[cfg(feature = "oauth")]
-        let oauth_signup_providers = auth.oauth_signup_providers();
+        let methods = AuthMethodViews::with(auth, crate::models::Intent::SignUp);
+        let selected_method = methods.selected_method(method);
 
-        let mut view = SignupTemplate {
+        SignupTemplate {
             next,
             message,
             error,
-            #[cfg(feature = "password")]
-            password: Some(TemplatePasswordInfo {
-                action_route: &auth.routes.password.signup_password,
-                #[cfg(feature = "email")]
-                reset_route: Some(&auth.routes.pages.password_send_reset),
-                #[cfg(not(feature = "email"))]
-                reset_route: None,
-                pattern: auth.pass.pattern.as_ref().map(|p| p.pattern().to_owned()),
-                pattern_hint: auth
-                    .pass
-                    .pattern
-                    .as_ref()
-                    .and_then(|p| p.hint().map(str::to_owned)),
-            }),
-            #[cfg(not(feature = "password"))]
-            password: None,
-            #[cfg(feature = "email")]
-            email: auth.email.offer_links.then(|| TemplateEmailInfo {
-                action_route: &auth.routes.email.signup_email,
-            }),
-            #[cfg(not(feature = "email"))]
-            email: None,
-            #[cfg(feature = "email")]
-            otp: auth.email.offer_otp.then(|| TemplateOtpInfo {
-                action_route: &auth.routes.email.signup_otp,
-            }),
-            #[cfg(not(feature = "email"))]
-            otp: None,
-            #[cfg(feature = "sms")]
-            sms: Some(TemplateSmsInfo {
-                action_route: &auth.routes.sms.signup_sms,
-            }),
-            #[cfg(not(feature = "sms"))]
-            sms: None,
-            #[cfg(feature = "oauth")]
-            oauth: ({
-                if oauth_signup_providers.is_empty() {
-                    None
-                } else {
-                    Some(TemplateOAuthInfo {
-                        providers: oauth_signup_providers
-                            .into_iter()
-                            .map(|p| p.into())
-                            .collect(),
-                        action_route: &auth.routes.oauth.signup_oauth,
-                    })
-                }
-            }),
-            #[cfg(not(feature = "oauth"))]
-            oauth: None,
+            password: methods.password,
+            email: methods.email,
+            otp: methods.otp,
+            sms: methods.sms,
+            oauth: methods.oauth,
             login_route: &auth.routes.pages.login,
-            selected_method: "",
-        };
-        view.selected_method = match method {
-            Some("password") if view.password.is_some() => "password",
-            Some("otp") if view.otp.is_some() => "otp",
-            Some("email") if view.email.is_some() => "email",
-            Some("sms") if view.sms.is_some() => "sms",
-            _ if view.password.is_some() => "password",
-            _ if view.otp.is_some() => "otp",
-            _ if view.email.is_some() => "email",
-            _ if view.sms.is_some() => "sms",
-            _ => "",
-        };
-        view
+            selected_method,
+        }
     }
 
     pub fn render_with<S: AutheryStore, C: AutheryCookies>(

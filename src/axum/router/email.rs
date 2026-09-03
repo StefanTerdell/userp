@@ -1,11 +1,11 @@
 use crate::{
     axum::AxumAuthery,
+    code_flow::ResolveUserError,
     email::{
-        SendEmailChallengeError,
-        login::{EmailLoginCallbackError, EmailLoginError, EmailLoginInitError},
-        signup::{EmailSignupCallbackError, EmailSignupInitError},
+        EmailLinkInitError, EmailSignCallbackError, SendEmailChallengeError,
         verify::{EmailVerifyCallbackError, EmailVerifyInitError},
     },
+    models::Intent,
     store::AutheryStore,
 };
 use axum::extract::Query;
@@ -65,6 +65,72 @@ pub struct NewPasswordForm {
     pub new_password: String,
 }
 
+/// Send a login or signup link and land on the "check your inbox" page.
+async fn post_sign_email<St>(
+    auth: AxumAuthery<St>,
+    email: String,
+    next: Option<String>,
+    intent: Intent,
+) -> Result<axum::response::Response, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    let routes = auth.routes.clone();
+    let (purpose, page) = match intent {
+        Intent::LogIn => ("login", &routes.pages.login),
+        Intent::SignUp => ("signup", &routes.pages.signup),
+    };
+
+    match auth
+        .email_sign_init(intent, email.clone(), next.clone())
+        .await
+    {
+        Ok(()) => Ok(
+            Redirect::to(&email_sent_url(&routes, purpose, &email, next.as_deref()))
+                .into_response(),
+        ),
+        Err(EmailLinkInitError::SendingEmail(SendEmailChallengeError::Store(err))) => Err(err),
+        Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
+            &routes,
+            &err,
+            &crate::axum::router::with_method(page, "email"),
+            next.as_deref(),
+        ))
+        .into_response()),
+    }
+}
+
+/// Complete an emailed login or signup link.
+async fn get_sign_email<St>(
+    auth: AxumAuthery<St>,
+    code: String,
+    intent: Intent,
+) -> Result<axum::response::Response, St::Error>
+where
+    St: AutheryStore,
+    St::Error: IntoResponse,
+{
+    let routes = auth.routes.clone();
+    let (purpose, page) = match intent {
+        Intent::LogIn => ("login", &routes.pages.login),
+        Intent::SignUp => ("signup", &routes.pages.signup),
+    };
+
+    match auth.email_sign_callback(intent, code).await {
+        Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
+        Err(EmailSignCallbackError::Store(err))
+        | Err(EmailSignCallbackError::Resolve(ResolveUserError::Store(err))) => Err(err),
+        Err(EmailSignCallbackError::ChallengeExpired { address }) => {
+            Ok(Redirect::to(&email_expired_url(&routes, purpose, &address)).into_response())
+        }
+        Err(err) => {
+            let next = format!("{page}?error={}", urlencoding::encode(&err.to_string()));
+            Ok(Redirect::to(&next).into_response())
+        }
+    }
+}
+
 pub(crate) async fn post_login_email<St>(
     auth: AxumAuthery<St>,
     Form(EmailNextForm { email, next }): Form<EmailNextForm>,
@@ -73,24 +139,7 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let routes = auth.routes.clone();
-
-    match auth.email_login_init(email.clone(), next.clone()).await {
-        Ok(()) => Ok(
-            Redirect::to(&email_sent_url(&routes, "login", &email, next.as_deref()))
-                .into_response(),
-        ),
-        Err(err) => match err {
-            EmailLoginInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
-            _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
-                &routes,
-                &err,
-                &crate::axum::router::with_method(&routes.pages.login, "email"),
-                next.as_deref(),
-            ))
-            .into_response()),
-        },
-    }
+    post_sign_email(auth, email, next, Intent::LogIn).await
 }
 
 pub(crate) async fn get_login_email<St>(
@@ -101,26 +150,7 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let login_route = auth.routes.pages.login.clone();
-    let routes = auth.routes.clone();
-
-    match auth.email_login_callback(code).await {
-        Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
-        Err(err) => match err {
-            EmailLoginCallbackError::Store(err) => Err(err),
-            EmailLoginCallbackError::EmailLoginError(EmailLoginError::Store(err)) => Err(err),
-            EmailLoginCallbackError::ChallengeExpired { address } => {
-                Ok(Redirect::to(&email_expired_url(&routes, "login", &address)).into_response())
-            }
-            _ => {
-                let next = format!(
-                    "{login_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
-        },
-    }
+    get_sign_email(auth, code, Intent::LogIn).await
 }
 
 pub(crate) async fn post_signup_email<St>(
@@ -131,24 +161,7 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let routes = auth.routes.clone();
-
-    match auth.email_signup_init(email.clone(), next.clone()).await {
-        Ok(()) => Ok(
-            Redirect::to(&email_sent_url(&routes, "signup", &email, next.as_deref()))
-                .into_response(),
-        ),
-        Err(err) => match err {
-            EmailSignupInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
-            _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
-                &routes,
-                &err,
-                &crate::axum::router::with_method(&routes.pages.signup, "email"),
-                next.as_deref(),
-            ))
-            .into_response()),
-        },
-    }
+    post_sign_email(auth, email, next, Intent::SignUp).await
 }
 
 pub(crate) async fn get_signup_email<St>(
@@ -159,25 +172,7 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    let signup_route = auth.routes.pages.signup.clone();
-    let routes = auth.routes.clone();
-
-    match auth.email_signup_callback(code).await {
-        Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
-        Err(err) => match err {
-            EmailSignupCallbackError::Store(err) => Err(err),
-            EmailSignupCallbackError::ChallengeExpired { address } => {
-                Ok(Redirect::to(&email_expired_url(&routes, "signup", &address)).into_response())
-            }
-            _ => {
-                let next = format!(
-                    "{signup_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Ok(Redirect::to(&next).into_response())
-            }
-        },
-    }
+    get_sign_email(auth, code, Intent::SignUp).await
 }
 
 pub(crate) async fn get_user_email_verify<St>(

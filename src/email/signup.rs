@@ -1,131 +1,30 @@
-use super::SendEmailChallengeError;
-use crate::models::{Allow, LoginMethod};
+use super::{EmailLinkInitError, EmailSignCallbackError};
 use crate::{
     core::CoreAuthery,
-    models::{
-        AutheryCookies, User,
-        email::{EmailChallenge, UserEmail},
-    },
+    models::{AutheryCookies, Intent},
     store::AutheryStore,
 };
-use chrono::Utc;
-use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum EmailSignupInitError<StoreError: std::error::Error> {
-    #[error(transparent)]
-    SendingEmail(#[from] SendEmailChallengeError<StoreError>),
-    #[error("Signup not allowed")]
-    NotAllowed,
-}
-
-impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailSignupInitError<E> {
-    fn rate_limited(&self) -> Option<&crate::ratelimit::RateLimited> {
-        match self {
-            Self::SendingEmail(inner) => inner.rate_limited(),
-            Self::NotAllowed => None,
-        }
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum EmailSignupError<StoreError: std::error::Error> {
-    #[error("Email signup not allowed")]
-    NotAllowed,
-    #[error("User already exists")]
-    UserExists,
-    #[error(transparent)]
-    Store(#[from] StoreError),
-}
-
-#[derive(Error, Debug)]
-pub enum EmailSignupCallbackError<StoreError: std::error::Error> {
-    #[error("Email signup not allowed")]
-    NotAllowed,
-    #[error("Challenge expired")]
-    ChallengeExpired { address: String },
-    #[error("Challenge not found")]
-    ChallengeNotFound,
-    #[error(transparent)]
-    EmailSignupError(#[from] EmailSignupError<StoreError>),
-    #[error(transparent)]
-    Store(#[from] StoreError),
-}
+pub type EmailSignupInitError<StoreError> = EmailLinkInitError<StoreError>;
+pub type EmailSignupCallbackError<StoreError> = EmailSignCallbackError<StoreError>;
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
+    /// Send a signup link to the address.
     pub async fn email_signup_init(
         &self,
         email: String,
         next: Option<String>,
     ) -> Result<(), EmailSignupInitError<S::Error>> {
-        if !self.email.offer_links
-            || self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never
-        {
-            return Err(EmailSignupInitError::NotAllowed);
-        }
-
-        self.send_email_challenge(
-            self.routes.email.signup_email.clone(),
-            email,
-            crate::email::EmailLinkKind::SignUp,
-            next,
-        )
-        .await?;
-
-        Ok(())
+        self.email_sign_init(Intent::SignUp, email, next).await
     }
 
+    /// Verify an emailed signup link, create the user, and log them in - or
+    /// log in an existing user if login-on-signup is allowed.
+    #[must_use = "Don't forget to return the auth session as part of the response!"]
     pub async fn email_signup_callback(
         self,
         code: String,
     ) -> Result<(Self, Option<String>), EmailSignupCallbackError<S::Error>> {
-        if !self.email.offer_links
-            || self.signup_allow(self.email.allow_signup.as_ref()) == &Allow::Never
-        {
-            return Err(EmailSignupCallbackError::NotAllowed);
-        }
-
-        let Some(challenge) = self
-            .store
-            .consume_challenge(code)
-            .await
-            .map_err(EmailSignupError::Store)?
-        else {
-            return Err(EmailSignupCallbackError::ChallengeNotFound);
-        };
-
-        if challenge.get_expires() < Utc::now() {
-            return Err(EmailSignupCallbackError::ChallengeExpired {
-                address: challenge.get_address().to_owned(),
-            });
-        }
-
-        let allow_login = self.login_allow(self.email.allow_login.as_ref()) == &Allow::OnEither;
-
-        let user = match self
-            .store
-            .get_user_by_email_address(challenge.get_address())
-            .await?
-        {
-            Some((user, email)) if allow_login && email.get_allow_link_login() => Ok(user),
-            Some(_) if allow_login => Err(EmailSignupError::NotAllowed),
-            Some(_) => Err(EmailSignupError::UserExists),
-            None => Ok(self
-                .store
-                .create_user_by_email_address(challenge.get_address())
-                .await?
-                .0),
-        }?;
-
-        Ok((
-            self.log_in(
-                LoginMethod::Email {
-                    address: challenge.get_address().to_owned(),
-                },
-                &user.get_id(),
-            )
-            .await?,
-            challenge.get_next().clone(),
-        ))
+        self.email_sign_callback(Intent::SignUp, code).await
     }
 }

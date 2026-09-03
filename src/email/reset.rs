@@ -9,7 +9,6 @@ use crate::{
     password::PasswordReset,
     store::AutheryStore,
 };
-use chrono::Utc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -55,6 +54,20 @@ pub enum EmailResetCallbackError<StoreError: std::error::Error> {
     Store(#[from] StoreError),
 }
 
+impl<E: std::error::Error> From<crate::email::EmailChallengeError<E>>
+    for EmailResetCallbackError<E>
+{
+    fn from(err: crate::email::EmailChallengeError<E>) -> Self {
+        match err {
+            crate::email::EmailChallengeError::Expired { address } => {
+                Self::ChallengeExpired { address }
+            }
+            crate::email::EmailChallengeError::NotFound => Self::ChallengeNotFound,
+            crate::email::EmailChallengeError::Store(inner) => Self::Store(inner),
+        }
+    }
+}
+
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     pub async fn email_reset_init(
         &self,
@@ -87,20 +100,7 @@ impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
             return Err(EmailResetCallbackError::NotAllowed);
         }
 
-        let Some(challenge) = self
-            .store
-            .consume_challenge(code)
-            .await
-            .map_err(EmailResetError::Store)?
-        else {
-            return Err(EmailResetCallbackError::ChallengeNotFound);
-        };
-
-        if challenge.get_expires() < Utc::now() {
-            return Err(EmailResetCallbackError::ChallengeExpired {
-                address: challenge.get_address().to_owned(),
-            });
-        }
+        let challenge = self.consume_email_challenge(code).await?;
 
         let user = match self
             .store

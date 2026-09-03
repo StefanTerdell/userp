@@ -4,7 +4,6 @@ use crate::{
     models::{AutheryCookies, User, email::EmailChallenge},
     store::AutheryStore,
 };
-use chrono::Utc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -36,20 +35,26 @@ impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailVerifyIni
     }
 }
 
+impl<E: std::error::Error> From<crate::email::EmailChallengeError<E>>
+    for EmailVerifyCallbackError<E>
+{
+    fn from(err: crate::email::EmailChallengeError<E>) -> Self {
+        match err {
+            crate::email::EmailChallengeError::Expired { address } => {
+                Self::ChallengeExpired { address }
+            }
+            crate::email::EmailChallengeError::NotFound => Self::ChallengeNotFound,
+            crate::email::EmailChallengeError::Store(inner) => Self::Store(inner),
+        }
+    }
+}
+
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     pub async fn email_verify_callback(
         &self,
         code: String,
     ) -> Result<(String, Option<String>), EmailVerifyCallbackError<S::Error>> {
-        let Some(challenge) = self.store.consume_challenge(code).await? else {
-            return Err(EmailVerifyCallbackError::ChallengeNotFound);
-        };
-
-        if challenge.get_expires() < Utc::now() {
-            return Err(EmailVerifyCallbackError::ChallengeExpired {
-                address: challenge.get_address().to_owned(),
-            });
-        }
+        let challenge = self.consume_email_challenge(code).await?;
 
         self.store
             .set_email_verified(challenge.get_address())
