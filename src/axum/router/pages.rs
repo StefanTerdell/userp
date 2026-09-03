@@ -324,6 +324,37 @@ fn mask_number(number: &str) -> String {
     format!("{prefix}***{suffix}")
 }
 
+#[cfg(any(feature = "email", feature = "sms"))]
+#[derive(Deserialize)]
+pub struct OtpPageQuery {
+    pub address: String,
+    pub next: Option<String>,
+    pub message: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Render the code-entry page for one channel and action route.
+#[cfg(any(feature = "email", feature = "sms"))]
+fn code_entry_page<St: AutheryStore>(
+    auth: &AxumAuthery<St>,
+    query: &OtpPageQuery,
+    channel: &'static str,
+    action_route: &str,
+    generator: &dyn crate::codes::CodeGenerator,
+) -> Html<String> {
+    let view = crate::pages::CodeEntryTemplate {
+        login_page_route: &auth.routes.pages.login,
+        identifier: &query.address,
+        channel,
+        action_route,
+        next: query.next.as_deref(),
+        message: query.message.as_deref(),
+        error: query.error.as_deref(),
+        code_input: crate::pages::CodeInputHints::from_generator(generator),
+    };
+    Html(auth.pages.render_code_entry(&view))
+}
+
 #[cfg(feature = "sms")]
 pub async fn get_login_sms<St>(
     auth: AxumAuthery<St>,
@@ -333,18 +364,13 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::SmsTemplate;
-
-    let view = SmsTemplate {
-        login_page_route: &auth.routes.pages.login,
-        number: &query.address,
-        action_route: &auth.routes.sms.login_sms,
-        next: query.next.as_deref(),
-        message: query.message.as_deref(),
-        error: query.error.as_deref(),
-        code_input: crate::pages::CodeInputHints::from_generator(auth.sms.code_generator.as_ref()),
-    };
-    Ok(Html(auth.pages.render_sms(&view)))
+    Ok(code_entry_page(
+        &auth,
+        &query,
+        "sms",
+        &auth.routes.sms.login_sms,
+        auth.sms.code_generator.as_ref(),
+    ))
 }
 
 #[cfg(feature = "sms")]
@@ -356,27 +382,13 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::SmsTemplate;
-
-    let view = SmsTemplate {
-        login_page_route: &auth.routes.pages.login,
-        number: &query.address,
-        action_route: &auth.routes.sms.signup_sms,
-        next: query.next.as_deref(),
-        message: query.message.as_deref(),
-        error: query.error.as_deref(),
-        code_input: crate::pages::CodeInputHints::from_generator(auth.sms.code_generator.as_ref()),
-    };
-    Ok(Html(auth.pages.render_sms(&view)))
-}
-
-#[cfg(any(feature = "email", feature = "sms"))]
-#[derive(Deserialize)]
-pub struct OtpPageQuery {
-    pub address: String,
-    pub next: Option<String>,
-    pub message: Option<String>,
-    pub error: Option<String>,
+    Ok(code_entry_page(
+        &auth,
+        &query,
+        "sms",
+        &auth.routes.sms.signup_sms,
+        auth.sms.code_generator.as_ref(),
+    ))
 }
 
 #[cfg(feature = "email")]
@@ -388,20 +400,13 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::OtpTemplate;
-
-    let view = OtpTemplate {
-        login_page_route: &auth.routes.pages.login,
-        address: &query.address,
-        action_route: &auth.routes.email.login_otp,
-        next: query.next.as_deref(),
-        message: query.message.as_deref(),
-        error: query.error.as_deref(),
-        code_input: crate::pages::CodeInputHints::from_generator(
-            auth.email.code_generator.as_ref(),
-        ),
-    };
-    Ok(Html(auth.pages.render_otp(&view)))
+    Ok(code_entry_page(
+        &auth,
+        &query,
+        "email",
+        &auth.routes.email.login_otp,
+        auth.email.code_generator.as_ref(),
+    ))
 }
 
 #[cfg(feature = "email")]
@@ -413,20 +418,13 @@ where
     St: AutheryStore,
     St::Error: IntoResponse,
 {
-    use crate::pages::OtpTemplate;
-
-    let view = OtpTemplate {
-        login_page_route: &auth.routes.pages.login,
-        address: &query.address,
-        action_route: &auth.routes.email.signup_otp,
-        next: query.next.as_deref(),
-        message: query.message.as_deref(),
-        error: query.error.as_deref(),
-        code_input: crate::pages::CodeInputHints::from_generator(
-            auth.email.code_generator.as_ref(),
-        ),
-    };
-    Ok(Html(auth.pages.render_otp(&view)))
+    Ok(code_entry_page(
+        &auth,
+        &query,
+        "email",
+        &auth.routes.email.signup_otp,
+        auth.email.code_generator.as_ref(),
+    ))
 }
 
 #[cfg(feature = "user")]

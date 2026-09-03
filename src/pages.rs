@@ -804,28 +804,18 @@ impl CodeInputHints {
     }
 }
 
-/// The SMS code entry page, mirroring [`OtpTemplate`] for phone numbers.
-#[cfg(feature = "sms")]
+/// The code entry page: the user has been sent a one-time code by email or
+/// text and types it here. `action_route` is the login or signup route the
+/// form posts back to, with the identifier carried in a hidden field.
+#[cfg(any(feature = "email", feature = "sms"))]
 #[derive(Template)]
-#[template(path = "sms.html")]
-pub struct SmsTemplate<'a> {
+#[template(path = "code-entry.html")]
+pub struct CodeEntryTemplate<'a> {
     pub login_page_route: &'a str,
-    pub number: &'a str,
-    pub action_route: &'a str,
-    pub next: Option<&'a str>,
-    pub message: Option<&'a str>,
-    pub error: Option<&'a str>,
-    pub code_input: CodeInputHints,
-}
-
-/// The one-time-code entry page: the user has been sent a code and types it
-/// here. `action_route` is the OTP route the form posts back to (login or
-/// signup), with the address carried in a hidden field.
-#[derive(Template)]
-#[template(path = "otp.html")]
-pub struct OtpTemplate<'a> {
-    pub login_page_route: &'a str,
-    pub address: &'a str,
+    /// The address or number the code went to.
+    pub identifier: &'a str,
+    /// `"email"` or `"sms"`; picks the copy and the posted field name.
+    pub channel: &'static str,
     pub action_route: &'a str,
     pub next: Option<&'a str>,
     pub message: Option<&'a str>,
@@ -852,10 +842,8 @@ pub struct RecoveryCodesTemplate<'a> {
 pub trait Pages: std::fmt::Debug + Send + Sync {
     fn render_login(&self, view: &LoginTemplate<'_>) -> String;
     fn render_signup(&self, view: &SignupTemplate<'_>) -> String;
-    #[cfg(feature = "email")]
-    fn render_otp(&self, view: &OtpTemplate<'_>) -> String;
-    #[cfg(feature = "sms")]
-    fn render_sms(&self, view: &SmsTemplate<'_>) -> String;
+    #[cfg(any(feature = "email", feature = "sms"))]
+    fn render_code_entry(&self, view: &CodeEntryTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
     fn render_recovery_codes(&self, view: &RecoveryCodesTemplate<'_>) -> String;
     #[cfg(feature = "mfa")]
@@ -894,13 +882,8 @@ impl Pages for AskamaPages {
         render_or_err(view)
     }
 
-    #[cfg(feature = "email")]
-    fn render_otp(&self, view: &OtpTemplate<'_>) -> String {
-        render_or_err(view)
-    }
-
-    #[cfg(feature = "sms")]
-    fn render_sms(&self, view: &SmsTemplate<'_>) -> String {
+    #[cfg(any(feature = "email", feature = "sms"))]
+    fn render_code_entry(&self, view: &CodeEntryTemplate<'_>) -> String {
         render_or_err(view)
     }
 

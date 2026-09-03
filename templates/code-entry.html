@@ -5,14 +5,14 @@
 {% block content %}
 <div class="screen">
   {% include "brand.html" %}
-  <svg class="icon icon-hero" aria-hidden="true"><use href="#i-sms"/></svg>
+  <svg class="icon icon-hero" aria-hidden="true"><use href="{% if channel == "sms" %}#i-sms{% else %}#i-mail{% endif %}"/></svg>
   <h1>Enter your code</h1>
-  <p class="sub text-muted">Sent by text to <strong>{{ number }}</strong>. Codes are single-use and expire after a short while.</p>
+  <p class="sub text-muted">Sent by {% if channel == "sms" %}text{% else %}email{% endif %} to <strong>{{ identifier }}</strong>. Codes are single-use and expire after a short while.</p>
 
   {% include "notices.html" %}
 
-  <form action="{{ action_route }}" method="post" id="sms-form">
-    <input type="hidden" name="number" value="{{ number }}" />
+  <form action="{{ action_route }}" method="post" id="code-entry-form">
+    <input type="hidden" name="{% if channel == "sms" %}number{% else %}email{% endif %}" value="{{ identifier }}" />
     <div class="field">
       <label for="code">Code</label>
       <input class="input code" type="text" id="code" name="code" {% if let Some(mode) = code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code" required autofocus>
@@ -22,12 +22,12 @@
   </form>
 
   <form action="{{ action_route }}" method="post" class="between">
-    <input type="hidden" name="number" value="{{ number }}" />
+    <input type="hidden" name="{% if channel == "sms" %}number{% else %}email{% endif %}" value="{{ identifier }}" />
     {% include "next-hidden.html" %}
     <span class="small text-muted">Didn't get it?</span>
     <button type="submit" class="btn btn-ghost">Send a new code</button>
   </form>
 
-  <div class="foot text-muted">Wrong number? <a href="{{ login_page_route }}">Start over</a></div>
+  <div class="foot text-muted">Wrong {% if channel == "sms" %}number{% else %}address{% endif %}? <a href="{{ login_page_route }}">Start over</a></div>
 </div>
 {% endblock %}
