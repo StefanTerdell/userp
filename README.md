@@ -310,18 +310,9 @@ transport layer translates every flow redirect uniformly instead:
 - `200 {"next": "..."}` on success (plus `"message"` when one rides along)
 - `422 {"error": "...", "next": "..."}` on flow errors
 
-Request bodies go both ways too: every flow endpoint takes the same
-fields as either an HTML form (`application/x-www-form-urlencoded`) or
-JSON (`application/json`). A recognised `Content-Type` picks the parser;
-without one the body is tried as JSON first, then as a form, and only a
-body that is neither gets a `415`. Malformed bodies come back as
-`422 {"error": "..."}`. The `FormOrJson` extractor is public if you wire
-authery's handlers into your own router.
-
 Cookies and the `X-Auth-Token` header behave identically, so a mobile
-client logs in by POSTing the same fields as JSON with the JSON accept
-header, keeps the token, and sends it as `Authorization: Bearer` from
-then on.
+client logs in by POSTing the same form with the JSON accept header,
+keeps the token, and sends it as `Authorization: Bearer` from then on.
 
 ## Sessions & bearer tokens
 
