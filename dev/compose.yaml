@@ -1,0 +1,40 @@
+# Local dependencies for developing and testing authery.
+#   docker compose -f dev/compose.yaml up -d
+#
+# - Keycloak: OIDC provider for testing the oauth/oidc flows.
+#     admin console http://localhost:8080 (admin / admin)
+#     realm "authery" is imported from ./keycloak/authery-realm.json
+# - Mailhog: catches outgoing email; SMTP on :1025, web UI http://localhost:8025
+# - Postgres: general-purpose store backing for examples/tests.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: authery
+      POSTGRES_PASSWORD: authery
+      POSTGRES_DB: authery
+    ports:
+      - "5432:5432"
+    volumes:
+      - authery-pg:/var/lib/postgresql/data
+
+volumes:
+  authery-pg:

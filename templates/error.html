@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Something went wrong{% endblock %}
+
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <svg class="icon icon-hero warn" aria-hidden="true"><use href="#i-lock"/></svg>
+  <h1>Something went wrong</h1>
+  <p class="lede">{{ message }}</p>
+  <div class="caps text-muted kicker">Error {{ status }}</div>
+  <div class="foot text-muted"><a href="{{ login_page_route }}">Back to sign in</a></div>
+</div>
+{% endblock %}

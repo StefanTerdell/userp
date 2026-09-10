@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Your recovery codes{% endblock %}
+
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <svg class="icon icon-hero" aria-hidden="true"><use href="#i-key"/></svg>
+  <h1>Your recovery codes</h1>
+  <p class="sub text-muted">Save these somewhere safe - they are shown only once. Each code signs you in exactly
+    once if you lose your other second factors; generating a new batch replaces these.</p>
+
+  <ul class="codes">
+    {% for code in codes %}
+    <li>{{ code }}</li>
+    {% endfor %}
+  </ul>
+
+  <div class="chips">
+    <button type="button" class="btn btn-secondary" id="copy-codes">Copy</button>
+    <a class="btn btn-ghost" href="{{ user_page_route }}">Back to your account</a>
+  </div>
+  <script>
+    document.getElementById('copy-codes').addEventListener('click', function () {
+      var text = Array.prototype.map.call(document.querySelectorAll('.codes li'), function (li) { return li.textContent; }).join('\n');
+      navigator.clipboard.writeText(text).then(function () { document.getElementById('copy-codes').textContent = 'Copied'; });
+    });
+  </script>
+
+  <div class="foot text-muted">Treat these like passwords: anyone holding one can get in.</div>
+</div>
+{% endblock %}

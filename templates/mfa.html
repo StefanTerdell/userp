@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}One more step{% endblock %}
+
+{% block content %}
+<div class="screen">
+  {% include "brand.html" %}
+  <h1>One more step</h1>
+  <p class="sub text-muted">Your account requires a second factor to sign in.</p>
+
+  {% include "notices.html" %}
+
+  {% if let Some(totp_route) = totp %}
+  <form action="{{ totp_route }}" method="post" id="mfa-totp-form">
+    <div class="field">
+      <label for="totp-code">Authenticator code</label>
+      <input class="input code" type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*"
+        autocomplete="one-time-code" required{% if message.is_none() && error.is_none() %} autofocus{% endif %}>
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Verify and continue</button>
+    <input type="hidden" name="trust_device" value="" />
+    {% include "next-hidden.html" %}
+  </form>
+  {% endif %}
+
+  {% if let Some(days) = trust_device_days %}
+  <label class="radio" style="margin-top: var(--space-3);">
+    <input type="checkbox" id="trust-device"><span class="dot"></span>Trust this device for {{ days }} days
+  </label>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var box = document.getElementById('trust-device');
+      function sync() {
+        document.querySelectorAll('input[name="trust_device"]').forEach(function (el) {
+          el.value = box.checked ? '1' : '';
+        });
+      }
+      box.addEventListener('change', sync);
+      sync();
+    });
+  </script>
+  {% endif %}
+
+  {% if webauthn.is_some() || sms.is_some() || otp.is_some() || recovery.is_some() %}
+  <div class="caps text-muted kicker">{% if totp.is_some() %}Other ways{% else %}Choose a way{% endif %}</div>
+  <div class="stack">
+    {% if let Some(webauthn) = webauthn %}
+    <button type="button" id="mfa-passkey-button" class="btn btn-secondary prov"{% if let Some(next) = next %} data-next="{{ next }}"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg>Use a passkey</button>
+    <p class="notice notice-error" id="mfa-passkey-error" role="alert" style="display: none; margin: 0;"></p>
+    {% include "passkey-js.html" %}
+    <script>
+      (function () {
+        function fail(e) {
+          var el = document.getElementById('mfa-passkey-error');
+          el.textContent = 'Passkey verification failed: ' + e;
+          el.style.display = 'block';
+        }
+        document.getElementById('mfa-passkey-button').addEventListener('click', function () {
+          var trust = document.getElementById('trust-device');
+          var finishUrl = '{{ webauthn.finish_route }}' + (trust && trust.checked ? '?trust_device=1' : '');
+          passkeyGet('{{ webauthn.start_route }}', finishUrl)
+            .then(function (out) {
+              var btn = document.getElementById('mfa-passkey-button');
+              window.location = btn.dataset.next || out.next || '/';
+            })
+            .catch(fail);
+        });
+      })();
+    </script>
+    {% endif %}
+
+    {% if let Some(sms) = sms %}
+    <details {% if message.is_some() || error.is_some() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-smartphone"/></svg>Code by text to {{ sms.number_hint }}</summary>
+      <div style="padding: var(--space-2) 0 var(--space-3);">
+        <form action="{{ sms.action_route }}" method="post" style="margin-bottom: var(--space-2);">
+          {% include "next-hidden.html" %}
+          <button type="submit" class="btn btn-ghost">Text me a code</button>
+        </form>
+        <form action="{{ sms.action_route }}" method="post" id="mfa-sms-form">
+          <div class="field">
+            <label for="sms-code">Texted code</label>
+            <input class="input code" type="text" id="sms-code" name="code" {% if let Some(mode) = sms.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = sms.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = sms.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Verify</button>
+          <input type="hidden" name="trust_device" value="" />
+          {% include "next-hidden.html" %}
+        </form>
+      </div>
+    </details>
+    {% endif %}
+
+    {% if let Some(otp) = otp %}
+    <details {% if message.is_some() || error.is_some() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>Code by email to {{ otp.address_hint }}</summary>
+      <div style="padding: var(--space-2) 0 var(--space-3);">
+        <form action="{{ otp.action_route }}" method="post" style="margin-bottom: var(--space-2);">
+          {% include "next-hidden.html" %}
+          <button type="submit" class="btn btn-ghost">Email me a code</button>
+        </form>
+        <form action="{{ otp.action_route }}" method="post" id="mfa-otp-form">
+          <div class="field">
+            <label for="code">Emailed code</label>
+            <input class="input code" type="text" id="code" name="code" {% if let Some(mode) = otp.code_input.input_mode %}inputmode="{{ mode }}" {% endif %}{% if let Some(pattern) = otp.code_input.pattern %}pattern="{{ pattern }}" {% endif %}{% if let Some(len) = otp.code_input.max_length %}maxlength="{{ len }}" {% endif %}autocomplete="one-time-code" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Verify</button>
+          <input type="hidden" name="trust_device" value="" />
+          {% include "next-hidden.html" %}
+        </form>
+      </div>
+    </details>
+    {% endif %}
+
+    {% if let Some(recovery_route) = recovery %}
+    <details {% if totp.is_none() && webauthn.is_none() && sms.is_none() && otp.is_none() %}open{% endif %}>
+      <summary class="btn btn-secondary prov" style="list-style: none;"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg>Recovery code</summary>
+      <form action="{{ recovery_route }}" method="post" id="mfa-recovery-form" style="padding: var(--space-2) 0 var(--space-3);">
+        <div class="field">
+          <label for="recovery-code">Recovery code</label>
+          <input class="input code" type="text" id="recovery-code" name="code" autocomplete="off" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Use recovery code</button>
+        <input type="hidden" name="trust_device" value="" />
+        {% include "next-hidden.html" %}
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="foot text-muted">Lost every factor? A recovery code is the way back in.</div>
+</div>
+{% endblock %}

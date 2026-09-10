@@ -1,0 +1,32 @@
+# The reference AutheryStore: Postgres via sqlx, feature-gated exactly like
+# a real store would be. See schema.sql for the reference schema.
+[package]
+name = "postgres-store"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+user = ["authery/user"]
+password = ["authery/password"]
+email = ["authery/email"]
+oauth = ["authery/oauth"]
+webauthn = ["authery/webauthn"]
+totp = ["authery/totp"]
+sms = ["authery/sms"]
+mfa = ["authery/mfa"]
+
+[dependencies]
+authery = { path = "../..", default-features = false }
+axum = "0.8.9"
+sqlx = { version = "0.8.3", default-features = false, features = [
+  "runtime-tokio",
+  "postgres",
+  "uuid",
+  "chrono",
+  "json",
+  "macros",
+] }
+thiserror = "2.0.18"
