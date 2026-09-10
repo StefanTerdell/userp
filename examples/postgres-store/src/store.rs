@@ -29,10 +29,6 @@ use authery::{
         uuid::Uuid,
     },
 };
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
 #[allow(unused_imports)]
 use sqlx::{PgPool, Row, types::Json};
 
@@ -61,11 +57,7 @@ pub enum PgStoreError {
     Sqlx(#[from] sqlx::Error),
 }
 
-impl IntoResponse for PgStoreError {
-    fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-    }
-}
+impl StoreError for PgStoreError {}
 
 impl AutheryStore for PgStore {
     type Error = PgStoreError;

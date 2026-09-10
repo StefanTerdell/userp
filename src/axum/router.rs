@@ -1,3 +1,5 @@
+pub(crate) mod endpoint;
+
 #[cfg(feature = "email")]
 pub mod email;
 #[cfg(feature = "mfa")]
@@ -18,6 +20,7 @@ pub mod user;
 pub mod webauthn;
 
 use crate::axum::cookies::SharedCookieJar;
+use crate::axum::response::{FlowError, FlowResult, StoreFailure, StoreFailureInfo};
 use crate::routes::Routes;
 use crate::{Authery as AxumAuthery, config::AutheryConfig, store::AutheryStore};
 use axum::{
@@ -25,10 +28,10 @@ use axum::{
     extract::{FromRef, Request},
     http::StatusCode,
     middleware::{Next, from_fn},
-    response::{IntoResponse, Redirect},
-    routing::{get, post},
+    response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::cookie::{Key, PrivateCookieJar};
+use endpoint::Endpoint;
 use std::sync::{Arc, Mutex};
 
 /// Wraps `router` with middleware that builds the encrypted cookie jar once per
@@ -44,6 +47,12 @@ use std::sync::{Arc, Mutex};
 /// `auth_token_prefix` when one is configured — so non-browser clients can
 /// capture it and authenticate with `Authorization: Bearer {token}` from
 /// then on.
+///
+/// The layer also renders store failures for browsers: a handler's
+/// [`crate::axum::response::StoreFailure`] leaves as a JSON body, and for a
+/// client that did not ask for JSON the body is swapped for the error page
+/// (`pages` and `login_page_route`, with the `pages` feature) or plain text.
+#[allow(clippy::too_many_arguments)]
 pub fn with_cookie_layer<S>(
     router: Router<S>,
     key: Key,
@@ -51,17 +60,75 @@ pub fn with_cookie_layer<S>(
     auth_token_prefix: Option<String>,
     previous_keys: Vec<Key>,
     session_cookie_name: String,
+    #[cfg(feature = "pages")] pages: Arc<dyn crate::pages::Pages>,
+    #[cfg(feature = "pages")] login_page_route: String,
 ) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
+    cookie_layered(
+        router,
+        key,
+        expose_auth_token,
+        auth_token_prefix,
+        previous_keys,
+        session_cookie_name,
+        #[cfg(feature = "pages")]
+        pages,
+        #[cfg(feature = "pages")]
+        login_page_route,
+    )
+}
+
+/// A router the cookie layer can be applied to. Implemented for axum's
+/// [`Router`] and, with the `aide` feature, for `aide::axum::ApiRouter`, so
+/// the middleware body below is written once. The layer is a closure whose
+/// type cannot be named, hence the callback shape.
+pub(crate) trait CookieLayered: Sized {
+    fn apply_cookie_layer<F, Fut>(self, middleware: F) -> Self
+    where
+        F: FnMut(Request, Next) -> Fut + Clone + Send + Sync + 'static,
+        Fut: Future<Output = Response> + Send + 'static;
+}
+
+impl<S> CookieLayered for Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn apply_cookie_layer<F, Fut>(self, middleware: F) -> Self
+    where
+        F: FnMut(Request, Next) -> Fut + Clone + Send + Sync + 'static,
+        Fut: Future<Output = Response> + Send + 'static,
+    {
+        self.layer(from_fn(middleware))
+    }
+}
+
+/// [`with_cookie_layer`], for any [`CookieLayered`] router.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cookie_layered<R: CookieLayered>(
+    router: R,
+    key: Key,
+    expose_auth_token: bool,
+    auth_token_prefix: Option<String>,
+    previous_keys: Vec<Key>,
+    session_cookie_name: String,
+    #[cfg(feature = "pages")] pages: Arc<dyn crate::pages::Pages>,
+    #[cfg(feature = "pages")] login_page_route: String,
+) -> R {
     let previous_keys = Arc::new(previous_keys);
     let session_cookie_name = Arc::new(session_cookie_name);
-    router.layer(from_fn(move |mut req: Request, next: Next| {
+    #[cfg(feature = "pages")]
+    let login_page_route = Arc::new(login_page_route);
+    router.apply_cookie_layer(move |mut req: Request, next: Next| {
         let key = key.clone();
         let auth_token_prefix = auth_token_prefix.clone();
         let previous_keys = previous_keys.clone();
         let session_cookie_name = session_cookie_name.clone();
+        #[cfg(feature = "pages")]
+        let pages = pages.clone();
+        #[cfg(feature = "pages")]
+        let login_page_route = login_page_route.clone();
         async move {
             let jar = PrivateCookieJar::from_headers(req.headers(), key);
             let session_before = jar
@@ -99,13 +166,71 @@ where
                 res.headers_mut().insert("x-auth-token", value);
             }
 
+            if !wants_json && let Some(info) = res.extensions().get::<StoreFailureInfo>().cloned() {
+                res = render_store_failure_page(
+                    res,
+                    info,
+                    #[cfg(feature = "pages")]
+                    &pages,
+                    #[cfg(feature = "pages")]
+                    &login_page_route,
+                );
+            }
+
             if wants_json {
                 res = jsonify_redirect(res);
             }
 
             res
         }
-    }))
+    })
+}
+
+/// A store failure on its way to a browser: the JSON body the handler
+/// produced is swapped for the error page. Only a message the store opted
+/// into showing survives; anything else becomes a generic apology, so
+/// nothing about the store is implied.
+///
+/// The response is rewritten rather than rebuilt, so everything the layer
+/// staged on the way out - the session cookie, `X-Auth-Token` - still
+/// reaches the browser.
+fn render_store_failure_page(
+    res: Response,
+    info: StoreFailureInfo,
+    #[cfg(feature = "pages")] pages: &Arc<dyn crate::pages::Pages>,
+    #[cfg(feature = "pages")] login_page_route: &str,
+) -> Response {
+    use axum::http::{HeaderValue, header};
+
+    let message = if info.public {
+        info.message.clone()
+    } else {
+        "Please try again in a moment.".to_string()
+    };
+
+    #[cfg(feature = "pages")]
+    let (body, content_type) = {
+        let view = crate::pages::ErrorTemplate {
+            status: info.status.as_u16(),
+            message: &message,
+            login_page_route,
+        };
+        (
+            pages.render_error(&view),
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        )
+    };
+    #[cfg(not(feature = "pages"))]
+    let (body, content_type) = (
+        message,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+
+    let (mut parts, _) = res.into_parts();
+    parts.status = info.status;
+    parts.headers.insert(header::CONTENT_TYPE, content_type);
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(parts, axum::body::Body::from(body))
 }
 
 /// `Accept: application/json` (without `text/html` outranking it) marks an
@@ -156,17 +281,23 @@ fn jsonify_redirect(res: axum::response::Response) -> axum::response::Response {
         }
     }
 
-    let mut body = serde_json::Map::new();
-    body.insert("next".into(), location.clone().into());
-    if let Some(message) = message {
-        body.insert("message".into(), message.into());
-    }
-    let status = match &error {
-        Some(error) => {
-            body.insert("error".into(), error.clone().into());
-            StatusCode::UNPROCESSABLE_ENTITY
-        }
-        None => StatusCode::OK,
+    let (status, body) = match error {
+        Some(error) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            serde_json::to_value(FlowError {
+                error,
+                next: location.clone(),
+            })
+            .unwrap(),
+        ),
+        None => (
+            StatusCode::OK,
+            serde_json::to_value(FlowResult {
+                next: location.clone(),
+                message,
+            })
+            .unwrap(),
+        ),
     };
 
     let (mut parts, _) = res.into_parts();
@@ -178,10 +309,7 @@ fn jsonify_redirect(res: axum::response::Response) -> axum::response::Response {
     );
     parts.headers.remove(header::CONTENT_LENGTH);
 
-    axum::response::Response::from_parts(
-        parts,
-        axum::body::Body::from(serde_json::Value::Object(body).to_string()),
-    )
+    axum::response::Response::from_parts(parts, axum::body::Body::from(body.to_string()))
 }
 
 /// The paused page for a rate-limit refusal. Carries `error` so JSON clients
@@ -210,20 +338,32 @@ pub(crate) fn paused_url(
 
 /// `fallback` with `error=` appended, or the paused page when the error is a
 /// rate-limit refusal.
-pub(crate) fn error_redirect(
+///
+/// The [`MaybeStoreError`](crate::store::MaybeStoreError) bound is the point:
+/// a store error is diverted into a [`StoreFailure`] here, BEFORE anything
+/// can call `Display` on it, so a store's own words - which may name hosts,
+/// credentials or SQL - can never reach a `?error=` query param (nor the
+/// `422 {"error"}` body [`jsonify_redirect`] makes of it). An error type
+/// that can carry a store error and does not implement the trait will not
+/// compile at the call site.
+pub(crate) fn error_redirect<E, Err>(
     routes: &Routes<String>,
-    err: &(impl std::fmt::Display + crate::ratelimit::MaybeRateLimited),
+    err: Err,
     fallback: &str,
     next: Option<&str>,
-) -> String {
+) -> Result<String, StoreFailure<E>>
+where
+    Err: std::fmt::Display + crate::ratelimit::MaybeRateLimited + crate::store::MaybeStoreError<E>,
+{
+    let err = err.store_error()?;
     if let Some(limited) = err.rate_limited() {
-        return paused_url(routes, limited, next);
+        return Ok(paused_url(routes, limited, next));
     }
     let separator = if fallback.contains('?') { '&' } else { '?' };
-    format!(
+    Ok(format!(
         "{fallback}{separator}error={}",
         urlencoding::encode(&err.to_string())
-    )
+    ))
 }
 
 /// Whether `next` is a local path that is safe to redirect to.
@@ -274,10 +414,9 @@ pub(crate) fn user_page(routes: &Routes<String>) -> &String {
 pub(crate) async fn complete_login<St>(
     auth: crate::axum::AxumAuthery<St>,
     next: Option<String>,
-) -> Result<axum::response::Response, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     #[cfg(feature = "mfa")]
     if auth.mfa_pending_session().await?.is_some() {
@@ -301,10 +440,9 @@ pub(crate) async fn post_code_flow<St, Ch>(
     intent: crate::models::Intent,
     action_route: String,
     method: &str,
-) -> Result<axum::response::Response, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
     Ch: crate::code_flow::CodeLoginFlow,
 {
     use crate::code_flow::{CodeInitError, CodeVerifyError};
@@ -326,27 +464,27 @@ where
                 urlencoding::encode(&identifier)
             ))
             .into_response()),
-            Err(CodeInitError::Store(err)) => Err(err),
+            Err(CodeInitError::Store(err)) => Err(err.into()),
             Err(err) => Ok(Redirect::to(&error_redirect(
                 &routes,
-                &err,
+                err,
                 &with_method(page, method),
                 next.as_deref(),
-            ))
+            )?)
             .into_response()),
         },
         Some(code) => match auth.code_verify::<Ch>(&identifier, &code, intent).await {
             Ok((auth, next)) => complete_login(auth, next).await,
-            Err(CodeVerifyError::Store(err)) => Err(err),
+            Err(CodeVerifyError::Store(err)) => Err(err.into()),
             Err(err) => Ok(Redirect::to(&error_redirect(
                 &routes,
-                &err,
+                err,
                 &format!(
                     "{action_route}?address={}",
                     urlencoding::encode(&identifier)
                 ),
                 next.as_deref(),
-            ))
+            )?)
             .into_response()),
         },
     }
@@ -381,361 +519,130 @@ pub trait AxumRouter {
         Default::default()
     }
 
+    /// The page set the cookie layer renders browser-facing failures with;
+    /// see [`crate::config::AutheryConfig::pages`].
+    #[cfg(feature = "pages")]
+    fn pages(&self) -> std::sync::Arc<dyn crate::pages::Pages>;
+
+    /// The OpenAPI document for the routes this config mounts, with the
+    /// defaults from [`crate::openapi::OpenApiOptions`].
+    #[cfg(feature = "openapi")]
+    fn openapi(&self) -> crate::openapi::Document {
+        self.openapi_with(crate::openapi::OpenApiOptions::default())
+    }
+
+    /// The OpenAPI document, shaped by `options`.
+    #[cfg(feature = "openapi")]
+    fn openapi_with(&self, options: crate::openapi::OpenApiOptions) -> crate::openapi::Document {
+        use crate::openapi::Describe;
+
+        let routes = self.routes();
+        let mut d = Describe::new(
+            options.schema_settings,
+            self.bearer_auth(),
+            self.cookie_names().session_id,
+        );
+        let mut paths: std::collections::BTreeMap<String, crate::openapi::PathItem> =
+            Default::default();
+        for endpoint in Endpoint::all() {
+            // Page-class operations - the HTML GETs and the two POSTs that
+            // render a page directly - are of no use to an API client.
+            if endpoint.response_set().is_page() && !options.pages {
+                continue;
+            }
+            let op = endpoint.describe(&mut d);
+            paths
+                .entry(endpoint.path(routes).to_string())
+                .or_default()
+                .insert(endpoint.method().as_str().to_lowercase(), op);
+        }
+        d.finish(paths)
+    }
+
     fn router<St, S>(&self) -> Router<S>
     where
         AutheryConfig: FromRef<S>,
         S: Send + Sync + Clone + 'static,
         St: AutheryStore + FromRef<S> + Send + Sync + 'static,
-        St::Error: IntoResponse,
     {
-        let mut router = Router::new();
+        let routes = self.routes();
+        let router = Endpoint::all()
+            .into_iter()
+            .fold(Router::new(), |router, endpoint| {
+                router.route(endpoint.path(routes), endpoint.handler::<St, S>())
+            });
 
-        router = router
-            .route(self.routes().logout.as_str(), post(post_user_logout::<St>))
-            .route(
-                self.routes().user_verify_session.as_str(),
-                get(get_user_verify_session::<St>),
-            );
-
-        #[cfg(feature = "pages")]
-        {
-            router = router
-                .route(
-                    self.routes().pages.login.as_str(),
-                    get(pages::get_login::<St>),
-                )
-                .route(
-                    self.routes().pages.signup.as_str(),
-                    get(pages::get_signup::<St>),
-                )
-                .route(
-                    self.routes().pages.paused.as_str(),
-                    get(pages::get_paused::<St>),
-                );
-
-            #[cfg(feature = "email")]
-            {
-                router = router
-                    .route(
-                        self.routes().pages.email_sent.as_str(),
-                        get(pages::get_email_sent::<St>),
-                    )
-                    .route(
-                        self.routes().pages.email_expired.as_str(),
-                        get(pages::get_email_expired::<St>),
-                    );
-            }
-
-            #[cfg(all(feature = "email", feature = "password"))]
-            {
-                router = router
-                    .route(
-                        self.routes().pages.password_send_reset.as_str(),
-                        get(pages::get_password_send_reset::<St>),
-                    )
-                    .route(
-                        self.routes().pages.password_reset.as_str(),
-                        get(pages::get_password_reset::<St>),
-                    );
-            }
-
-            #[cfg(feature = "user")]
-            {
-                router = router.route(
-                    self.routes().pages.user.as_str(),
-                    get(pages::get_user::<St>),
-                );
-            }
-        }
-
-        #[cfg(feature = "user")]
-        {
-            router = router
-                .route(
-                    self.routes().user.user_delete.as_str(),
-                    post(user::post_user_delete::<St>),
-                )
-                .route(
-                    self.routes().user.user_session_delete.as_str(),
-                    post(user::post_user_session_delete::<St>),
-                )
-                .route(
-                    self.routes().user.user_session_delete_others.as_str(),
-                    post(user::post_user_session_delete_others::<St>),
-                );
-
-            #[cfg(feature = "password")]
-            {
-                router = router
-                    .route(
-                        self.routes().user.user_password_set.as_str(),
-                        post(user::post_user_password_set::<St>),
-                    )
-                    .route(
-                        self.routes().user.user_password_delete.as_str(),
-                        post(user::post_user_password_delete::<St>),
-                    );
-            }
-
-            #[cfg(feature = "oauth")]
-            {
-                router = router.route(
-                    self.routes().user.user_oauth_delete.as_str(),
-                    post(user::post_user_oauth_delete::<St>),
-                );
-            }
-
-            #[cfg(feature = "totp")]
-            {
-                router = router
-                    .route(
-                        self.routes().user.user_totp_confirm.as_str(),
-                        post(user::post_user_totp_confirm::<St>),
-                    )
-                    .route(
-                        self.routes().user.user_totp_disable.as_str(),
-                        post(user::post_user_totp_disable::<St>),
-                    );
-
-                #[cfg(feature = "pages")]
-                {
-                    router = router.route(
-                        self.routes().user.user_totp_enroll.as_str(),
-                        post(user::post_user_totp_enroll::<St>),
-                    );
-                }
-            }
-
-            #[cfg(all(feature = "mfa", feature = "pages"))]
-            {
-                router = router.route(
-                    self.routes().user.user_recovery_codes.as_str(),
-                    post(user::post_user_recovery_codes::<St>),
-                );
-            }
-
-            #[cfg(feature = "email")]
-            {
-                router = router
-                    .route(
-                        self.routes().user.user_email_add.as_str(),
-                        post(user::post_user_email_add::<St>),
-                    )
-                    .route(
-                        self.routes().user.user_email_delete.as_str(),
-                        post(user::post_user_email_delete::<St>),
-                    )
-                    .route(
-                        self.routes().user.user_email_enable_login.as_str(),
-                        post(user::post_user_email_enable_login::<St>),
-                    )
-                    .route(
-                        self.routes().user.user_email_disable_login.as_str(),
-                        post(user::post_user_email_disable_login::<St>),
-                    );
-            }
-        }
-
-        #[cfg(feature = "oauth")]
-        {
-            router = router
-                .route(
-                    self.routes().oauth.login_oauth.as_str(),
-                    post(oauth::post_login_oauth::<St>),
-                )
-                .route(
-                    self.routes().oauth.signup_oauth.as_str(),
-                    post(oauth::post_signup_oauth::<St>),
-                )
-                .route(
-                    self.routes().oauth.user_oauth_link.as_str(),
-                    post(oauth::post_user_oauth_link::<St>),
-                )
-                .route(
-                    self.routes().oauth.user_oauth_refresh.as_str(),
-                    post(oauth::post_user_oauth_refresh::<St>),
-                );
-
-            router = router.route(
-                self.routes().oauth.callback.as_str(),
-                get(oauth::get_oauth::<St>),
-            );
-        }
-
-        #[cfg(feature = "password")]
-        {
-            router = router
-                .route(
-                    self.routes().password.login_password.as_str(),
-                    post(password::post_login_password::<St>),
-                )
-                .route(
-                    self.routes().password.signup_password.as_str(),
-                    post(password::post_signup_password::<St>),
-                );
-        }
-
-        #[cfg(feature = "webauthn")]
-        {
-            router = router
-                .route(
-                    self.routes().webauthn.login_webauthn_start.as_str(),
-                    post(webauthn::post_login_webauthn_start::<St>),
-                )
-                .route(
-                    self.routes().webauthn.login_webauthn_finish.as_str(),
-                    post(webauthn::post_login_webauthn_finish::<St>),
-                )
-                .route(
-                    self.routes().webauthn.user_webauthn_register_start.as_str(),
-                    post(webauthn::post_user_webauthn_register_start::<St>),
-                )
-                .route(
-                    self.routes()
-                        .webauthn
-                        .user_webauthn_register_finish
-                        .as_str(),
-                    post(webauthn::post_user_webauthn_register_finish::<St>),
-                );
-
-            #[cfg(feature = "user")]
-            {
-                router = router.route(
-                    self.routes().webauthn.user_webauthn_delete.as_str(),
-                    post(webauthn::post_user_webauthn_delete::<St>),
-                );
-            }
-        }
-
-        #[cfg(feature = "mfa")]
-        {
-            #[cfg(feature = "pages")]
-            {
-                router = router.route(
-                    self.routes().mfa.login_mfa.as_str(),
-                    get(pages::get_login_mfa::<St>),
-                );
-            }
-
-            #[cfg(feature = "email")]
-            {
-                router = router.route(
-                    self.routes().mfa.login_mfa_otp.as_str(),
-                    post(mfa::post_login_mfa_otp::<St>),
-                );
-            }
-
-            #[cfg(feature = "totp")]
-            {
-                router = router.route(
-                    self.routes().mfa.login_mfa_totp.as_str(),
-                    post(mfa::post_login_mfa_totp::<St>),
-                );
-            }
-
-            #[cfg(feature = "sms")]
-            {
-                router = router.route(
-                    self.routes().mfa.login_mfa_sms.as_str(),
-                    post(mfa::post_login_mfa_sms::<St>),
-                );
-            }
-
-            router = router.route(
-                self.routes().mfa.login_mfa_recovery.as_str(),
-                post(mfa::post_login_mfa_recovery::<St>),
-            );
-
-            #[cfg(feature = "webauthn")]
-            {
-                router = router
-                    .route(
-                        self.routes().mfa.login_mfa_webauthn_start.as_str(),
-                        post(mfa::post_login_mfa_webauthn_start::<St>),
-                    )
-                    .route(
-                        self.routes().mfa.login_mfa_webauthn_finish.as_str(),
-                        post(mfa::post_login_mfa_webauthn_finish::<St>),
-                    );
-            }
-        }
-
-        #[cfg(feature = "sms")]
-        {
-            let login_sms = post(sms::post_login_sms::<St>);
-            let signup_sms = post(sms::post_signup_sms::<St>);
-
-            #[cfg(feature = "pages")]
-            let login_sms = login_sms.get(pages::get_login_sms::<St>);
-            #[cfg(feature = "pages")]
-            let signup_sms = signup_sms.get(pages::get_signup_sms::<St>);
-
-            router = router
-                .route(self.routes().sms.login_sms.as_str(), login_sms)
-                .route(self.routes().sms.signup_sms.as_str(), signup_sms);
-        }
-
-        #[cfg(feature = "email")]
-        {
-            let login_otp = post(otp::post_login_otp::<St>);
-            let signup_otp = post(otp::post_signup_otp::<St>);
-
-            // With pages active, GET on the same paths renders the
-            // code-entry form.
-            #[cfg(feature = "pages")]
-            let login_otp = login_otp.get(pages::get_login_otp::<St>);
-            #[cfg(feature = "pages")]
-            let signup_otp = signup_otp.get(pages::get_signup_otp::<St>);
-
-            router = router
-                .route(self.routes().email.login_otp.as_str(), login_otp)
-                .route(self.routes().email.signup_otp.as_str(), signup_otp);
-        }
-
-        #[cfg(feature = "email")]
-        {
-            router = router
-                .route(
-                    self.routes().email.login_email.as_str(),
-                    post(email::post_login_email::<St>).get(email::get_login_email::<St>),
-                )
-                .route(
-                    self.routes().email.signup_email.as_str(),
-                    post(email::post_signup_email::<St>).get(email::get_signup_email::<St>),
-                )
-                .route(
-                    self.routes().email.user_email_verify.as_str(),
-                    post(email::post_user_email_verify::<St>)
-                        .get(email::get_user_email_verify::<St>),
-                );
-
-            #[cfg(feature = "password")]
-            {
-                router = router
-                    .route(
-                        self.routes().email.password_reset.as_str(),
-                        post(email::post_password_reset::<St>),
-                    )
-                    .route(
-                        self.routes().email.password_reset_callback.as_str(),
-                        get(email::get_password_reset_callback::<St>),
-                    )
-                    .route(
-                        self.routes().email.password_send_reset.as_str(),
-                        post(email::post_password_send_reset::<St>),
-                    );
-            }
-        }
-
-        with_cookie_layer(
-            router,
-            self.cookie_key(),
-            self.bearer_auth(),
-            self.bearer_token_prefix(),
-            self.previous_cookie_keys(),
-            self.cookie_names().session_id,
-        )
+        config_cookie_layer(self, router)
     }
+
+    /// The same routes as [`Self::router`], registered through aide's typed
+    /// routing so `finish_api` documents them alongside the application's own
+    /// routes. Pages are included: aide documents whatever it routes.
+    ///
+    /// aide collects components from its own schema generator only, so the
+    /// security schemes the operations refer to have to be inserted
+    /// afterwards; see [`Self::aide_security_schemes`].
+    ///
+    /// ```ignore
+    /// let mut api = aide::openapi::OpenApi::default();
+    /// let app = aide::axum::ApiRouter::new()
+    ///     .merge(config.api_router::<MyStore, AppState>())
+    ///     .finish_api(&mut api)
+    ///     .with_state(state);
+    /// let components = api.components.get_or_insert_with(Default::default);
+    /// for (name, scheme) in config.aide_security_schemes() {
+    ///     components
+    ///         .security_schemes
+    ///         .insert(name, aide::openapi::ReferenceOr::Item(scheme));
+    /// }
+    /// ```
+    #[cfg(feature = "aide")]
+    fn api_router<St, S>(&self) -> ::aide::axum::ApiRouter<S>
+    where
+        AutheryConfig: FromRef<S>,
+        S: Send + Sync + Clone + 'static,
+        St: AutheryStore + FromRef<S> + Send + Sync + 'static,
+    {
+        let routes = self.routes();
+        let bearer = self.bearer_auth();
+        let router =
+            Endpoint::all()
+                .into_iter()
+                .fold(::aide::axum::ApiRouter::new(), |router, endpoint| {
+                    router.api_route(endpoint.path(routes), endpoint.api_handler::<St, S>(bearer))
+                });
+
+        config_cookie_layer(self, router)
+    }
+
+    /// The security schemes [`Self::api_router`]'s operations refer to: the
+    /// session cookie always, and `bearer` when
+    /// [`crate::config::AutheryConfig::bearer_auth`] is on. Insert them into
+    /// `api.components.security_schemes` after `finish_api`.
+    #[cfg(feature = "aide")]
+    fn aide_security_schemes(&self) -> Vec<(String, ::aide::openapi::SecurityScheme)> {
+        crate::axum::aide::security_schemes(self.bearer_auth(), self.cookie_names().session_id)
+    }
+}
+
+/// The cookie layer with `config`'s settings, for either router type.
+fn config_cookie_layer<C, R>(config: &C, router: R) -> R
+where
+    C: AxumRouter + ?Sized,
+    R: CookieLayered,
+{
+    cookie_layered(
+        router,
+        config.cookie_key(),
+        config.bearer_auth(),
+        config.bearer_token_prefix(),
+        config.previous_cookie_keys(),
+        config.cookie_names().session_id,
+        #[cfg(feature = "pages")]
+        config.pages(),
+        #[cfg(feature = "pages")]
+        config.routes().pages.login.to_string(),
+    )
 }
 
 impl AxumRouter for AutheryConfig {
@@ -765,26 +672,34 @@ impl AxumRouter for AutheryConfig {
     fn cookie_names(&self) -> crate::cookie_names::CookieNames {
         self.cookie_names.clone()
     }
+
+    #[cfg(feature = "pages")]
+    fn pages(&self) -> std::sync::Arc<dyn crate::pages::Pages> {
+        self.pages.clone()
+    }
 }
 
-async fn post_user_logout<St>(auth: AxumAuthery<St>) -> Result<impl IntoResponse, St::Error>
+pub(crate) async fn post_user_logout<St>(
+    auth: AxumAuthery<St>,
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let post_logout = auth.routes.pages.post_logout.clone();
 
-    Ok((auth.log_out().await?, Redirect::to(&post_logout)))
+    Ok((auth.log_out().await?, Redirect::to(&post_logout)).into_response())
 }
 
-async fn get_user_verify_session<St>(auth: AxumAuthery<St>) -> Result<impl IntoResponse, St::Error>
+pub(crate) async fn get_user_verify_session<St>(
+    auth: AxumAuthery<St>,
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(if auth.logged_in().await? {
         StatusCode::OK
     } else {
         StatusCode::UNAUTHORIZED
-    })
+    }
+    .into_response())
 }

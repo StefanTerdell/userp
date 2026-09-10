@@ -24,6 +24,8 @@ pub enum PasswordSignupError<T: std::error::Error> {
 }
 
 crate::ratelimit::impl_maybe_rate_limited!(PasswordSignupError, RateLimited);
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(PasswordSignupError; StoreError;);
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     #[must_use = "Don't forget to return the auth session as part of the response!"]

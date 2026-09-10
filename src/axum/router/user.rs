@@ -1,10 +1,11 @@
 use crate::axum::extract::FormOrJson;
+use crate::axum::response::{ApiError, MALFORMED_ID, NOT_LOGGED_IN, StoreFailure};
 use crate::{
     axum::AxumAuthery,
     models::{LoginSession, User},
     store::AutheryStore,
 };
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::{http::StatusCode, response::Redirect};
 use serde::Deserialize;
 use urlencoding::encode;
@@ -13,25 +14,31 @@ use urlencoding::encode;
 use crate::models::email::UserEmail;
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct IdAccountForm {
     /// An entity ID in its string representation
     pub id: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct NewPasswordAccountForm {
+    /// The replacement password; must satisfy the configured pattern.
     pub new_password: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct EmailAccountForm {
+    /// The address to act on.
     pub email: String,
 }
 
-pub async fn post_user_delete<St>(auth: AxumAuthery<St>) -> Result<impl IntoResponse, St::Error>
+pub async fn post_user_delete<St>(
+    auth: AxumAuthery<St>,
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(if let Some(user) = auth.user().await? {
         let signup_route = auth.routes.pages.signup.clone();
@@ -40,7 +47,7 @@ where
 
         (auth.log_out().await?, Redirect::to(&signup_route)).into_response()
     } else {
-        StatusCode::UNAUTHORIZED.into_response()
+        ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN)
     })
 }
 
@@ -48,10 +55,9 @@ where
 pub async fn post_user_password_set<St>(
     auth: AxumAuthery<St>,
     FormOrJson(NewPasswordAccountForm { new_password }): FormOrJson<NewPasswordAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let mut user_session = auth.user_session().await?;
     let mut is_reset_session = false;
@@ -63,7 +69,7 @@ where
     }
 
     let Some((user, session)) = user_session else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let user_route = auth.routes.pages.user.clone();
@@ -109,13 +115,12 @@ where
 #[cfg(feature = "password")]
 pub async fn post_user_password_delete<St>(
     auth: AxumAuthery<St>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some((user, session)) = auth.user_session().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     auth.store
@@ -135,17 +140,16 @@ where
 pub async fn post_user_oauth_delete<St>(
     auth: AxumAuthery<St>,
     FormOrJson(IdAccountForm { id }): FormOrJson<IdAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let Ok(id) = id.parse::<St::OAuthTokenId>() else {
-        return Ok(StatusCode::BAD_REQUEST.into_response());
+        return Ok(ApiError::response(StatusCode::BAD_REQUEST, MALFORMED_ID));
     };
 
     auth.store.delete_oauth_token(&user.get_id(), &id).await?;
@@ -159,13 +163,12 @@ where
 pub async fn post_user_email_add<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     auth.store.add_user_email(&user.get_id(), email).await?;
@@ -179,13 +182,12 @@ where
 pub async fn post_user_email_delete<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     auth.store.delete_user_email(&user.get_id(), email).await?;
@@ -199,13 +201,12 @@ where
 pub async fn post_user_email_enable_login<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let user_route = auth.routes.pages.user.clone();
@@ -244,13 +245,12 @@ where
 pub async fn post_user_email_disable_login<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     auth.store
@@ -269,17 +269,16 @@ where
 pub async fn post_user_session_delete<St>(
     auth: AxumAuthery<St>,
     FormOrJson(IdAccountForm { id }): FormOrJson<IdAccountForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let Ok(id) = id.parse::<St::SessionId>() else {
-        return Ok(StatusCode::BAD_REQUEST.into_response());
+        return Ok(ApiError::response(StatusCode::BAD_REQUEST, MALFORMED_ID));
     };
 
     auth.store.delete_session(&user.get_id(), &id).await?;
@@ -291,13 +290,12 @@ where
 
 pub async fn post_user_session_delete_others<St>(
     auth: AxumAuthery<St>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(deleted) = auth.log_out_other_sessions().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let user_route = crate::axum::router::user_page(&auth.routes);
@@ -309,6 +307,8 @@ where
     .into_response())
 }
 
+#[cfg(all(feature = "totp", feature = "openapi"))]
+pub(crate) use totp_handlers::TotpCodeForm;
 #[cfg(all(feature = "totp", feature = "pages"))]
 pub(crate) use totp_handlers::post_user_totp_enroll;
 #[cfg(feature = "totp")]
@@ -328,10 +328,9 @@ mod totp_handlers {
     #[cfg(feature = "pages")]
     pub(crate) async fn post_user_totp_enroll<St>(
         auth: AxumAuthery<St>,
-    ) -> Result<impl IntoResponse, St::Error>
+    ) -> Result<Response, StoreFailure<St::Error>>
     where
         St: AutheryStore,
-        St::Error: IntoResponse,
     {
         use crate::pages::TotpEnrollTemplate;
         use axum::response::Html;
@@ -371,7 +370,7 @@ mod totp_handlers {
                 };
                 Ok(Html(auth.pages.render_totp_enroll(&view)).into_response())
             }
-            Err(TotpError::Store(err)) => Err(err),
+            Err(TotpError::Store(err)) => Err(err.into()),
             Err(err) => Ok(Redirect::to(&format!(
                 "{}?error={}",
                 auth.routes.pages.user,
@@ -382,17 +381,18 @@ mod totp_handlers {
     }
 
     #[derive(Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
     pub struct TotpCodeForm {
+        /// A live code from the authenticator app being enrolled.
         pub code: String,
     }
 
     pub(crate) async fn post_user_totp_confirm<St>(
         auth: AxumAuthery<St>,
         FormOrJson(TotpCodeForm { code }): FormOrJson<TotpCodeForm>,
-    ) -> Result<impl IntoResponse, St::Error>
+    ) -> Result<Response, StoreFailure<St::Error>>
     where
         St: AutheryStore,
-        St::Error: IntoResponse,
     {
         let user_route = auth.routes.pages.user.clone();
 
@@ -401,7 +401,7 @@ mod totp_handlers {
                 Redirect::to(&format!("{user_route}?message=Authenticator app enabled"))
                     .into_response(),
             ),
-            Err(TotpError::Store(err)) => Err(err),
+            Err(TotpError::Store(err)) => Err(err.into()),
             Err(err) => Ok(Redirect::to(&format!(
                 "{user_route}?error={}",
                 urlencoding::encode(&err.to_string())
@@ -412,10 +412,9 @@ mod totp_handlers {
 
     pub(crate) async fn post_user_totp_disable<St>(
         auth: AxumAuthery<St>,
-    ) -> Result<impl IntoResponse, St::Error>
+    ) -> Result<Response, StoreFailure<St::Error>>
     where
         St: AutheryStore,
-        St::Error: IntoResponse,
     {
         let user_route = auth.routes.pages.user.clone();
 
@@ -424,7 +423,7 @@ mod totp_handlers {
                 Redirect::to(&format!("{user_route}?message=Authenticator app disabled"))
                     .into_response(),
             ),
-            Err(TotpError::Store(err)) => Err(err),
+            Err(TotpError::Store(err)) => Err(err.into()),
             Err(err) => Ok(Redirect::to(&format!(
                 "{user_route}?error={}",
                 urlencoding::encode(&err.to_string())
@@ -446,10 +445,9 @@ mod recovery_handlers {
     /// codes - this is the only time they exist in plaintext.
     pub(crate) async fn post_user_recovery_codes<St>(
         auth: AxumAuthery<St>,
-    ) -> Result<impl IntoResponse, St::Error>
+    ) -> Result<Response, StoreFailure<St::Error>>
     where
         St: AutheryStore,
-        St::Error: IntoResponse,
     {
         use crate::pages::RecoveryCodesTemplate;
         use axum::response::Html;
@@ -464,7 +462,7 @@ mod recovery_handlers {
                 };
                 Ok(Html(auth.pages.render_recovery_codes(&view)).into_response())
             }
-            Err(RecoveryCodesError::Store(err)) => Err(err),
+            Err(RecoveryCodesError::Store(err)) => Err(err.into()),
             Err(RecoveryCodesError::NotLoggedIn) => Ok(Redirect::to(&login_route).into_response()),
         }
     }

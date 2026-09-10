@@ -17,10 +17,6 @@ use authery::{
         uuid::Uuid,
     },
 };
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -62,9 +58,12 @@ pub enum MemoryStoreError {
     WrongUserId,
 }
 
-impl IntoResponse for MemoryStoreError {
-    fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+impl StoreError for MemoryStoreError {
+    fn public(&self) -> Option<PublicError> {
+        match self {
+            MemoryStoreError::AddressInUse(_) => Some(PublicError::new(409, self)),
+            _ => None,
+        }
     }
 }
 

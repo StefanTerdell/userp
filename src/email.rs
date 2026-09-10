@@ -234,6 +234,8 @@ pub enum SendEmailChallengeError<StoreError: std::error::Error> {
 }
 
 crate::ratelimit::impl_maybe_rate_limited!(SendEmailChallengeError, RateLimited);
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(SendEmailChallengeError; Store;);
 
 impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
     #[cfg(feature = "email")]
@@ -359,6 +361,9 @@ impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailLinkInitE
         }
     }
 }
+
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(EmailLinkInitError; ; SendingEmail);
 
 #[derive(Debug, Error)]
 pub enum EmailSignCallbackError<StoreError: std::error::Error> {

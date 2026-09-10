@@ -28,6 +28,9 @@ crate. Everything below is new relative to userp 0.0.x:
 - A single OAuth callback route; flow and provider ride the encrypted state
   cookie, keyed per flow so concurrent logins don't collide.
 - Opt-in bearer-token session mode with an optional token prefix.
+- `StoreError`: store failures render as a generic 500 unless the store
+  opts in with `PublicError`; the error page and JSON body never carry the
+  raw error.
 - JSON transport: `Accept: application/json` turns flow redirects into
   `200 {"next"}` / `422 {"error","next"}`, and every flow endpoint accepts
   its fields as JSON or form-encoded bodies (`FormOrJson` extractor).
@@ -58,5 +61,23 @@ crate. Everything below is new relative to userp 0.0.x:
   `UserEmail::get_verified_at` for the account page.
 - Reference stores: Postgres (sqlx) and in-memory, feature-gated like the
   store trait itself.
+- `openapi` feature: `auth.openapi()` returns a serde OpenAPI 3.1 document of
+  every mounted route; `convert()` loads it into utoipa's or aide's types.
+  Page-class routes (the HTML GETs and the two POSTs that render a page)
+  are excluded unless `with_pages(true)` asks for them.
+- `aide` feature: `auth.api_router()` registers every route through aide's
+  typed routing.
+
+### Changed
+
+- Store error types implement `StoreError` instead of `IntoResponse`.
+- Handlers return `Result<Response, StoreFailure<E>>`, and `error_redirect`
+  refuses to stringify an error that could be a store failure: it diverts
+  one into a `StoreFailure` instead, so no store's `Display` can reach a
+  `?error=` redirect.
+- Endpoints that need a session answer `401 {"error": "Not logged in."}`
+  instead of an empty `401`; a rejected passkey registration answers `401`
+  like the other two ceremonies.
+- `with_cookie_layer` takes the pages renderer and login route (with `pages`).
 
 [Unreleased]: https://github.com/StefanTerdell/userp/commits/authery

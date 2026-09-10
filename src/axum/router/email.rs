@@ -1,4 +1,5 @@
 use crate::axum::extract::FormOrJson;
+use crate::axum::response::{ApiError, NOT_LOGGED_IN, StoreFailure};
 use crate::{
     axum::AxumAuthery,
     code_flow::ResolveUserError,
@@ -11,7 +12,7 @@ use crate::{
 };
 use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Redirect};
+use axum::response::{IntoResponse, Redirect, Response};
 use serde::{Deserialize, Serialize};
 
 /// The "check your inbox" page for a link that was just sent.
@@ -48,18 +49,25 @@ fn email_expired_url(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct EmailNextForm {
+    /// The address to send the link to.
     pub email: String,
+    /// Where to send the browser afterwards; must be a local path.
     pub next: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct CodeQuery {
+    /// The single-use challenge code carried by the emailed link.
     pub code: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct NewPasswordForm {
+    /// The replacement password; must satisfy the configured pattern.
     pub new_password: String,
 }
 
@@ -69,10 +77,9 @@ async fn post_sign_email<St>(
     email: String,
     next: Option<String>,
     intent: Intent,
-) -> Result<axum::response::Response, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let routes = auth.routes.clone();
     let (purpose, page) = match intent {
@@ -88,13 +95,15 @@ where
             Redirect::to(&email_sent_url(&routes, purpose, &email, next.as_deref()))
                 .into_response(),
         ),
-        Err(EmailLinkInitError::SendingEmail(SendEmailChallengeError::Store(err))) => Err(err),
+        Err(EmailLinkInitError::SendingEmail(SendEmailChallengeError::Store(err))) => {
+            Err(err.into())
+        }
         Err(err) => Ok(Redirect::to(&crate::axum::router::error_redirect(
             &routes,
-            &err,
+            err,
             &crate::axum::router::with_method(page, "email"),
             next.as_deref(),
-        ))
+        )?)
         .into_response()),
     }
 }
@@ -104,10 +113,9 @@ async fn get_sign_email<St>(
     auth: AxumAuthery<St>,
     code: String,
     intent: Intent,
-) -> Result<axum::response::Response, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let routes = auth.routes.clone();
     let (purpose, page) = match intent {
@@ -118,7 +126,7 @@ where
     match auth.email_sign_callback(intent, code).await {
         Ok((auth, next)) => crate::axum::router::complete_login(auth, next).await,
         Err(EmailSignCallbackError::Store(err))
-        | Err(EmailSignCallbackError::Resolve(ResolveUserError::Store(err))) => Err(err),
+        | Err(EmailSignCallbackError::Resolve(ResolveUserError::Store(err))) => Err(err.into()),
         Err(EmailSignCallbackError::ChallengeExpired { address }) => {
             Ok(Redirect::to(&email_expired_url(&routes, purpose, &address)).into_response())
         }
@@ -132,10 +140,9 @@ where
 pub(crate) async fn post_login_email<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     post_sign_email(auth, email, next, Intent::LogIn).await
 }
@@ -143,10 +150,9 @@ where
 pub(crate) async fn get_login_email<St>(
     auth: AxumAuthery<St>,
     Query(CodeQuery { code }): Query<CodeQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     get_sign_email(auth, code, Intent::LogIn).await
 }
@@ -154,10 +160,9 @@ where
 pub(crate) async fn post_signup_email<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     post_sign_email(auth, email, next, Intent::SignUp).await
 }
@@ -165,10 +170,9 @@ where
 pub(crate) async fn get_signup_email<St>(
     auth: AxumAuthery<St>,
     Query(CodeQuery { code }): Query<CodeQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     get_sign_email(auth, code, Intent::SignUp).await
 }
@@ -176,10 +180,9 @@ where
 pub(crate) async fn get_user_email_verify<St>(
     auth: AxumAuthery<St>,
     Query(CodeQuery { code }): Query<CodeQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let login_route = auth.routes.pages.login.clone();
 
@@ -204,19 +207,20 @@ where
                 }
             };
 
-            Ok(Redirect::to(&next))
+            Ok(Redirect::to(&next).into_response())
         }
         Err(err) => match err {
-            EmailVerifyCallbackError::Store(err) => Err(err),
+            EmailVerifyCallbackError::Store(err) => Err(err.into()),
             EmailVerifyCallbackError::ChallengeExpired { address } => Ok(Redirect::to(
                 &email_expired_url(&auth.routes, "verify", &address),
-            )),
+            )
+            .into_response()),
             _ => {
                 let next = format!(
                     "{login_route}?error={}",
                     urlencoding::encode(&err.to_string())
                 );
-                Ok(Redirect::to(&next))
+                Ok(Redirect::to(&next).into_response())
             }
         },
     }
@@ -225,13 +229,12 @@ where
 pub(crate) async fn post_user_email_verify<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     if !auth.logged_in().await? {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let user_route = crate::axum::router::user_page(&auth.routes).clone();
@@ -247,13 +250,15 @@ where
         }
         Err(err) => match err {
             EmailVerifyInitError::Store(err)
-            | EmailVerifyInitError::SendingEmail(SendEmailChallengeError::Store(err)) => Err(err),
+            | EmailVerifyInitError::SendingEmail(SendEmailChallengeError::Store(err)) => {
+                Err(err.into())
+            }
             _ => Ok(Redirect::to(&crate::axum::router::error_redirect(
                 &auth.routes,
-                &err,
+                err,
                 &user_route,
                 None,
-            ))
+            )?)
             .into_response()),
         },
     }
@@ -263,30 +268,38 @@ where
 pub(crate) async fn post_password_send_reset<St>(
     auth: AxumAuthery<St>,
     FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
+    use crate::email::reset::EmailResetInitError;
+
     let password_send_reset_route = auth.routes.pages.password_send_reset.clone();
 
     let routes = auth.routes.clone();
 
-    if let Err(err) = auth.email_reset_init(email.clone(), next).await {
-        let fallback = format!(
-            "{password_send_reset_route}?address={}",
-            urlencoding::encode(&email)
-        );
-        let next = crate::axum::router::error_redirect(&routes, &err, &fallback, None);
+    match auth.email_reset_init(email.clone(), next).await {
+        Ok(()) => {
+            let next = format!(
+                "{password_send_reset_route}?sent=true&address={}",
+                urlencoding::encode(&email)
+            );
 
-        Ok(Redirect::to(&next).into_response())
-    } else {
-        let next = format!(
-            "{password_send_reset_route}?sent=true&address={}",
-            urlencoding::encode(&email)
-        );
+            Ok(Redirect::to(&next).into_response())
+        }
+        // The store's own words never reach the redirect.
+        Err(EmailResetInitError::SendingEmail(SendEmailChallengeError::Store(err))) => {
+            Err(err.into())
+        }
+        Err(err) => {
+            let fallback = format!(
+                "{password_send_reset_route}?address={}",
+                urlencoding::encode(&email)
+            );
+            let next = crate::axum::router::error_redirect(&routes, err, &fallback, None)?;
 
-        Ok(Redirect::to(&next).into_response())
+            Ok(Redirect::to(&next).into_response())
+        }
     }
 }
 
@@ -294,10 +307,9 @@ where
 pub async fn post_password_reset<St>(
     auth: AxumAuthery<St>,
     FormOrJson(NewPasswordForm { new_password }): FormOrJson<NewPasswordForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::models::{LoginSession, User};
 
@@ -329,7 +341,7 @@ where
         )
             .into_response())
     } else {
-        Ok(StatusCode::UNAUTHORIZED.into_response())
+        Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN))
     }
 }
 
@@ -337,10 +349,9 @@ where
 pub(crate) async fn get_password_reset_callback<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<CodeQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::email::reset::{EmailResetCallbackError, EmailResetError};
 
@@ -355,8 +366,10 @@ where
             Ok((auth, Redirect::to(&reset_password_page_route)).into_response())
         }
         Err(err) => match err {
-            EmailResetCallbackError::Store(err) => Err(err),
-            EmailResetCallbackError::EmailResetError(EmailResetError::Store(err)) => Err(err),
+            EmailResetCallbackError::Store(err) => Err(err.into()),
+            EmailResetCallbackError::EmailResetError(EmailResetError::Store(err)) => {
+                Err(err.into())
+            }
             EmailResetCallbackError::ChallengeExpired { address } => {
                 Ok(Redirect::to(&email_expired_url(&routes, "reset", &address)).into_response())
             }

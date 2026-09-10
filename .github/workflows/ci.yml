@@ -51,6 +51,11 @@ jobs:
           - "sms,mfa"
           - "oauth,axum,pages"
           - "oauth,axum,pages,user,email,password,webauthn,mfa,totp,sms"
+          - "openapi"
+          - "openapi,password"
+          - "openapi,oauth,pages,user,email,password,webauthn,mfa,totp,sms"
+          - "aide,password"
+          - "aide,oauth,pages,user,email,password,webauthn,mfa,totp,sms"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -8,9 +8,86 @@ use crate::models::{Id, LoginMethod, LoginSession, User};
 use chrono::{DateTime, Utc};
 use std::future::Future;
 
+/// Implemented by the store's error type. Nothing about a store failure is
+/// exposed to clients unless `public` says so; the full error is always
+/// logged through `tracing` at error level.
+pub trait StoreError: std::error::Error + Send + Sync + 'static {
+    /// What of this error may reach the client. Default: nothing, which
+    /// renders as a generic `500`.
+    fn public(&self) -> Option<PublicError> {
+        None
+    }
+}
+
+/// A client-facing rendering of a store error: an HTTP status and a
+/// message. Statuses outside `400..=599` are rendered as `500`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicError {
+    status: u16,
+    message: String,
+}
+
+impl PublicError {
+    pub fn new(status: u16, message: impl std::fmt::Display) -> Self {
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
+
+    pub fn status(&self) -> u16 {
+        self.status
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl StoreError for std::convert::Infallible {}
+
+/// A flow error that may really be the store failing. Every error a handler
+/// is about to stringify - into a `?error=` redirect, or a JSON body -
+/// passes through [`Self::store_error`] first, so a store's `Display`
+/// (which may name hosts, credentials or SQL) is diverted into a
+/// [`StoreFailure`](crate::axum::response::StoreFailure) and rendered
+/// safely instead. Implement it for every error enum that can carry one,
+/// directly or nested; the bound on
+/// [`error_redirect`](crate::axum::router::error_redirect) is what makes
+/// forgetting impossible.
+#[cfg(feature = "axum")]
+pub(crate) trait MaybeStoreError<E>: Sized {
+    /// `Err(store error)` when this refusal is really the store failing,
+    /// `Ok(self)` otherwise.
+    fn store_error(self) -> Result<Self, E>;
+}
+
+/// `impl MaybeStoreError` for an error enum, written
+/// `Type<extra generics>; store-carrying variants; nested variants` - the
+/// nested ones wrap another error that may hold a store error itself.
+#[cfg(feature = "axum")]
+macro_rules! impl_maybe_store_error {
+    ($ty:ident $(<$($extra:ident),+>)?; $($store:ident),* ; $($nested:ident),*) => {
+        impl<E: std::error::Error $(, $($extra: std::fmt::Debug + std::fmt::Display),+)?>
+            $crate::store::MaybeStoreError<E> for $ty<E $(, $($extra),+)?>
+        {
+            fn store_error(self) -> Result<Self, E> {
+                match self {
+                    $(Self::$store(err) => Err(err),)*
+                    $(Self::$nested(inner) => inner.store_error().map(Self::$nested),)*
+                    #[allow(unreachable_patterns)]
+                    other => Ok(other),
+                }
+            }
+        }
+    };
+}
+#[cfg(feature = "axum")]
+pub(crate) use impl_maybe_store_error;
+
 #[allow(clippy::type_complexity)]
 pub trait AutheryStore: Send + Sync {
-    type Error: std::error::Error + Send;
+    type Error: StoreError;
 
     type UserId: Id;
     type SessionId: Id;

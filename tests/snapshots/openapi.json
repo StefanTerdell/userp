@@ -1,0 +1,3848 @@
+{
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "description": "`{ \"error\": … }`: rejections, refused ceremonies, rendered store errors.",
+        "properties": {
+          "error": {
+            "description": "What went wrong, in words meant for the end user.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "DeleteCredentialForm": {
+        "properties": {
+          "credential_id": {
+            "description": "Hex-encoded credential id, as rendered on the account page.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_id"
+        ],
+        "type": "object"
+      },
+      "EmailAccountForm": {
+        "properties": {
+          "email": {
+            "description": "The address to act on.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "EmailNextForm": {
+        "properties": {
+          "email": {
+            "description": "The address to send the link to.",
+            "type": "string"
+          },
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "FlowError": {
+        "description": "A flow step was refused. `next` is where a browser would have been sent.",
+        "properties": {
+          "error": {
+            "description": "Why the step was refused.",
+            "type": "string"
+          },
+          "next": {
+            "description": "Where a browser would have been redirected to.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "next"
+        ],
+        "type": "object"
+      },
+      "FlowResult": {
+        "description": "A flow step succeeded. Browsers get a redirect to `next`; JSON clients\nget this.",
+        "properties": {
+          "message": {
+            "description": "A note worth showing the user, when the step produced one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next": {
+            "description": "Where a browser would have been redirected to.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "next"
+        ],
+        "type": "object"
+      },
+      "IdAccountForm": {
+        "properties": {
+          "id": {
+            "description": "An entity ID in its string representation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "IdForm": {
+        "properties": {
+          "id": {
+            "description": "An entity ID in its string representation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "MfaCodeForm": {
+        "description": "One form serves both steps: without `code` it requests a code to be sent,\nwith `code` it verifies it. An empty `code` counts as absent.",
+        "properties": {
+          "code": {
+            "description": "The code from the message; omit it to have one sent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trust_device": {
+            "description": "Any non-empty value marks this browser as trusted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "MfaVerifyForm": {
+        "properties": {
+          "code": {
+            "description": "The second-factor code to verify.",
+            "type": "string"
+          },
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trust_device": {
+            "description": "Any non-empty value marks this browser as trusted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "NewPasswordAccountForm": {
+        "properties": {
+          "new_password": {
+            "description": "The replacement password; must satisfy the configured pattern.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_password"
+        ],
+        "type": "object"
+      },
+      "NewPasswordForm": {
+        "properties": {
+          "new_password": {
+            "description": "The replacement password; must satisfy the configured pattern.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_password"
+        ],
+        "type": "object"
+      },
+      "OtpForm": {
+        "description": "One form serves both steps: without `code` it requests a code to be sent,\nwith `code` it verifies it. An empty `code` counts as absent.",
+        "properties": {
+          "code": {
+            "description": "The code from the message; omit it to have one sent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "description": "The address the code is sent to, and verified against.",
+            "type": "string"
+          },
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "PasswordIdNextForm": {
+        "properties": {
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "description": "The password.",
+            "type": "string"
+          },
+          "password_id": {
+            "description": "The password identifier, typically the user's email address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password_id",
+          "password"
+        ],
+        "type": "object"
+      },
+      "ProviderNextForm": {
+        "properties": {
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "The name a provider was registered under.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "type": "object"
+      },
+      "RegisterStartBody": {
+        "properties": {
+          "display_name": {
+            "description": "Shown by the authenticator when picking a credential; typically the\nuser's email or handle.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Optional label for the account page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "type": "object"
+      },
+      "SmsForm": {
+        "description": "One form serves both steps: without `code` it requests a code to be sent,\nwith `code` it verifies it. An empty `code` counts as absent.",
+        "properties": {
+          "code": {
+            "description": "The code from the text; omit it to have one sent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next": {
+            "description": "Where to send the browser afterwards; must be a local path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "number": {
+            "description": "The phone number in E.164 form.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number"
+        ],
+        "type": "object"
+      },
+      "TotpCodeForm": {
+        "properties": {
+          "code": {
+            "description": "A live code from the authenticator app being enrolled.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "session_cookie": {
+        "in": "cookie",
+        "name": "authery-session-id",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "Authery",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/login/email": {
+      "get": {
+        "operationId": "login_email_callback",
+        "parameters": [
+          {
+            "description": "The single-use challenge code carried by the emailed link.",
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "The single-use challenge code carried by the emailed link.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Finish a login link",
+        "tags": [
+          "Email"
+        ]
+      },
+      "post": {
+        "operationId": "login_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Send a login link",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/login/mfa/otp": {
+      "post": {
+        "operationId": "login_mfa_otp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Complete MFA with an emailed code",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/login/mfa/recovery": {
+      "post": {
+        "operationId": "login_mfa_recovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Complete MFA with a recovery code",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/login/mfa/sms": {
+      "post": {
+        "operationId": "login_mfa_sms",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Complete MFA with a texted code",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/login/mfa/totp": {
+      "post": {
+        "operationId": "login_mfa_totp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Complete MFA with an authenticator code",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/login/mfa/webauthn/finish": {
+      "post": {
+        "operationId": "login_mfa_webauthn_finish",
+        "parameters": [
+          {
+            "description": "Any non-empty value marks this browser as trusted.",
+            "in": "query",
+            "name": "trust_device",
+            "required": false,
+            "schema": {
+              "description": "Any non-empty value marks this browser as trusted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "W3C PublicKeyCredential JSON",
+                "externalDocs": {
+                  "url": "https://www.w3.org/TR/webauthn-3/#iface-pkcredential"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "The ceremony completed.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The credential was rejected."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Finish MFA with a passkey",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/login/mfa/webauthn/start": {
+      "post": {
+        "operationId": "login_mfa_webauthn_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "W3C credential creation or request options JSON",
+                  "externalDocs": {
+                    "url": "https://www.w3.org/TR/webauthn-3/#iface-pkcredential"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The challenge to pass to `navigator.credentials`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No ceremony could be started."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Begin MFA with a passkey",
+        "tags": [
+          "MFA"
+        ]
+      }
+    },
+    "/login/oauth": {
+      "post": {
+        "operationId": "login_oauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Start an OAuth login",
+        "tags": [
+          "OAuth"
+        ]
+      }
+    },
+    "/login/otp": {
+      "post": {
+        "operationId": "login_otp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Log in with an emailed code",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/login/password": {
+      "post": {
+        "operationId": "login_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordIdNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordIdNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Log in with a password",
+        "tags": [
+          "Password"
+        ]
+      }
+    },
+    "/login/sms": {
+      "post": {
+        "operationId": "login_sms",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Log in with a texted code",
+        "tags": [
+          "SMS"
+        ]
+      }
+    },
+    "/login/webauthn/finish": {
+      "post": {
+        "operationId": "login_webauthn_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "W3C PublicKeyCredential JSON",
+                "externalDocs": {
+                  "url": "https://www.w3.org/TR/webauthn-3/#iface-pkcredential"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "The ceremony completed.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The credential was rejected."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Finish a passkey login",
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/login/webauthn/start": {
+      "post": {
+        "operationId": "login_webauthn_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "W3C credential creation or request options JSON",
+                  "externalDocs": {
+                    "url": "https://www.w3.org/TR/webauthn-3/#iface-pkcredential"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The challenge to pass to `navigator.credentials`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No ceremony could be started."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Begin a passkey login",
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Log out",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/oauth/callback": {
+      "get": {
+        "operationId": "oauth_callback",
+        "parameters": [
+          {
+            "description": "The authorization code the provider sent back.",
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "The authorization code the provider sent back.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The opaque state value, matched against the flow's state cookie.",
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "description": "The opaque state value, matched against the flow's state cookie.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Finish an OAuth flow",
+        "tags": [
+          "OAuth"
+        ]
+      }
+    },
+    "/password/reset": {
+      "post": {
+        "operationId": "password_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPasswordForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPasswordForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Set a new password from a reset link",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/password/reset/callback": {
+      "get": {
+        "operationId": "password_reset_callback",
+        "parameters": [
+          {
+            "description": "The single-use challenge code carried by the emailed link.",
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "The single-use challenge code carried by the emailed link.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Finish a password-reset link",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/password/reset/send": {
+      "post": {
+        "operationId": "password_send_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Send a password-reset link",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/signup/email": {
+      "get": {
+        "operationId": "signup_email_callback",
+        "parameters": [
+          {
+            "description": "The single-use challenge code carried by the emailed link.",
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "The single-use challenge code carried by the emailed link.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Finish a signup link",
+        "tags": [
+          "Email"
+        ]
+      },
+      "post": {
+        "operationId": "signup_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Send a signup link",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/signup/oauth": {
+      "post": {
+        "operationId": "signup_oauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Start an OAuth signup",
+        "tags": [
+          "OAuth"
+        ]
+      }
+    },
+    "/signup/otp": {
+      "post": {
+        "operationId": "signup_otp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Sign up with an emailed code",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/signup/password": {
+      "post": {
+        "operationId": "signup_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordIdNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordIdNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Sign up with a password",
+        "tags": [
+          "Password"
+        ]
+      }
+    },
+    "/signup/sms": {
+      "post": {
+        "operationId": "signup_sms",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal.",
+            "headers": {
+              "X-Auth-Token": {
+                "description": "Session token for `Authorization: Bearer`, present when this request established a new session.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Sign up with a texted code",
+        "tags": [
+          "SMS"
+        ]
+      }
+    },
+    "/user/delete": {
+      "post": {
+        "operationId": "user_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete the account",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/email/add": {
+      "post": {
+        "operationId": "user_email_add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add an email address",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/email/delete": {
+      "post": {
+        "operationId": "user_email_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove an email address",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/email/disable_login": {
+      "post": {
+        "operationId": "user_email_disable_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stop allowing logging in with an address",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/email/enable_login": {
+      "post": {
+        "operationId": "user_email_enable_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Allow logging in with an address",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/email/verify": {
+      "get": {
+        "operationId": "user_email_verify_callback",
+        "parameters": [
+          {
+            "description": "The single-use challenge code carried by the emailed link.",
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "The single-use challenge code carried by the emailed link.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Finish an address-verification link",
+        "tags": [
+          "Email"
+        ]
+      },
+      "post": {
+        "operationId": "user_email_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send an address-verification link",
+        "tags": [
+          "Email"
+        ]
+      }
+    },
+    "/user/oauth/delete": {
+      "post": {
+        "operationId": "user_oauth_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/IdAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The submitted id could not be parsed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unlink an OAuth account",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/oauth/link": {
+      "post": {
+        "operationId": "user_oauth_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderNextForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderNextForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Link another OAuth account",
+        "tags": [
+          "OAuth"
+        ]
+      }
+    },
+    "/user/oauth/refresh": {
+      "post": {
+        "operationId": "user_oauth_refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/IdForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The submitted id could not be parsed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No OAuth token with that id belongs to the caller."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refresh an OAuth token",
+        "tags": [
+          "OAuth"
+        ]
+      }
+    },
+    "/user/password/delete": {
+      "post": {
+        "operationId": "user_password_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the password",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/password/set": {
+      "post": {
+        "operationId": "user_password_set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPasswordAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPasswordAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the password",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/session/delete": {
+      "post": {
+        "operationId": "user_session_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdAccountForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/IdAccountForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The submitted id could not be parsed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "End one session",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/session/delete_others": {
+      "post": {
+        "operationId": "user_session_delete_others",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "End every other session",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/totp/confirm": {
+      "post": {
+        "operationId": "user_totp_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCodeForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCodeForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm authenticator enrollment",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/totp/disable": {
+      "post": {
+        "operationId": "user_totp_disable",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Disable the authenticator app",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/user/webauthn/delete": {
+      "post": {
+        "operationId": "user_webauthn_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCredentialForm"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCredentialForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "JSON clients: the step succeeded."
+          },
+          "303": {
+            "description": "Browser clients: redirect to the next page, with `?error=` on refusal."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowError"
+                }
+              }
+            },
+            "description": "JSON clients: the step was refused."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a passkey",
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/user/webauthn/register/finish": {
+      "post": {
+        "operationId": "user_webauthn_register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "W3C PublicKeyCredential JSON",
+                "externalDocs": {
+                  "url": "https://www.w3.org/TR/webauthn-3/#iface-pkcredential"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResult"
+                }
+              }
+            },
+            "description": "The ceremony completed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The credential was rejected."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Finish registering a passkey",
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/user/webauthn/register/start": {
+      "post": {
+        "operationId": "user_webauthn_register_start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterStartBody"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterStartBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "W3C credential creation or request options JSON",
+                  "externalDocs": {
+                    "url": "https://www.w3.org/TR/webauthn-3/#iface-pkcredential"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The challenge to pass to `navigator.credentials`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No ceremony could be started."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Begin registering a passkey",
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/verify-session": {
+      "get": {
+        "operationId": "verify_session",
+        "responses": {
+          "200": {
+            "description": "Logged in."
+          },
+          "401": {
+            "description": "Not logged in."
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The store refused the request and chose to say why."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check whether the caller is logged in",
+        "tags": [
+          "Session"
+        ]
+      }
+    }
+  }
+}

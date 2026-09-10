@@ -28,6 +28,9 @@ impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailResetInit
     }
 }
 
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(EmailResetInitError; ; SendingEmail);
+
 #[derive(Error, Debug)]
 pub enum EmailResetError<StoreError: std::error::Error> {
     #[error("Email reset not allowed")]

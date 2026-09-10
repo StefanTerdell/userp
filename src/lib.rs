@@ -121,6 +121,8 @@
 //! | `mfa` | Second-factor policy over any first factor; single-use recovery codes | recovery-code hashes |
 //! | `pages` | Bundled Askama pages + the `Pages` replacement trait | - |
 //! | `axum` | The extractor, router and cookie layer | - |
+//! | `openapi` | An OpenAPI 3.x document for the mounted routes (`AxumRouter::openapi`) | - |
+//! | `aide` | Native [aide](https://docs.rs/aide) routing (`AxumRouter::api_router`), documented alongside your own routes | - |
 //!
 //! Default: everything except `axum`.
 //!
@@ -299,12 +301,26 @@
 //! riding `?error=` query params. Send `Accept: application/json` and the
 //! transport layer translates every flow redirect uniformly instead:
 //!
-//! - `200 {"next": "..."}` on success (plus `"message"` when one rides along)
-//! - `422 {"error": "...", "next": "..."}` on flow errors
+//! - `200` `FlowResult` - `{"next": "..."}` on success (plus `"message"`
+//!   when one rides along)
+//! - `422` `FlowError` - `{"error": "...", "next": "..."}` on flow errors
 //!
-//! Cookies and the `X-Auth-Token` header behave identically, so a mobile
-//! client logs in by POSTing the same form with the JSON accept header,
-//! keeps the token, and sends it as `Authorization: Bearer` from then on.
+//! Store failures use the same switch and render as `ApiError` -
+//! `{"error": "..."}`. Cookies and the `X-Auth-Token` header behave
+//! identically, so a mobile client logs in by POSTing the same form with
+//! the JSON accept header, keeps the token, and sends it as
+//! `Authorization: Bearer` from then on.
+//!
+//! # OpenAPI
+//!
+//! With `openapi` (implies `axum`), `AxumRouter::openapi()` /
+//! `openapi_with()` build a document describing every route authery mounts,
+//! generated from the same route table and `schemars` derives the router is
+//! built from, so it can't drift from the code. `Document::convert` loads it
+//! into utoipa's or aide's types through serde. With `aide`,
+//! `AxumRouter::api_router()` registers every route through aide's typed
+//! routing so `finish_api` documents them alongside the app's own; see the
+//! README's *OpenAPI* section for the full examples.
 //!
 //! # Sessions & bearer tokens
 //!
@@ -467,6 +483,8 @@ pub mod events;
 #[cfg(feature = "mfa")]
 pub mod mfa;
 pub mod models;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 pub mod prelude;
 pub mod ratelimit;
 pub mod reexports;

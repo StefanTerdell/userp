@@ -1,31 +1,38 @@
+use crate::axum::response::StoreFailure;
 use crate::pages::{LoginTemplate, SignupTemplate};
 use crate::{axum::AxumAuthery, store::AutheryStore};
 use axum::extract::Query;
-use axum::response::{Html, IntoResponse, Redirect};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct NextMessageErrorQuery {
+    /// Where to send the browser afterwards; must be a local path.
     pub next: Option<String>,
+    /// A note to show the user.
     pub message: Option<String>,
+    /// An error to show the user.
     pub error: Option<String>,
     /// Preselects that method's panel on the login/signup page.
     pub method: Option<String>,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct PausedQuery {
+    /// Seconds until the caller may try again.
     pub retry_after: Option<i64>,
+    /// Where to send the browser afterwards; must be a local path.
     pub next: Option<String>,
 }
 
 pub async fn get_paused<St>(
     auth: AxumAuthery<St>,
     Query(PausedQuery { retry_after, next }): Query<PausedQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::pages::PausedTemplate;
 
@@ -46,14 +53,18 @@ where
         #[cfg(not(all(feature = "email", feature = "password")))]
         password_send_reset_page_route: None,
     };
-    Ok(Html(auth.pages.render_paused(&view)))
+    Ok(Html(auth.pages.render_paused(&view)).into_response())
 }
 
 #[cfg(feature = "email")]
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct EmailLinkQuery {
+    /// The address the link was sent to.
     pub address: Option<String>,
+    /// What the link was for: `login`, `signup`, `verify` or `reset`.
     pub purpose: Option<String>,
+    /// Where to send the browser afterwards; must be a local path.
     pub next: Option<String>,
 }
 
@@ -92,10 +103,9 @@ pub async fn get_email_sent<St>(
         purpose,
         next,
     }): Query<EmailLinkQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::pages::{EmailLinkPurpose, EmailSentTemplate};
 
@@ -116,7 +126,9 @@ where
         login_page_route: &auth.routes.pages.login,
         next: next.as_deref(),
     };
-    Ok(Html(auth.pages.render_email_sent(&view)).into_response())
+    Ok(Html(auth.pages.render_email_sent(&view))
+        .into_response()
+        .into_response())
 }
 
 #[cfg(feature = "email")]
@@ -125,10 +137,9 @@ pub async fn get_email_expired<St>(
     Query(EmailLinkQuery {
         address, purpose, ..
     }): Query<EmailLinkQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::pages::{EmailExpiredTemplate, EmailLinkPurpose};
 
@@ -147,14 +158,19 @@ where
         password: cfg!(feature = "password"),
         webauthn: cfg!(feature = "webauthn"),
     };
-    Ok(Html(auth.pages.render_email_expired(&view)))
+    Ok(Html(auth.pages.render_email_expired(&view)).into_response())
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct AddressMessageSentErrorQuery {
+    /// The address the form should be prefilled with.
     pub address: Option<String>,
+    /// A note to show the user.
     pub message: Option<String>,
+    /// Whether a message has already gone out.
     pub sent: Option<bool>,
+    /// An error to show the user.
     pub error: Option<String>,
 }
 
@@ -167,10 +183,9 @@ pub async fn get_login<St>(
         method,
         ..
     }): Query<NextMessageErrorQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(if auth.logged_in().await? {
         Redirect::to(&auth.routes.pages.post_login).into_response()
@@ -195,10 +210,9 @@ pub async fn get_signup<St>(
         method,
         ..
     }): Query<NextMessageErrorQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let view = SignupTemplate::with(
         &auth,
@@ -207,7 +221,9 @@ where
         error.as_deref(),
         method.as_deref(),
     );
-    Ok(Html(auth.pages.render_signup(&view)).into_response())
+    Ok(Html(auth.pages.render_signup(&view))
+        .into_response()
+        .into_response())
 }
 
 #[cfg(feature = "mfa")]
@@ -219,10 +235,9 @@ pub async fn get_login_mfa<St>(
         error,
         ..
     }): Query<NextMessageErrorQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::models::{LoginMethod, LoginSession};
     use crate::pages::MfaTemplate;
@@ -294,7 +309,9 @@ where
         webauthn: None,
     };
 
-    Ok(Html(auth.pages.render_mfa(&view)).into_response())
+    Ok(Html(auth.pages.render_mfa(&view))
+        .into_response()
+        .into_response())
 }
 
 /// `stefan@example.com` -> `s***@example.com`
@@ -326,10 +343,15 @@ fn mask_number(number: &str) -> String {
 
 #[cfg(any(feature = "email", feature = "sms"))]
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct OtpPageQuery {
+    /// The address or number the code was sent to.
     pub address: String,
+    /// Where to send the browser afterwards; must be a local path.
     pub next: Option<String>,
+    /// A note to show the user.
     pub message: Option<String>,
+    /// An error to show the user.
     pub error: Option<String>,
 }
 
@@ -359,10 +381,9 @@ fn code_entry_page<St: AutheryStore>(
 pub async fn get_login_sms<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<OtpPageQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(code_entry_page(
         &auth,
@@ -370,17 +391,17 @@ where
         "sms",
         &auth.routes.sms.login_sms,
         auth.sms.code_generator.as_ref(),
-    ))
+    )
+    .into_response())
 }
 
 #[cfg(feature = "sms")]
 pub async fn get_signup_sms<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<OtpPageQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(code_entry_page(
         &auth,
@@ -388,17 +409,17 @@ where
         "sms",
         &auth.routes.sms.signup_sms,
         auth.sms.code_generator.as_ref(),
-    ))
+    )
+    .into_response())
 }
 
 #[cfg(feature = "email")]
 pub async fn get_login_otp<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<OtpPageQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(code_entry_page(
         &auth,
@@ -406,17 +427,17 @@ where
         "email",
         &auth.routes.email.login_otp,
         auth.email.code_generator.as_ref(),
-    ))
+    )
+    .into_response())
 }
 
 #[cfg(feature = "email")]
 pub async fn get_signup_otp<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<OtpPageQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     Ok(code_entry_page(
         &auth,
@@ -424,17 +445,17 @@ where
         "email",
         &auth.routes.email.signup_otp,
         auth.email.code_generator.as_ref(),
-    ))
+    )
+    .into_response())
 }
 
 #[cfg(feature = "user")]
 pub async fn get_user<St>(
     auth: AxumAuthery<St>,
     Query(NextMessageErrorQuery { error, message, .. }): Query<NextMessageErrorQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::models::User;
     use crate::pages::UserTemplate;
@@ -482,10 +503,9 @@ where
 pub async fn get_password_send_reset<St>(
     auth: AxumAuthery<St>,
     Query(query): Query<AddressMessageSentErrorQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::pages::SendResetPasswordTemplate;
 
@@ -497,17 +517,16 @@ where
         message: query.message.as_deref(),
         send_reset_password_action_route: &auth.routes.email.password_send_reset,
     };
-    Ok(Html(auth.pages.render_send_reset_password(&view)))
+    Ok(Html(auth.pages.render_send_reset_password(&view)).into_response())
 }
 
 #[cfg(all(feature = "email", feature = "password"))]
 pub async fn get_password_reset<St>(
     auth: AxumAuthery<St>,
     Query(NextMessageErrorQuery { error, .. }): Query<NextMessageErrorQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     use crate::pages::ResetPasswordTemplate;
     use axum::http::StatusCode;
@@ -524,7 +543,9 @@ where
                 .as_ref()
                 .and_then(|p| p.hint().map(str::to_owned)),
         };
-        Ok(Html(auth.pages.render_reset_password(&view)).into_response())
+        Ok(Html(auth.pages.render_reset_password(&view))
+            .into_response()
+            .into_response())
     } else {
         Ok(StatusCode::UNAUTHORIZED.into_response())
     }

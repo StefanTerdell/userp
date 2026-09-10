@@ -1,4 +1,5 @@
 use crate::axum::extract::FormOrJson;
+use crate::axum::response::{ApiError, MALFORMED_ID, NOT_LOGGED_IN, StoreFailure};
 use crate::{
     axum::AxumAuthery,
     models::{User, oauth::OAuthToken},
@@ -6,7 +7,7 @@ use crate::{
         OAuthGenericCallbackError, RefreshInitResult,
         link::{OAuthLinkCallbackError, OAuthLinkInitError},
         login::OAuthLoginCallbackError,
-        refresh::OAuthRefreshCallbackError,
+        refresh::{OAuthRefreshCallbackError, OAuthRefreshInitError},
         signup::OAuthSignupCallbackError,
     },
     reexports::oauth2::{AuthorizationCode, CsrfToken},
@@ -15,83 +16,90 @@ use crate::{
 use axum::{
     extract::Query,
     http::StatusCode,
-    response::{IntoResponse, Redirect},
+    response::{IntoResponse, Redirect, Response},
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct IdForm {
     /// An entity ID in its string representation
     pub id: String,
 }
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct ProviderNextForm {
+    /// The name a provider was registered under.
     pub provider: String,
+    /// Where to send the browser afterwards; must be a local path.
     pub next: Option<String>,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "openapi", derive(schemars::JsonSchema))]
 pub struct CodeStateQuery {
+    /// The authorization code the provider sent back.
+    #[cfg_attr(feature = "openapi", schemars(with = "String"))]
     pub code: AuthorizationCode,
+    /// The opaque state value, matched against the flow's state cookie.
+    #[cfg_attr(feature = "openapi", schemars(with = "String"))]
     pub state: CsrfToken,
 }
 
 pub async fn post_user_oauth_refresh<St>(
     auth: AxumAuthery<St>,
     FormOrJson(IdForm { id: token_id }): FormOrJson<IdForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let Some(user) = auth.user().await? else {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     };
 
     let Ok(token_id) = token_id.parse::<St::OAuthTokenId>() else {
-        return Ok(StatusCode::BAD_REQUEST.into_response());
+        return Ok(ApiError::response(StatusCode::BAD_REQUEST, MALFORMED_ID));
     };
 
-    let token = match auth.store.get_oauth_token_by_id(&token_id).await {
-        Ok(Some(token)) if token.get_user_id() == user.get_id() => token,
-        Ok(_) => {
-            return Ok(StatusCode::NOT_FOUND.into_response());
-        }
-        Err(err) => {
-            eprintln!("{err:#?}");
-            return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let token = match auth.store.get_oauth_token_by_id(&token_id).await? {
+        Some(token) if token.get_user_id() == user.get_id() => token,
+        _ => {
+            return Ok(ApiError::response(
+                StatusCode::NOT_FOUND,
+                "No such OAuth token.",
+            ));
         }
     };
 
     let user_route = crate::axum::router::user_page(&auth.routes).clone();
 
-    Ok(
-        match auth
-            .oauth_refresh_init(
-                token,
-                Some(format!("{user_route}?message=Token refreshed").to_string()),
+    match auth
+        .oauth_refresh_init(
+            token,
+            Some(format!("{user_route}?message=Token refreshed").to_string()),
+        )
+        .await
+    {
+        Ok((auth, result)) => Ok(match result {
+            RefreshInitResult::Ok => (
+                auth,
+                Redirect::to(&format!("{user_route}?message=Token refreshed")),
             )
-            .await
-        {
-            Ok((auth, result)) => match result {
-                RefreshInitResult::Ok => (
-                    auth,
-                    Redirect::to(&format!("{user_route}?message=Token refreshed")),
-                )
-                    .into_response(),
-                RefreshInitResult::Redirect(redirect_url) => {
-                    (auth, Redirect::to(redirect_url.as_str())).into_response()
-                }
-            },
-            Err(err) => {
-                let next = format!(
-                    "{user_route}?error={}",
-                    urlencoding::encode(&err.to_string())
-                );
-                Redirect::to(&next).into_response()
+                .into_response(),
+            RefreshInitResult::Redirect(redirect_url) => {
+                (auth, Redirect::to(redirect_url.as_str())).into_response()
             }
-        },
-    )
+        }),
+        // The store's own words never reach the redirect.
+        Err(OAuthRefreshInitError::Store(err)) => Err(err.into()),
+        Err(err) => {
+            let next = format!(
+                "{user_route}?error={}",
+                urlencoding::encode(&err.to_string())
+            );
+            Ok(Redirect::to(&next).into_response())
+        }
+    }
 }
 
 /// The single OAuth callback: the flow type and provider ride the encrypted
@@ -99,10 +107,9 @@ where
 pub async fn get_oauth<St>(
     auth: AxumAuthery<St>,
     Query(CodeStateQuery { code, state }): Query<CodeStateQuery>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let login_route = auth.routes.pages.login.clone();
     let signup_route = auth.routes.pages.signup.clone();
@@ -114,7 +121,9 @@ where
             OAuthGenericCallbackError::Signup(OAuthSignupCallbackError::Store(err))
             | OAuthGenericCallbackError::Login(OAuthLoginCallbackError::Store(err))
             | OAuthGenericCallbackError::Refresh(OAuthRefreshCallbackError::Store(err))
-            | OAuthGenericCallbackError::Link(OAuthLinkCallbackError::Store(err)) => Err(err),
+            | OAuthGenericCallbackError::Link(OAuthLinkCallbackError::Store(err)) => {
+                Err(err.into())
+            }
             // Errors land back on the page the flow started from.
             err => {
                 let target = match &err {
@@ -134,13 +143,12 @@ where
 pub async fn post_user_oauth_link<St>(
     auth: AxumAuthery<St>,
     FormOrJson(ProviderNextForm { provider, next, .. }): FormOrJson<ProviderNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     if !auth.logged_in().await? {
-        return Ok(StatusCode::UNAUTHORIZED.into_response());
+        return Ok(ApiError::response(StatusCode::UNAUTHORIZED, NOT_LOGGED_IN));
     }
 
     let user_route = crate::axum::router::user_page(&auth.routes).clone();
@@ -148,7 +156,7 @@ where
     match auth.oauth_link_init(provider, next).await {
         Ok((auth, redirect_url)) => Ok((auth, Redirect::to(redirect_url.as_str())).into_response()),
         Err(err) => match err {
-            OAuthLinkInitError::Store(err) => Err(err),
+            OAuthLinkInitError::Store(err) => Err(err.into()),
             _ => {
                 let next = format!(
                     "{user_route}?error={}",
@@ -163,10 +171,9 @@ where
 pub async fn post_login_oauth<St>(
     auth: AxumAuthery<St>,
     FormOrJson(form): FormOrJson<ProviderNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let login_route = auth.routes.pages.login.clone();
 
@@ -185,10 +192,9 @@ where
 pub async fn post_signup_oauth<St>(
     auth: AxumAuthery<St>,
     FormOrJson(ProviderNextForm { provider, next, .. }): FormOrJson<ProviderNextForm>,
-) -> Result<impl IntoResponse, St::Error>
+) -> Result<Response, StoreFailure<St::Error>>
 where
     St: AutheryStore,
-    St::Error: IntoResponse,
 {
     let signup_route = auth.routes.pages.signup.clone();
 

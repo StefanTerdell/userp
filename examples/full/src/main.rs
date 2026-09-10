@@ -196,7 +196,6 @@ async fn main() {
 async fn run<St>(store: St, auth: AutheryConfig)
 where
     St: AutheryStore + Clone + Send + Sync + 'static + FromRef<AppState<St>>,
-    St::Error: IntoResponse,
     St::User: std::fmt::Debug,
     St::LoginSession: std::fmt::Debug,
 {
@@ -217,7 +216,6 @@ where
 async fn get_index<St>(auth: Authery<St>) -> impl IntoResponse
 where
     St: AutheryStore + Send + Sync,
-    St::Error: IntoResponse,
 {
     let logged_in = auth.logged_in().await.unwrap();
 
@@ -227,7 +225,6 @@ where
 async fn get_protected<St>(auth: Authery<St>) -> impl IntoResponse
 where
     St: AutheryStore + Send + Sync,
-    St::Error: IntoResponse,
     St::User: std::fmt::Debug,
     St::LoginSession: std::fmt::Debug,
 {

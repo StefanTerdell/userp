@@ -344,6 +344,9 @@ mod code_factor {
         }
     }
 
+    #[cfg(feature = "axum")]
+    crate::store::impl_maybe_store_error!(MfaCodeError<SE>; Store;);
+
     impl<E: std::error::Error, SE: std::fmt::Debug + std::fmt::Display> From<SendCodeError<E, SE>>
         for MfaCodeError<E, SE>
     {
@@ -682,6 +685,9 @@ mod totp_factor {
         }
     }
 
+    #[cfg(feature = "axum")]
+    crate::store::impl_maybe_store_error!(MfaTotpError; Store; Totp);
+
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         /// Verify an authenticator-app code and upgrade the pending session.
         #[must_use = "Don't forget to return the auth session as part of the response!"]
@@ -848,6 +854,9 @@ mod recovery {
     }
 
     crate::ratelimit::impl_maybe_rate_limited!(MfaRecoveryError, RateLimited);
+
+    #[cfg(feature = "axum")]
+    crate::store::impl_maybe_store_error!(MfaRecoveryError; Store;);
 
     impl<S: AutheryStore, C: AutheryCookies> CoreAuthery<S, C> {
         /// Generate a fresh batch of recovery codes for the logged-in user,

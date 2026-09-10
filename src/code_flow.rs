@@ -154,6 +154,9 @@ impl<E: std::error::Error, SE: std::fmt::Debug + std::fmt::Display + MaybeRateLi
     }
 }
 
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(CodeInitError<SE>; Store;);
+
 #[derive(Debug, Error)]
 pub enum CodeVerifyError<StoreError: std::error::Error> {
     #[error("{0} not allowed")]
@@ -171,6 +174,8 @@ pub enum CodeVerifyError<StoreError: std::error::Error> {
 }
 
 crate::ratelimit::impl_maybe_rate_limited!(CodeVerifyError, RateLimited);
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(CodeVerifyError; Store;);
 
 /// Rate-limit, store, or wrong/expired-code failure while consuming a
 /// submitted code.

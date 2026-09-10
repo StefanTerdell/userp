@@ -1,4 +1,5 @@
 use super::cookies::{AxumAutheryCookies, JarHandle, SharedCookieJar};
+use super::response::ApiError;
 use crate::{config::AutheryConfig, core::CoreAuthery, store::AutheryStore};
 use axum::{
     extract::{FromRef, FromRequestParts},
@@ -134,19 +135,6 @@ where
     }
 }
 
-/// A `{ "error": … }` JSON body with the given status.
-pub(crate) fn json_error(
-    status: axum::http::StatusCode,
-    err: &impl std::fmt::Display,
-) -> axum::response::Response {
-    use axum::response::IntoResponse;
-    (
-        status,
-        axum::Json(serde_json::json!({ "error": err.to_string() })),
-    )
-        .into_response()
-}
-
 /// Body extractor for the flow endpoints: accepts the same payload as either
 /// an HTML form (`application/x-www-form-urlencoded`) or JSON
 /// (`application/json`), so browsers and API clients POST to the same routes.
@@ -188,25 +176,49 @@ where
 
         let bytes = axum::body::Bytes::from_request(req, state)
             .await
-            .map_err(|err| json_error(err.status(), &err))?;
+            .map_err(|err| ApiError::response(err.status(), &err))?;
 
         let value = match declared {
             DeclaredBody::Json => serde_json::from_slice::<T>(&bytes)
-                .map_err(|err| json_error(StatusCode::UNPROCESSABLE_ENTITY, &err))?,
+                .map_err(|err| ApiError::response(StatusCode::UNPROCESSABLE_ENTITY, &err))?,
             DeclaredBody::Form => serde_urlencoded::from_bytes::<T>(&bytes)
-                .map_err(|err| json_error(StatusCode::UNPROCESSABLE_ENTITY, &err))?,
+                .map_err(|err| ApiError::response(StatusCode::UNPROCESSABLE_ENTITY, &err))?,
             DeclaredBody::Unclear => serde_json::from_slice::<T>(&bytes)
                 .or_else(|_| serde_urlencoded::from_bytes::<T>(&bytes))
                 .map_err(|_| {
-                    json_error(
+                    ApiError::response(
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                        &"Expected a JSON (application/json) or form-encoded \
+                        "Expected a JSON (application/json) or form-encoded \
                           (application/x-www-form-urlencoded) body",
                     )
                 })?,
         };
 
         Ok(FormOrJson(value))
+    }
+}
+
+/// [`axum::Json`] for the W3C credential payloads, which carry no schema of
+/// their own: `webauthn-rs-proto`'s types are `serde`-only, so documenting
+/// them means describing an opaque object rather than deriving a schema.
+/// Behaves exactly like `Json<T>` at runtime, except that a rejection is
+/// rendered as the `{ "error": … }` body the document promises rather than
+/// axum's plain text.
+#[derive(Debug, Clone, Copy)]
+pub struct WebauthnJson<T>(pub T);
+
+impl<S, T> axum::extract::FromRequest<S> for WebauthnJson<T>
+where
+    S: Send + Sync,
+    T: serde::de::DeserializeOwned,
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
+        axum::Json::<T>::from_request(req, state)
+            .await
+            .map(|axum::Json(value)| WebauthnJson(value))
+            .map_err(|err| ApiError::response(err.status(), err.body_text()))
     }
 }
 
@@ -331,5 +343,48 @@ mod form_or_json_tests {
             error.contains("application/x-www-form-urlencoded"),
             "{error}"
         );
+    }
+}
+
+#[cfg(test)]
+mod webauthn_json_tests {
+    use super::WebauthnJson;
+    use axum::{
+        body::{Body, to_bytes},
+        extract::FromRequest,
+        http::Request,
+    };
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct Credential {
+        #[allow(dead_code)]
+        id: String,
+    }
+
+    /// The document promises a JSON `{ "error": … }` body on every 4XX, so
+    /// a malformed credential must not come back as axum's plain text.
+    #[tokio::test]
+    async fn a_rejected_credential_is_an_api_error_body() {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+
+        let res = WebauthnJson::<Credential>::from_request(req, &())
+            .await
+            .err()
+            .expect("a credential without `id` is rejected");
+
+        assert!(res.status().is_client_error(), "{}", res.status());
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(body["error"].is_string(), "{body}");
     }
 }

@@ -222,6 +222,15 @@ pub struct PausedTemplate<'a> {
     pub password_send_reset_page_route: Option<&'a str>,
 }
 
+/// A store failure or another server-side problem.
+#[derive(Template)]
+#[template(path = "error.html")]
+pub struct ErrorTemplate<'a> {
+    pub status: u16,
+    pub message: &'a str,
+    pub login_page_route: &'a str,
+}
+
 #[cfg(all(feature = "password", feature = "email"))]
 #[derive(Template)]
 #[template(path = "send-reset-password.html")]
@@ -861,6 +870,11 @@ pub trait Pages: std::fmt::Debug + Send + Sync {
     #[cfg(feature = "email")]
     fn render_email_expired(&self, view: &EmailExpiredTemplate<'_>) -> String;
     fn render_paused(&self, view: &PausedTemplate<'_>) -> String;
+    /// A store failure or other server-side problem. The default renders
+    /// the bundled template; `message` is already safe to show.
+    fn render_error(&self, view: &ErrorTemplate<'_>) -> String {
+        render_or_err(view)
+    }
 }
 
 /// The default [`Pages`] renderer, backed by the bundled Askama templates.

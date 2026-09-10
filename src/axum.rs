@@ -1,5 +1,8 @@
+#[cfg(feature = "aide")]
+mod aide;
 pub mod cookies;
 pub mod extract;
+pub mod response;
 pub mod router;
 
 use crate::core::CoreAuthery;

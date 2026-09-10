@@ -17,8 +17,8 @@ use authery::reexports::url::Url;
 use authery::reexports::uuid::Uuid;
 use authery::routes::Routes;
 use authery::store::AutheryStore;
+use authery::store::{PublicError, StoreError};
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -177,6 +177,25 @@ impl LoginSession for TestSession {
     }
 }
 
+#[derive(Debug, thiserror::Error, Clone)]
+pub enum TestError {
+    /// Internal detail that must never reach a client.
+    #[error("internal: {0}")]
+    Internal(String),
+    /// A refusal the store chooses to explain.
+    #[error("address taken")]
+    Taken,
+}
+
+impl StoreError for TestError {
+    fn public(&self) -> Option<PublicError> {
+        match self {
+            TestError::Internal(_) => None,
+            TestError::Taken => Some(PublicError::new(409, "That address is taken")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TestStore {
     pub users: Arc<Mutex<HashMap<Uuid, TestUser>>>,
@@ -192,6 +211,16 @@ pub struct TestStore {
     pub oauth_tokens: Arc<Mutex<HashMap<Uuid, TestOAuthToken>>>,
     #[cfg(feature = "webauthn")]
     pub passkeys: Arc<Mutex<Vec<(Uuid, authery::models::PasskeyRecord)>>>,
+    /// Arms the next `get_user_by_password_id` call to fail with this error.
+    pub fail_next: Arc<Mutex<Option<TestError>>>,
+    /// Arms the next `get_session` call to fail with this error.
+    pub fail_session_next: Arc<Mutex<Option<TestError>>>,
+    /// Arms the next `get_totp` call to fail with this error.
+    #[cfg(feature = "totp")]
+    pub fail_totp_next: Arc<Mutex<Option<TestError>>>,
+    /// When set, EVERY store call fails with this error. The transport sweep
+    /// uses it to prove no route puts a store's `Display` on the wire.
+    pub fail_all: Arc<Mutex<Option<TestError>>>,
 }
 
 impl TestStore {
@@ -239,6 +268,39 @@ impl TestStore {
         });
     }
 
+    /// Arm the next `get_user_by_password_id` call to fail, so transport
+    /// tests can see how a store error is rendered.
+    pub fn fail_next(&self, err: TestError) {
+        *self.fail_next.lock().unwrap() = Some(err);
+    }
+
+    /// Arm the next `get_session` call to fail. A login reaches that only
+    /// after `create_session` has staged the session cookie, so this is how
+    /// a test gets a store failure with cookies already on the response.
+    pub fn fail_session_next(&self, err: TestError) {
+        *self.fail_session_next.lock().unwrap() = Some(err);
+    }
+
+    /// Arm the next `get_totp` call to fail, so a second factor can fail
+    /// inside the verify step rather than at the session lookup.
+    #[cfg(feature = "totp")]
+    pub fn fail_totp_next(&self, err: TestError) {
+        *self.fail_totp_next.lock().unwrap() = Some(err);
+    }
+
+    /// Make every store call fail, for as long as it stays armed.
+    pub fn fail_all(&self, err: TestError) {
+        *self.fail_all.lock().unwrap() = Some(err);
+    }
+
+    /// The blanket failure, checked at the top of every store method.
+    fn check(&self) -> Result<(), TestError> {
+        match self.fail_all.lock().unwrap().clone() {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
     pub fn session_count(&self, user_id: Uuid) -> usize {
         self.sessions
             .lock()
@@ -250,7 +312,7 @@ impl TestStore {
 }
 
 impl AutheryStore for TestStore {
-    type Error = Infallible;
+    type Error = TestError;
     type UserId = Uuid;
     type SessionId = Uuid;
     type User = TestUser;
@@ -264,7 +326,8 @@ impl AutheryStore for TestStore {
     #[cfg(feature = "oauth")]
     type OAuthToken = TestOAuthToken;
 
-    async fn get_user(&self, user_id: &Uuid) -> Result<Option<TestUser>, Infallible> {
+    async fn get_user(&self, user_id: &Uuid) -> Result<Option<TestUser>, TestError> {
+        self.check()?;
         Ok(self.users.lock().unwrap().get(user_id).cloned())
     }
 
@@ -274,7 +337,8 @@ impl AutheryStore for TestStore {
         method: LoginMethod,
         expires: DateTime<Utc>,
         meta: authery::models::SessionMeta,
-    ) -> Result<TestSession, Infallible> {
+    ) -> Result<TestSession, TestError> {
+        self.check()?;
         let session = TestSession {
             id: Uuid::new_v4(),
             user_id: *user_id,
@@ -295,23 +359,30 @@ impl AutheryStore for TestStore {
         _user_id: &Uuid,
         session_id: &Uuid,
         seen_at: DateTime<Utc>,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         if let Some(session) = self.sessions.lock().unwrap().get_mut(session_id) {
             session.last_seen = Some(seen_at);
         }
         Ok(())
     }
 
-    async fn get_session(&self, session_id: &Uuid) -> Result<Option<TestSession>, Infallible> {
+    async fn get_session(&self, session_id: &Uuid) -> Result<Option<TestSession>, TestError> {
+        self.check()?;
+        if let Some(err) = self.fail_session_next.lock().unwrap().take() {
+            return Err(err);
+        }
         Ok(self.sessions.lock().unwrap().get(session_id).cloned())
     }
 
-    async fn delete_session(&self, _user_id: &Uuid, session_id: &Uuid) -> Result<(), Infallible> {
+    async fn delete_session(&self, _user_id: &Uuid, session_id: &Uuid) -> Result<(), TestError> {
+        self.check()?;
         self.sessions.lock().unwrap().remove(session_id);
         Ok(())
     }
 
-    async fn get_user_sessions(&self, user_id: &Uuid) -> Result<Vec<TestSession>, Infallible> {
+    async fn get_user_sessions(&self, user_id: &Uuid) -> Result<Vec<TestSession>, TestError> {
+        self.check()?;
         Ok(self
             .sessions
             .lock()
@@ -322,7 +393,8 @@ impl AutheryStore for TestStore {
             .collect())
     }
 
-    async fn delete_user(&self, id: &Uuid) -> Result<(), Infallible> {
+    async fn delete_user(&self, id: &Uuid) -> Result<(), TestError> {
+        self.check()?;
         self.users.lock().unwrap().remove(id);
         Ok(())
     }
@@ -331,7 +403,11 @@ impl AutheryStore for TestStore {
     async fn get_totp(
         &self,
         user_id: &Uuid,
-    ) -> Result<Option<authery::models::TotpCredential>, Infallible> {
+    ) -> Result<Option<authery::models::TotpCredential>, TestError> {
+        self.check()?;
+        if let Some(err) = self.fail_totp_next.lock().unwrap().take() {
+            return Err(err);
+        }
         Ok(self.totp.lock().unwrap().get(user_id).cloned())
     }
 
@@ -340,13 +416,15 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         credential: authery::models::TotpCredential,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         self.totp.lock().unwrap().insert(*user_id, credential);
         Ok(())
     }
 
     #[cfg(feature = "totp")]
-    async fn delete_totp(&self, user_id: &Uuid) -> Result<(), Infallible> {
+    async fn delete_totp(&self, user_id: &Uuid) -> Result<(), TestError> {
+        self.check()?;
         self.totp.lock().unwrap().remove(user_id);
         Ok(())
     }
@@ -355,7 +433,8 @@ impl AutheryStore for TestStore {
     async fn get_user_by_phone(
         &self,
         number: &str,
-    ) -> Result<Option<(TestUser, TestPhone)>, Infallible> {
+    ) -> Result<Option<(TestUser, TestPhone)>, TestError> {
+        self.check()?;
         let phone = self
             .phones
             .lock()
@@ -374,10 +453,8 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "sms")]
-    async fn create_user_by_phone(
-        &self,
-        number: &str,
-    ) -> Result<(TestUser, TestPhone), Infallible> {
+    async fn create_user_by_phone(&self, number: &str) -> Result<(TestUser, TestPhone), TestError> {
+        self.check()?;
         let id = Uuid::new_v4();
         let user = TestUser {
             id,
@@ -396,7 +473,8 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "sms")]
-    async fn get_user_phones(&self, user_id: &Uuid) -> Result<Vec<TestPhone>, Infallible> {
+    async fn get_user_phones(&self, user_id: &Uuid) -> Result<Vec<TestPhone>, TestError> {
+        self.check()?;
         Ok(self
             .phones
             .lock()
@@ -412,7 +490,8 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         hashes: Vec<String>,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         self.recovery.lock().unwrap().insert(*user_id, hashes);
         Ok(())
     }
@@ -422,7 +501,8 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         hash: &str,
-    ) -> Result<bool, Infallible> {
+    ) -> Result<bool, TestError> {
+        self.check()?;
         let mut recovery = self.recovery.lock().unwrap();
         let Some(hashes) = recovery.get_mut(user_id) else {
             return Ok(false);
@@ -433,7 +513,8 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(feature = "mfa")]
-    async fn count_recovery_codes(&self, user_id: &Uuid) -> Result<usize, Infallible> {
+    async fn count_recovery_codes(&self, user_id: &Uuid) -> Result<usize, TestError> {
+        self.check()?;
         Ok(self
             .recovery
             .lock()
@@ -448,7 +529,8 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         passkey: authery::models::PasskeyRecord,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         self.passkeys.lock().unwrap().push((*user_id, passkey));
         Ok(())
     }
@@ -457,7 +539,8 @@ impl AutheryStore for TestStore {
     async fn get_passkeys(
         &self,
         user_id: &Uuid,
-    ) -> Result<Vec<authery::models::PasskeyRecord>, Infallible> {
+    ) -> Result<Vec<authery::models::PasskeyRecord>, TestError> {
+        self.check()?;
         Ok(self
             .passkeys
             .lock()
@@ -472,7 +555,8 @@ impl AutheryStore for TestStore {
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &[u8],
-    ) -> Result<Option<(Uuid, authery::models::PasskeyRecord)>, Infallible> {
+    ) -> Result<Option<(Uuid, authery::models::PasskeyRecord)>, TestError> {
+        self.check()?;
         Ok(self
             .passkeys
             .lock()
@@ -487,7 +571,8 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         passkey: authery::models::PasskeyRecord,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         let mut passkeys = self.passkeys.lock().unwrap();
         passkeys.retain(|(u, p)| !(u == user_id && p.credential_id() == passkey.credential_id()));
         passkeys.push((*user_id, passkey));
@@ -495,7 +580,8 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(all(feature = "webauthn", feature = "user"))]
-    async fn delete_passkey(&self, user_id: &Uuid, credential_id: &[u8]) -> Result<(), Infallible> {
+    async fn delete_passkey(&self, user_id: &Uuid, credential_id: &[u8]) -> Result<(), TestError> {
+        self.check()?;
         self.passkeys
             .lock()
             .unwrap()
@@ -508,7 +594,8 @@ impl AutheryStore for TestStore {
         &self,
         token_id: &Uuid,
         unmatched: authery::models::oauth::UnmatchedOAuthToken,
-    ) -> Result<TestOAuthToken, Infallible> {
+    ) -> Result<TestOAuthToken, TestError> {
+        self.check()?;
         let mut tokens = self.oauth_tokens.lock().unwrap();
         let token = tokens
             .get_mut(token_id)
@@ -521,7 +608,8 @@ impl AutheryStore for TestStore {
     async fn get_oauth_token_by_id(
         &self,
         token_id: &Uuid,
-    ) -> Result<Option<TestOAuthToken>, Infallible> {
+    ) -> Result<Option<TestOAuthToken>, TestError> {
+        self.check()?;
         Ok(self.oauth_tokens.lock().unwrap().get(token_id).cloned())
     }
 
@@ -529,7 +617,8 @@ impl AutheryStore for TestStore {
     async fn get_token_by_unmatched_token(
         &self,
         unmatched: authery::models::oauth::UnmatchedOAuthToken,
-    ) -> Result<Option<TestOAuthToken>, Infallible> {
+    ) -> Result<Option<TestOAuthToken>, TestError> {
+        self.check()?;
         Ok(self
             .oauth_tokens
             .lock()
@@ -547,7 +636,8 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         unmatched: authery::models::oauth::UnmatchedOAuthToken,
-    ) -> Result<TestOAuthToken, Infallible> {
+    ) -> Result<TestOAuthToken, TestError> {
+        self.check()?;
         let token = TestOAuthToken {
             id: Uuid::new_v4(),
             user_id: *user_id,
@@ -566,7 +656,8 @@ impl AutheryStore for TestStore {
     async fn create_user_from_unmatched_token(
         &self,
         unmatched: authery::models::oauth::UnmatchedOAuthToken,
-    ) -> Result<(TestUser, TestOAuthToken), Infallible> {
+    ) -> Result<(TestUser, TestOAuthToken), TestError> {
+        self.check()?;
         let id = Uuid::new_v4();
         let user = TestUser {
             id,
@@ -584,7 +675,8 @@ impl AutheryStore for TestStore {
     async fn get_user_by_unmatched_token(
         &self,
         unmatched: authery::models::oauth::UnmatchedOAuthToken,
-    ) -> Result<Option<(TestUser, TestOAuthToken)>, Infallible> {
+    ) -> Result<Option<(TestUser, TestOAuthToken)>, TestError> {
+        self.check()?;
         let Some(token) = self.get_token_by_unmatched_token(unmatched).await? else {
             return Ok(None);
         };
@@ -601,7 +693,8 @@ impl AutheryStore for TestStore {
     async fn get_user_oauth_tokens(
         &self,
         user_id: &Uuid,
-    ) -> Result<Vec<TestOAuthToken>, Infallible> {
+    ) -> Result<Vec<TestOAuthToken>, TestError> {
+        self.check()?;
         Ok(self
             .oauth_tokens
             .lock()
@@ -613,7 +706,8 @@ impl AutheryStore for TestStore {
     }
 
     #[cfg(all(feature = "user", feature = "oauth"))]
-    async fn delete_oauth_token(&self, user_id: &Uuid, token_id: &Uuid) -> Result<(), Infallible> {
+    async fn delete_oauth_token(&self, user_id: &Uuid, token_id: &Uuid) -> Result<(), TestError> {
+        self.check()?;
         let mut tokens = self.oauth_tokens.lock().unwrap();
         if tokens.get(token_id).is_some_and(|t| t.user_id == *user_id) {
             tokens.remove(token_id);
@@ -624,7 +718,11 @@ impl AutheryStore for TestStore {
     async fn get_user_by_password_id(
         &self,
         password_id: &str,
-    ) -> Result<Option<TestUser>, Infallible> {
+    ) -> Result<Option<TestUser>, TestError> {
+        self.check()?;
+        if let Some(err) = self.fail_next.lock().unwrap().take() {
+            return Err(err);
+        }
         Ok(self
             .users
             .lock()
@@ -638,7 +736,8 @@ impl AutheryStore for TestStore {
         &self,
         password_id: &str,
         password_hash: &str,
-    ) -> Result<TestUser, Infallible> {
+    ) -> Result<TestUser, TestError> {
+        self.check()?;
         let id = Uuid::new_v4();
         let user = TestUser {
             id,
@@ -658,7 +757,8 @@ impl AutheryStore for TestStore {
         &self,
         user_id: &Uuid,
         _session_id: &Uuid,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         if let Some(user) = self.users.lock().unwrap().get_mut(user_id) {
             user.password_hash = None;
         }
@@ -670,7 +770,8 @@ impl AutheryStore for TestStore {
         user_id: &Uuid,
         password_hash: String,
         _session_id: &Uuid,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         if let Some(user) = self.users.lock().unwrap().get_mut(user_id) {
             user.password_hash = Some(password_hash);
         }
@@ -680,7 +781,8 @@ impl AutheryStore for TestStore {
     async fn get_user_by_email_address(
         &self,
         address: &str,
-    ) -> Result<Option<(TestUser, TestEmail)>, Infallible> {
+    ) -> Result<Option<(TestUser, TestEmail)>, TestError> {
+        self.check()?;
         Ok(self.users.lock().unwrap().values().find_map(|u| {
             u.emails
                 .iter()
@@ -692,7 +794,8 @@ impl AutheryStore for TestStore {
     async fn create_user_by_email_address(
         &self,
         address: &str,
-    ) -> Result<(TestUser, TestEmail), Infallible> {
+    ) -> Result<(TestUser, TestEmail), TestError> {
+        self.check()?;
         let id = Uuid::new_v4();
         let email = TestEmail {
             user_id: id,
@@ -709,7 +812,8 @@ impl AutheryStore for TestStore {
         Ok((user, email))
     }
 
-    async fn set_email_verified(&self, address: &str) -> Result<(), Infallible> {
+    async fn set_email_verified(&self, address: &str) -> Result<(), TestError> {
+        self.check()?;
         for user in self.users.lock().unwrap().values_mut() {
             for email in &mut user.emails {
                 if email.address == address {
@@ -726,7 +830,8 @@ impl AutheryStore for TestStore {
         code: String,
         next: Option<String>,
         expires: DateTime<Utc>,
-    ) -> Result<TestChallenge, Infallible> {
+    ) -> Result<TestChallenge, TestError> {
+        self.check()?;
         let challenge = TestChallenge {
             address,
             code: code.clone(),
@@ -740,11 +845,13 @@ impl AutheryStore for TestStore {
         Ok(challenge)
     }
 
-    async fn consume_challenge(&self, code: String) -> Result<Option<TestChallenge>, Infallible> {
+    async fn consume_challenge(&self, code: String) -> Result<Option<TestChallenge>, TestError> {
+        self.check()?;
         Ok(self.challenges.lock().unwrap().remove(&code))
     }
 
-    async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<TestEmail>, Infallible> {
+    async fn get_user_emails(&self, user_id: &Uuid) -> Result<Vec<TestEmail>, TestError> {
+        self.check()?;
         Ok(self
             .users
             .lock()
@@ -759,7 +866,8 @@ impl AutheryStore for TestStore {
         user_id: &Uuid,
         address: String,
         allow_login: bool,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TestError> {
+        self.check()?;
         if let Some(user) = self.users.lock().unwrap().get_mut(user_id) {
             for email in &mut user.emails {
                 if email.address == address {
@@ -770,7 +878,8 @@ impl AutheryStore for TestStore {
         Ok(())
     }
 
-    async fn add_user_email(&self, user_id: &Uuid, address: String) -> Result<(), Infallible> {
+    async fn add_user_email(&self, user_id: &Uuid, address: String) -> Result<(), TestError> {
+        self.check()?;
         if let Some(user) = self.users.lock().unwrap().get_mut(user_id) {
             user.emails.push(TestEmail {
                 user_id: *user_id,
@@ -782,7 +891,8 @@ impl AutheryStore for TestStore {
         Ok(())
     }
 
-    async fn delete_user_email(&self, user_id: &Uuid, address: String) -> Result<(), Infallible> {
+    async fn delete_user_email(&self, user_id: &Uuid, address: String) -> Result<(), TestError> {
+        self.check()?;
         if let Some(user) = self.users.lock().unwrap().get_mut(user_id) {
             user.emails.retain(|e| e.address != address);
         }

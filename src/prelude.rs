@@ -12,11 +12,15 @@ pub use crate::routes::password::*;
 #[cfg(feature = "user")]
 pub use crate::routes::user::*;
 
+#[cfg(feature = "openapi")]
+pub use crate::openapi::{Document, OpenApiOptions};
+
 #[cfg(feature = "axum")]
 pub use crate::axum::{
     AxumAuthery,
     cookies::AxumAutheryCookies,
-    extract::FormOrJson,
+    extract::{FormOrJson, WebauthnJson},
+    response::{ApiError, FlowError, FlowResult, StoreFailure},
     router::{AxumRouter, with_cookie_layer},
 };
 

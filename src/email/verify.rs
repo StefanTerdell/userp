@@ -35,6 +35,9 @@ impl<E: std::error::Error> crate::ratelimit::MaybeRateLimited for EmailVerifyIni
     }
 }
 
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(EmailVerifyInitError; Store; SendingEmail);
+
 impl<E: std::error::Error> From<crate::email::EmailChallengeError<E>>
     for EmailVerifyCallbackError<E>
 {

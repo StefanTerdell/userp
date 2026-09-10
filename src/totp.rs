@@ -69,6 +69,8 @@ pub enum TotpError<StoreError: std::error::Error> {
 }
 
 crate::ratelimit::impl_maybe_rate_limited!(TotpError, RateLimited);
+#[cfg(feature = "axum")]
+crate::store::impl_maybe_store_error!(TotpError; Store;);
 
 /// Build the RFC 6238 verifier: SHA-1, 6 digits, 30s steps, ±1 step skew -
 /// what every authenticator app expects.
