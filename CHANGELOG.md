@@ -28,6 +28,9 @@ crate. Everything below is new relative to userp 0.0.x:
 - A single OAuth callback route; flow and provider ride the encrypted state
   cookie, keyed per flow so concurrent logins don't collide.
 - Opt-in bearer-token session mode with an optional token prefix.
+- JSON transport: `Accept: application/json` turns flow redirects into
+  `200 {"next"}` / `422 {"error","next"}`, and every flow endpoint accepts
+  its fields as JSON or form-encoded bodies (`FormOrJson` extractor).
 - Rate-limiter hook, auth-event hook (tracing by default), customizable
   email/SMS copy, replaceable pages, per-route overrides.
 - Redesigned bundled pages: a single-column auth screen grammar with a

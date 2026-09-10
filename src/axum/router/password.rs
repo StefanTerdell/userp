@@ -1,12 +1,10 @@
+use crate::axum::extract::FormOrJson;
 use crate::{
     axum::AxumAuthery,
     password::{login::PasswordLoginError, signup::PasswordSignupError},
     store::AutheryStore,
 };
-use axum::{
-    Form,
-    response::{IntoResponse, Redirect},
-};
+use axum::response::{IntoResponse, Redirect};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -18,11 +16,11 @@ pub struct PasswordIdNextForm {
 
 pub(crate) async fn post_signup_password<St>(
     auth: AxumAuthery<St>,
-    Form(PasswordIdNextForm {
+    FormOrJson(PasswordIdNextForm {
         password_id: email,
         password,
         next,
-    }): Form<PasswordIdNextForm>,
+    }): FormOrJson<PasswordIdNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -47,11 +45,11 @@ where
 
 pub(crate) async fn post_login_password<St>(
     auth: AxumAuthery<St>,
-    Form(PasswordIdNextForm {
+    FormOrJson(PasswordIdNextForm {
         password_id: email,
         password,
         next,
-    }): Form<PasswordIdNextForm>,
+    }): FormOrJson<PasswordIdNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,

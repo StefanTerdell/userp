@@ -76,7 +76,7 @@ jobs:
       - run: cargo test -p authery --no-default-features --features password,email,mfa,user,totp,sms
       # Default features: same flow tests against the full store trait; the
       # Keycloak-dependent test self-skips when it is not reachable.
-      - run: cargo test -p authery
+      - run: cargo test -p authery --all-features
 
   examples:
     runs-on: ubuntu-latest

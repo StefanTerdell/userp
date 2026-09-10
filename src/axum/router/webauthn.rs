@@ -23,7 +23,7 @@ where
 {
     Ok(match auth.webauthn_login_start() {
         Ok(rcr) => (auth, Json(rcr)).into_response(),
-        Err(err) => crate::axum::router::json_error(StatusCode::BAD_REQUEST, &err),
+        Err(err) => crate::axum::extract::json_error(StatusCode::BAD_REQUEST, &err),
     })
 }
 
@@ -42,7 +42,7 @@ where
     match auth.webauthn_login_finish(&credential).await {
         Ok(auth) => Ok((auth, Json(json!({"next": post_login}))).into_response()),
         Err(WebauthnLoginError::Store(err)) => Err(err),
-        Err(err) => Ok(crate::axum::router::json_error(
+        Err(err) => Ok(crate::axum::extract::json_error(
             StatusCode::UNAUTHORIZED,
             &err,
         )),
@@ -73,7 +73,7 @@ where
     {
         Ok(ccr) => Ok((auth, Json(ccr)).into_response()),
         Err(WebauthnRegisterError::Store(err)) => Err(err),
-        Err(err) => Ok(crate::axum::router::json_error(
+        Err(err) => Ok(crate::axum::extract::json_error(
             StatusCode::BAD_REQUEST,
             &err,
         )),
@@ -92,7 +92,7 @@ where
     match auth.webauthn_register_finish(&credential).await {
         Ok(()) => Ok((auth, StatusCode::OK).into_response()),
         Err(WebauthnRegisterError::Store(err)) => Err(err),
-        Err(err) => Ok(crate::axum::router::json_error(
+        Err(err) => Ok(crate::axum::extract::json_error(
             StatusCode::BAD_REQUEST,
             &err,
         )),

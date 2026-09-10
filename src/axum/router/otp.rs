@@ -1,5 +1,6 @@
+use crate::axum::extract::FormOrJson;
 use crate::{axum::AxumAuthery, email::otp::EmailOtpFlow, models::Intent, store::AutheryStore};
-use axum::{Form, response::IntoResponse};
+use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
 /// One form serves both steps: without `code` it requests a code to be sent,
@@ -13,7 +14,7 @@ pub struct OtpForm {
 
 pub(crate) async fn post_login_otp<St>(
     auth: AxumAuthery<St>,
-    Form(OtpForm { email, code, next }): Form<OtpForm>,
+    FormOrJson(OtpForm { email, code, next }): FormOrJson<OtpForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -34,7 +35,7 @@ where
 
 pub(crate) async fn post_signup_otp<St>(
     auth: AxumAuthery<St>,
-    Form(OtpForm { email, code, next }): Form<OtpForm>,
+    FormOrJson(OtpForm { email, code, next }): FormOrJson<OtpForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,

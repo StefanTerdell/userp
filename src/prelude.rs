@@ -16,6 +16,7 @@ pub use crate::routes::user::*;
 pub use crate::axum::{
     AxumAuthery,
     cookies::AxumAutheryCookies,
+    extract::FormOrJson,
     router::{AxumRouter, with_cookie_layer},
 };
 

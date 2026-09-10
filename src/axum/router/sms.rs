@@ -1,5 +1,6 @@
+use crate::axum::extract::FormOrJson;
 use crate::{axum::AxumAuthery, models::Intent, sms::SmsFlow, store::AutheryStore};
-use axum::{Form, response::IntoResponse};
+use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
 /// One form serves both steps: without `code` it requests a code to be sent,
@@ -13,7 +14,7 @@ pub struct SmsForm {
 
 pub(crate) async fn post_login_sms<St>(
     auth: AxumAuthery<St>,
-    Form(SmsForm { number, code, next }): Form<SmsForm>,
+    FormOrJson(SmsForm { number, code, next }): FormOrJson<SmsForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -34,7 +35,7 @@ where
 
 pub(crate) async fn post_signup_sms<St>(
     auth: AxumAuthery<St>,
-    Form(SmsForm { number, code, next }): Form<SmsForm>,
+    FormOrJson(SmsForm { number, code, next }): FormOrJson<SmsForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,

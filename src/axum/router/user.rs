@@ -1,10 +1,11 @@
+use crate::axum::extract::FormOrJson;
 use crate::{
     axum::AxumAuthery,
     models::{LoginSession, User},
     store::AutheryStore,
 };
 use axum::response::IntoResponse;
-use axum::{Form, http::StatusCode, response::Redirect};
+use axum::{http::StatusCode, response::Redirect};
 use serde::Deserialize;
 use urlencoding::encode;
 
@@ -46,7 +47,7 @@ where
 #[cfg(feature = "password")]
 pub async fn post_user_password_set<St>(
     auth: AxumAuthery<St>,
-    Form(NewPasswordAccountForm { new_password }): Form<NewPasswordAccountForm>,
+    FormOrJson(NewPasswordAccountForm { new_password }): FormOrJson<NewPasswordAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -133,7 +134,7 @@ where
 #[cfg(feature = "oauth")]
 pub async fn post_user_oauth_delete<St>(
     auth: AxumAuthery<St>,
-    Form(IdAccountForm { id }): Form<IdAccountForm>,
+    FormOrJson(IdAccountForm { id }): FormOrJson<IdAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -157,7 +158,7 @@ where
 #[cfg(feature = "email")]
 pub async fn post_user_email_add<St>(
     auth: AxumAuthery<St>,
-    Form(EmailAccountForm { email }): Form<EmailAccountForm>,
+    FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -177,7 +178,7 @@ where
 #[cfg(feature = "email")]
 pub async fn post_user_email_delete<St>(
     auth: AxumAuthery<St>,
-    Form(EmailAccountForm { email }): Form<EmailAccountForm>,
+    FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -197,7 +198,7 @@ where
 #[cfg(feature = "email")]
 pub async fn post_user_email_enable_login<St>(
     auth: AxumAuthery<St>,
-    Form(EmailAccountForm { email }): Form<EmailAccountForm>,
+    FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -242,7 +243,7 @@ where
 #[cfg(feature = "email")]
 pub async fn post_user_email_disable_login<St>(
     auth: AxumAuthery<St>,
-    Form(EmailAccountForm { email }): Form<EmailAccountForm>,
+    FormOrJson(EmailAccountForm { email }): FormOrJson<EmailAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -267,7 +268,7 @@ where
 
 pub async fn post_user_session_delete<St>(
     auth: AxumAuthery<St>,
-    Form(IdAccountForm { id }): Form<IdAccountForm>,
+    FormOrJson(IdAccountForm { id }): FormOrJson<IdAccountForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -320,7 +321,6 @@ mod totp_handlers {
     #[cfg(feature = "email")]
     use crate::models::email::UserEmail;
     use crate::totp::TotpError;
-    use axum::Form;
     use serde::Deserialize;
 
     /// Begin enrollment and render the QR/confirm page directly - the QR
@@ -388,7 +388,7 @@ mod totp_handlers {
 
     pub(crate) async fn post_user_totp_confirm<St>(
         auth: AxumAuthery<St>,
-        Form(TotpCodeForm { code }): Form<TotpCodeForm>,
+        FormOrJson(TotpCodeForm { code }): FormOrJson<TotpCodeForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,

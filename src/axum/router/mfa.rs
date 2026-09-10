@@ -73,18 +73,18 @@ pub(crate) use otp_factor::post_login_mfa_otp;
 #[cfg(feature = "email")]
 mod otp_factor {
     use super::*;
+    use crate::axum::extract::FormOrJson;
     use crate::mfa::MfaOtpError;
-    use axum::Form;
 
     /// Without `code`: mail a code to the pending user's verified address.
     /// With `code`: verify it and complete the login.
     pub(crate) async fn post_login_mfa_otp<St>(
         auth: AxumAuthery<St>,
-        Form(MfaCodeForm {
+        FormOrJson(MfaCodeForm {
             code,
             next,
             trust_device,
-        }): Form<MfaCodeForm>,
+        }): FormOrJson<MfaCodeForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
@@ -149,7 +149,7 @@ mod webauthn_factor {
         match auth.mfa_webauthn_start().await {
             Ok(rcr) => Ok((auth, Json(rcr)).into_response()),
             Err(MfaWebauthnError::Store(err)) => Err(err),
-            Err(err) => Ok(crate::axum::router::json_error(
+            Err(err) => Ok(crate::axum::extract::json_error(
                 StatusCode::BAD_REQUEST,
                 &err,
             )),
@@ -180,7 +180,7 @@ mod webauthn_factor {
                 Ok((auth, Json(json!({"next": post_login}))).into_response())
             }
             Err(MfaWebauthnError::Store(err)) => Err(err),
-            Err(err) => Ok(crate::axum::router::json_error(
+            Err(err) => Ok(crate::axum::extract::json_error(
                 StatusCode::UNAUTHORIZED,
                 &err,
             )),
@@ -194,17 +194,17 @@ pub(crate) use totp_factor::post_login_mfa_totp;
 #[cfg(feature = "totp")]
 mod totp_factor {
     use super::*;
+    use crate::axum::extract::FormOrJson;
     use crate::mfa::MfaTotpError;
-    use axum::Form;
 
     /// Verify an authenticator-app code and complete the login.
     pub(crate) async fn post_login_mfa_totp<St>(
         auth: AxumAuthery<St>,
-        Form(MfaVerifyForm {
+        FormOrJson(MfaVerifyForm {
             code,
             next,
             trust_device,
-        }): Form<MfaVerifyForm>,
+        }): FormOrJson<MfaVerifyForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
@@ -234,18 +234,18 @@ pub(crate) use sms_factor::post_login_mfa_sms;
 #[cfg(feature = "sms")]
 mod sms_factor {
     use super::*;
+    use crate::axum::extract::FormOrJson;
     use crate::mfa::MfaSmsError;
-    use axum::Form;
 
     /// Without `code`: text a code to the pending user's verified number.
     /// With `code`: verify it and complete the login.
     pub(crate) async fn post_login_mfa_sms<St>(
         auth: AxumAuthery<St>,
-        Form(MfaCodeForm {
+        FormOrJson(MfaCodeForm {
             code,
             next,
             trust_device,
-        }): Form<MfaCodeForm>,
+        }): FormOrJson<MfaCodeForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,
@@ -293,17 +293,17 @@ pub(crate) use recovery_factor::post_login_mfa_recovery;
 
 mod recovery_factor {
     use super::*;
+    use crate::axum::extract::FormOrJson;
     use crate::mfa::MfaRecoveryError;
-    use axum::Form;
 
     /// Consume a single-use recovery code and complete the login.
     pub(crate) async fn post_login_mfa_recovery<St>(
         auth: AxumAuthery<St>,
-        Form(MfaVerifyForm {
+        FormOrJson(MfaVerifyForm {
             code,
             next,
             trust_device,
-        }): Form<MfaVerifyForm>,
+        }): FormOrJson<MfaVerifyForm>,
     ) -> Result<impl IntoResponse, St::Error>
     where
         St: AutheryStore,

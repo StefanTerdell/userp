@@ -1,3 +1,4 @@
+use crate::axum::extract::FormOrJson;
 use crate::{
     axum::AxumAuthery,
     code_flow::ResolveUserError,
@@ -10,10 +11,7 @@ use crate::{
 };
 use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::{
-    Form,
-    response::{IntoResponse, Redirect},
-};
+use axum::response::{IntoResponse, Redirect};
 use serde::{Deserialize, Serialize};
 
 /// The "check your inbox" page for a link that was just sent.
@@ -133,7 +131,7 @@ where
 
 pub(crate) async fn post_login_email<St>(
     auth: AxumAuthery<St>,
-    Form(EmailNextForm { email, next }): Form<EmailNextForm>,
+    FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -155,7 +153,7 @@ where
 
 pub(crate) async fn post_signup_email<St>(
     auth: AxumAuthery<St>,
-    Form(EmailNextForm { email, next }): Form<EmailNextForm>,
+    FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -226,7 +224,7 @@ where
 
 pub(crate) async fn post_user_email_verify<St>(
     auth: AxumAuthery<St>,
-    Form(EmailNextForm { email, next }): Form<EmailNextForm>,
+    FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -264,7 +262,7 @@ where
 #[cfg(feature = "password")]
 pub(crate) async fn post_password_send_reset<St>(
     auth: AxumAuthery<St>,
-    Form(EmailNextForm { email, next }): Form<EmailNextForm>,
+    FormOrJson(EmailNextForm { email, next }): FormOrJson<EmailNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -295,7 +293,7 @@ where
 #[cfg(feature = "password")]
 pub async fn post_password_reset<St>(
     auth: AxumAuthery<St>,
-    Form(NewPasswordForm { new_password }): Form<NewPasswordForm>,
+    FormOrJson(NewPasswordForm { new_password }): FormOrJson<NewPasswordForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,

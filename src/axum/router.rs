@@ -352,19 +352,6 @@ where
     }
 }
 
-/// A `{ "error": … }` JSON body with the given status.
-#[cfg(feature = "webauthn")]
-pub(crate) fn json_error(
-    status: StatusCode,
-    err: &impl std::fmt::Display,
-) -> axum::response::Response {
-    (
-        status,
-        axum::Json(serde_json::json!({ "error": err.to_string() })),
-    )
-        .into_response()
-}
-
 pub trait AxumRouter {
     fn routes(&self) -> &Routes;
 

@@ -1,3 +1,4 @@
+use crate::axum::extract::FormOrJson;
 use crate::{
     axum::AxumAuthery,
     models::{User, oauth::OAuthToken},
@@ -12,7 +13,6 @@ use crate::{
     store::AutheryStore,
 };
 use axum::{
-    Form,
     extract::Query,
     http::StatusCode,
     response::{IntoResponse, Redirect},
@@ -38,7 +38,7 @@ pub struct CodeStateQuery {
 
 pub async fn post_user_oauth_refresh<St>(
     auth: AxumAuthery<St>,
-    Form(IdForm { id: token_id }): Form<IdForm>,
+    FormOrJson(IdForm { id: token_id }): FormOrJson<IdForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -133,7 +133,7 @@ where
 
 pub async fn post_user_oauth_link<St>(
     auth: AxumAuthery<St>,
-    Form(ProviderNextForm { provider, next, .. }): Form<ProviderNextForm>,
+    FormOrJson(ProviderNextForm { provider, next, .. }): FormOrJson<ProviderNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -162,7 +162,7 @@ where
 
 pub async fn post_login_oauth<St>(
     auth: AxumAuthery<St>,
-    Form(form): Form<ProviderNextForm>,
+    FormOrJson(form): FormOrJson<ProviderNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
@@ -184,7 +184,7 @@ where
 
 pub async fn post_signup_oauth<St>(
     auth: AxumAuthery<St>,
-    Form(ProviderNextForm { provider, next, .. }): Form<ProviderNextForm>,
+    FormOrJson(ProviderNextForm { provider, next, .. }): FormOrJson<ProviderNextForm>,
 ) -> Result<impl IntoResponse, St::Error>
 where
     St: AutheryStore,
